@@ -1,10 +1,12 @@
 --[[
-    Roblox 灵动岛 UI｜中间长方形面板 + 左侧分类 + 右侧功能区（稳定版）
+    Roblox 灵动岛 UI｜美化版 左分类右内容
+    功能：服务器信息 / 玩家列表 / 玩家操作(重生·重进服务器) / 外观换色
 ]]
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
+local TeleportService = game:GetService("TeleportService")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
@@ -13,6 +15,9 @@ local oldGui = PlayerGui:FindFirstChild("IslandHub")
 if oldGui then oldGui:Destroy() end
 
 local isOpen = false
+local currentThemeIndex = 1
+local setActiveView
+local applyTheme
 
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "IslandHub"
@@ -36,14 +41,65 @@ local function getViewport()
     return nil
 end
 
--- ========== 灵动岛胶囊 ==========
+local function makeDraggable(frame, handle)
+    local dragging = false
+    local dragStart
+    local startPos
+    handle.MouseButton1Down:Connect(function()
+        dragging = true
+        dragStart = UserInputService:GetMouseLocation()
+        startPos = frame.Position
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local delta = Vector2.new(input.Position.X, input.Position.Y) - dragStart
+            local newX = startPos.X.Offset + delta.X
+            local newY = startPos.Y.Offset + delta.Y
+            local vp = getViewport()
+            if vp then
+                local minX = frame.Size.X.Offset / 2
+                local maxX = vp.X - minX
+                local minY = frame.Size.Y.Offset / 2
+                local maxY = vp.Y - frame.Size.Y.Offset / 2
+                newX = math.clamp(newX, minX, maxX)
+                newY = math.clamp(newY, minY, maxY)
+            end
+            frame.Position = UDim2.new(0, newX, 0, newY)
+        end
+    end)
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+end
+
+local themes = {
+    { name = "暗黑", main = Color3.fromRGB(24,24,24), side = Color3.fromRGB(34,34,34),
+      content = Color3.fromRGB(29,29,29), btn = Color3.fromRGB(48,48,48), accent = Color3.fromRGB(70,130,255) },
+    { name = "深蓝", main = Color3.fromRGB(18,26,38), side = Color3.fromRGB(26,38,54),
+      content = Color3.fromRGB(22,32,46), btn = Color3.fromRGB(38,54,74), accent = Color3.fromRGB(90,170,255) },
+    { name = "墨绿", main = Color3.fromRGB(18,30,24), side = Color3.fromRGB(26,42,34),
+      content = Color3.fromRGB(22,36,29), btn = Color3.fromRGB(38,58,46), accent = Color3.fromRGB(90,210,150) },
+    { name = "暗紫", main = Color3.fromRGB(28,22,36), side = Color3.fromRGB(38,30,48),
+      content = Color3.fromRGB(33,26,42), btn = Color3.fromRGB(52,42,64), accent = Color3.fromRGB(180,130,255) },
+    { name = "暗红", main = Color3.fromRGB(34,20,20), side = Color3.fromRGB(46,28,28),
+      content = Color3.fromRGB(40,24,24), btn = Color3.fromRGB(62,38,38), accent = Color3.fromRGB(255,120,120) },
+}
+
+-- ============ 灵动岛胶囊 ============
 local Island = Instance.new("Frame")
 Island.AnchorPoint = Vector2.new(0.5, 0)
 Island.Position = UDim2.new(0.5, 0, 0, 10)
-Island.Size = UDim2.new(0, 86, 0, 26)
+Island.Size = UDim2.new(0, 90, 0, 28)
 Island.BackgroundColor3 = Color3.new(0, 0, 0)
 Island.Parent = ScreenGui
 addCorner(Island, UDim.new(1, 0))
+
+local IslandGradient = Instance.new("UIGradient")
+IslandGradient.Color = ColorSequence.new(Color3.fromRGB(20,20,20), Color3.fromRGB(0,0,0))
+IslandGradient.Rotation = 0
+IslandGradient.Parent = Island
 
 local IslandLabel = Instance.new("TextLabel")
 IslandLabel.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -62,41 +118,52 @@ IslandClick.BackgroundTransparency = 1
 IslandClick.Text = ""
 IslandClick.Parent = Island
 
--- ========== 中间长方形主窗口 ==========
+-- ============ 主窗口 ============
 local MainWindow = Instance.new("Frame")
 MainWindow.AnchorPoint = Vector2.new(0.5, 0.5)
 MainWindow.Position = UDim2.new(0.5, 0, 0.5, 0)
-MainWindow.Size = UDim2.new(0, 520, 0, 340)
-MainWindow.BackgroundColor3 = Color3.fromRGB(22, 22, 22)
+MainWindow.Size = UDim2.new(0, 560, 0, 360)
+MainWindow.BackgroundColor3 = themes[1].main
 MainWindow.Visible = false
 MainWindow.Parent = ScreenGui
-addCorner(MainWindow, UDim.new(0.06, 0))
+addCorner(MainWindow, UDim.new(0.05, 0))
 
--- 关闭按钮
+local MainStroke = Instance.new("UIStroke")
+MainStroke.Color = Color3.fromRGB(70, 70, 70)
+MainStroke.Thickness = 1
+MainStroke.Parent = MainWindow
+
+local TitleBar = Instance.new("TextButton")
+TitleBar.Size = UDim2.new(1, 0, 0, 34)
+TitleBar.BackgroundTransparency = 1
+TitleBar.Text = "  灵动岛控制台"
+TitleBar.TextColor3 = Color3.new(1, 1, 1)
+TitleBar.Font = Enum.Font.GothamBold
+TitleBar.TextSize = 13
+TitleBar.TextXAlignment = Enum.TextXAlignment.Left
+TitleBar.Parent = MainWindow
+makeDraggable(MainWindow, TitleBar)
+
 local CloseBtn = Instance.new("TextButton")
 CloseBtn.AnchorPoint = Vector2.new(1, 0)
-CloseBtn.Position = UDim2.new(1, -6, 6, 6)
-CloseBtn.Size = UDim2.new(0, 28, 0, 28)
+CloseBtn.Position = UDim2.new(1, -6, 4, 4)
+CloseBtn.Size = UDim2.new(0, 26, 0, 26)
 CloseBtn.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
 CloseBtn.Text = "X"
 CloseBtn.TextColor3 = Color3.new(1, 1, 1)
 CloseBtn.Font = Enum.Font.GothamBold
-CloseBtn.TextSize = 14
+CloseBtn.TextSize = 13
 CloseBtn.Parent = MainWindow
 addCorner(CloseBtn, UDim.new(0.5, 0))
 
--- 左侧分类区
 local LeftBar = Instance.new("Frame")
-LeftBar.AnchorPoint = Vector2.new(0, 0)
-LeftBar.Position = UDim2.new(0, 0, 0, 0)
-LeftBar.Size = UDim2.new(0, 140, 1, 0)
-LeftBar.BackgroundColor3 = Color3.fromRGB(32, 32, 32)
+LeftBar.Position = UDim2.new(0, 0, 0, 34)
+LeftBar.Size = UDim2.new(0, 150, 1, -34)
+LeftBar.BackgroundColor3 = themes[1].side
 LeftBar.Parent = MainWindow
-addCorner(LeftBar, UDim.new(0.06, 0))
 
 local LeftLayout = Instance.new("UIListLayout")
 LeftLayout.Padding = UDim.new(0, 8)
-LeftLayout.FillDirection = Enum.FillDirection.Vertical
 LeftLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 LeftLayout.VerticalAlignment = Enum.VerticalAlignment.Top
 LeftLayout.Parent = LeftBar
@@ -107,33 +174,22 @@ LeftPadding.PaddingLeft = UDim.new(0, 10)
 LeftPadding.PaddingRight = UDim.new(0, 10)
 LeftPadding.Parent = LeftBar
 
--- 右侧功能区
 local RightPanel = Instance.new("Frame")
-RightPanel.AnchorPoint = Vector2.new(0, 0)
-RightPanel.Position = UDim2.new(0, 140, 0, 0)
-RightPanel.Size = UDim2.new(1, -140, 1, 0)
-RightPanel.BackgroundColor3 = Color3.fromRGB(28, 28, 28)
+RightPanel.Position = UDim2.new(0, 150, 0, 34)
+RightPanel.Size = UDim2.new(1, -150, 1, -34)
+RightPanel.BackgroundColor3 = themes[1].content
 RightPanel.Parent = MainWindow
-addCorner(RightPanel, UDim.new(0.06, 0))
 
--- 右侧内容容器
-local RightContent = Instance.new("Frame")
-RightContent.AnchorPoint = Vector2.new(0, 0)
-RightContent.Position = UDim2.new(0, 0, 0, 0)
-RightContent.Size = UDim2.new(1, 0, 1, 0)
-RightContent.BackgroundTransparency = 1
-RightContent.Parent = RightPanel
-
--- ========== 右侧：服务器信息 ==========
+-- ============ 视图：服务器信息 ============
 local InfoView = Instance.new("Frame")
 InfoView.Size = UDim2.new(1, 0, 1, 0)
 InfoView.BackgroundTransparency = 1
-InfoView.Parent = RightContent
+InfoView.Parent = RightPanel
 InfoView.Visible = false
 
 local InfoText = Instance.new("TextLabel")
-InfoText.Size = UDim2.new(1, -20, 1, -20)
-InfoText.Position = UDim2.new(0, 10, 0, 10)
+InfoText.Size = UDim2.new(1, -24, 1, -24)
+InfoText.Position = UDim2.new(0, 12, 0, 12)
 InfoText.BackgroundTransparency = 1
 InfoText.TextColor3 = Color3.new(1, 1, 1)
 InfoText.Font = Enum.Font.Gotham
@@ -143,11 +199,11 @@ InfoText.TextXAlignment = Enum.TextXAlignment.Left
 InfoText.TextYAlignment = Enum.TextYAlignment.Top
 InfoText.Parent = InfoView
 
--- ========== 右侧：玩家列表 ==========
+-- ============ 视图：玩家列表 ============
 local ListView = Instance.new("Frame")
 ListView.Size = UDim2.new(1, 0, 1, 0)
 ListView.BackgroundTransparency = 1
-ListView.Parent = RightContent
+ListView.Parent = RightPanel
 ListView.Visible = false
 
 local ListScroll = Instance.new("ScrollingFrame")
@@ -163,78 +219,160 @@ local ListLayout = Instance.new("UIListLayout")
 ListLayout.Padding = UDim.new(0, 6)
 ListLayout.Parent = ListScroll
 
--- ========== 右侧：测试功能 ==========
-local TestView = Instance.new("Frame")
-TestView.Size = UDim2.new(1, 0, 1, 0)
-TestView.BackgroundTransparency = 1
-TestView.Parent = RightContent
-TestView.Visible = false
+-- ============ 视图：玩家操作 ============
+local ActionView = Instance.new("Frame")
+ActionView.Size = UDim2.new(1, 0, 1, 0)
+ActionView.BackgroundTransparency = 1
+ActionView.Parent = RightPanel
+ActionView.Visible = false
 
-local TestBtnA = Instance.new("TextButton")
-TestBtnA.Size = UDim2.new(0, 180, 0, 34)
-TestBtnA.Position = UDim2.new(0.5, 0, 0, 30)
-TestBtnA.AnchorPoint = Vector2.new(0.5, 0)
-TestBtnA.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-TestBtnA.Text = "测试功能 A"
-TestBtnA.TextColor3 = Color3.new(1, 1, 1)
-TestBtnA.Font = Enum.Font.Gotham
-TestBtnA.TextSize = 12
-TestBtnA.Parent = TestView
-addCorner(TestBtnA, UDim.new(0.12, 0))
+local ActionHint = Instance.new("TextLabel")
+ActionHint.Size = UDim2.new(1, -24, 0, 28)
+ActionHint.Position = UDim2.new(0, 12, 0, 12)
+ActionHint.BackgroundTransparency = 1
+ActionHint.Text = "玩家操作（请谨慎使用）"
+ActionHint.TextColor3 = Color3.new(200, 200, 200)
+ActionHint.Font = Enum.Font.Gotham
+ActionHint.TextSize = 13
+ActionHint.TextXAlignment = Enum.TextXAlignment.Left
+ActionHint.Parent = ActionView
 
-local TestBtnB = Instance.new("TextButton")
-TestBtnB.Size = UDim2.new(0, 180, 0, 34)
-TestBtnB.Position = UDim2.new(0.5, 0, 0, 80)
-TestBtnB.AnchorPoint = Vector2.new(0.5, 0)
-TestBtnB.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-TestBtnB.Text = "测试功能 B"
-TestBtnB.TextColor3 = Color3.new(1, 1, 1)
-TestBtnB.Font = Enum.Font.Gotham
-TestBtnB.TextSize = 12
-TestBtnB.Parent = TestView
-addCorner(TestBtnB, UDim.new(0.12, 0))
-
-TestBtnA.MouseButton1Click:Connect(function()
-    print("触发测试功能 A")
-end)
-
-TestBtnB.MouseButton1Click:Connect(function()
-    print("触发测试功能 B")
-end)
-
--- ========== 分类按钮逻辑 ==========
-local function hideAllViews()
-    InfoView.Visible = false
-    ListView.Visible = false
-    TestView.Visible = false
-end
-
-local function setActiveView(view)
-    hideAllViews()
-    view.Visible = true
-end
-
-local function addCategoryButton(name, view)
+local function makeActionButton(name, y, callback)
     local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(1, -10, 0, 34)
-    btn.BackgroundColor3 = Color3.fromRGB(46, 46, 46)
+    btn.Size = UDim2.new(0, 200, 0, 36)
+    btn.Position = UDim2.new(0.5, 0, 0, y)
+    btn.AnchorPoint = Vector2.new(0.5, 0)
+    btn.BackgroundColor3 = themes[1].btn
+    btn.Text = name
+    btn.TextColor3 = Color3.new(1, 1, 1)
+    btn.Font = Enum.Font.Gotham
+    btn.TextSize = 12
+    btn.Parent = ActionView
+    addCorner(btn, UDim.new(0.12, 0))
+    btn.MouseButton1Click:Connect(callback)
+    return btn
+end
+
+local RespawnBtn = makeActionButton("重生玩家", 60, function()
+    pcall(function()
+        local char = LocalPlayer.Character
+        if char then
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if hum then hum.Health = 0 end
+            local root = char:FindFirstChild("HumanoidRootPart")
+            if root then char:BreakJoints() end
+        end
+    end)
+end)
+
+local RejoinBtn = makeActionButton("重新进入服务器", 110, function()
+    pcall(function()
+        TeleportService:Teleport(game.PlaceId, LocalPlayer)
+    end)
+end)
+
+-- ============ 视图：外观设置 ============
+local ThemeView = Instance.new("Frame")
+ThemeView.Size = UDim2.new(1, 0, 1, 0)
+ThemeView.BackgroundTransparency = 1
+ThemeView.Parent = RightPanel
+ThemeView.Visible = false
+
+local ThemeHint = Instance.new("TextLabel")
+ThemeHint.Size = UDim2.new(1, -24, 0, 28)
+ThemeHint.Position = UDim2.new(0, 12, 0, 12)
+ThemeHint.BackgroundTransparency = 1
+ThemeHint.Text = "选择主题配色"
+ThemeHint.TextColor3 = Color3.new(200, 200, 200)
+ThemeHint.Font = Enum.Font.Gotham
+ThemeHint.TextSize = 13
+ThemeHint.TextXAlignment = Enum.TextXAlignment.Left
+ThemeHint.Parent = ThemeView
+
+local ThemeGrid = Instance.new("Frame")
+ThemeGrid.Position = UDim2.new(0, 12, 0, 50)
+ThemeGrid.Size = UDim2.new(1, -24, 1, -60)
+ThemeGrid.BackgroundTransparency = 1
+ThemeGrid.Parent = ThemeView
+
+local ThemeLayout = Instance.new("UIListLayout")
+ThemeLayout.Padding = UDim.new(0, 10)
+ThemeLayout.FillDirection = Enum.FillDirection.Horizontal
+ThemeLayout.WrapMode = Enum.WrapMode.Wrap
+ThemeLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+ThemeLayout.Parent = ThemeGrid
+
+local categoryButtons = {}
+local function addCategory(name, view)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, -10, 0, 36)
+    btn.BackgroundColor3 = themes[1].btn
     btn.Text = name
     btn.TextColor3 = Color3.new(1, 1, 1)
     btn.Font = Enum.Font.Gotham
     btn.TextSize = 12
     btn.Parent = LeftBar
     addCorner(btn, UDim.new(0.12, 0))
-
     btn.MouseButton1Click:Connect(function()
         setActiveView(view)
     end)
+    table.insert(categoryButtons, { btn = btn, view = view })
 end
 
-addCategoryButton("服务器信息", InfoView)
-addCategoryButton("玩家列表", ListView)
-addCategoryButton("测试功能", TestView)
+addCategory("服务器信息", InfoView)
+addCategory("玩家列表", ListView)
+addCategory("玩家操作", ActionView)
+addCategory("外观设置", ThemeView)
 
--- ========== 数据刷新逻辑 ==========
+local views = { InfoView, ListView, ActionView, ThemeView }
+setActiveView = function(view)
+    for _, v in ipairs(views) do v.Visible = false end
+    view.Visible = true
+    for _, item in ipairs(categoryButtons) do
+        if item.view == view then
+            item.btn.BackgroundColor3 = themes[currentThemeIndex].accent
+        else
+            item.btn.BackgroundColor3 = themes[currentThemeIndex].btn
+        end
+    end
+end
+
+applyTheme = function(index)
+    currentThemeIndex = index
+    local t = themes[index]
+    MainWindow.BackgroundColor3 = t.main
+    LeftBar.BackgroundColor3 = t.side
+    RightPanel.BackgroundColor3 = t.content
+    RespawnBtn.BackgroundColor3 = t.btn
+    RejoinBtn.BackgroundColor3 = t.btn
+    for _, item in ipairs(categoryButtons) do
+        local active = false
+        for _, v in ipairs(views) do
+            if v.Visible and item.view == v then active = true end
+        end
+        item.btn.BackgroundColor3 = active and t.accent or t.btn
+    end
+end
+
+for i, theme in ipairs(themes) do
+    local swatch = Instance.new("TextButton")
+    swatch.Size = UDim2.new(0, 72, 0, 72)
+    swatch.BackgroundColor3 = theme.main
+    swatch.Text = theme.name
+    swatch.TextColor3 = Color3.new(1, 1, 1)
+    swatch.Font = Enum.Font.Gotham
+    swatch.TextSize = 11
+    swatch.Parent = ThemeGrid
+    addCorner(swatch, UDim.new(0.12, 0))
+    local swatchStroke = Instance.new("UIStroke")
+    swatchStroke.Color = theme.accent
+    swatchStroke.Thickness = 2
+    swatchStroke.Parent = swatch
+    swatch.MouseButton1Click:Connect(function()
+        applyTheme(i)
+    end)
+end
+
 local function refreshServerInfo()
     local ok, text = pcall(function()
         local playerCount = #Players:GetPlayers()
@@ -244,29 +382,13 @@ local function refreshServerInfo()
         if okPing and ping then
             pingMs = tostring(math.floor(ping * 1000)) .. " ms"
         end
-        local isPrivate = (game.PrivateServerId and game.PrivateServerId ~= "")
-        local serverType = isPrivate and "私人服" or "公开服"
-        local privateId = (isPrivate and game.PrivateServerId) or "无"
-
         return string.format(
-            "游戏名称：%s\nPlaceId：%d\n在线玩家：%d / %d\n服务器类型：%s\n私人服ID：%s\n本地 Ping：%s\n本地玩家：%s\n玩家 ID：%d",
-            tostring(game.Name),
-            game.PlaceId or 0,
-            playerCount,
-            maxPlayers,
-            serverType,
-            tostring(privateId),
-            pingMs,
-            LocalPlayer.Name,
-            LocalPlayer.UserId
+            "游戏名称：%s\nPlaceId：%d\n在线玩家：%d / %d\n本地 Ping：%s\n本地玩家：%s\n玩家 ID：%d",
+            tostring(game.Name), game.PlaceId or 0, playerCount, maxPlayers,
+            pingMs, LocalPlayer.Name, LocalPlayer.UserId
         )
     end)
-
-    if ok then
-        InfoText.Text = text
-    else
-        InfoText.Text = "信息读取失败：" .. tostring(text)
-    end
+    InfoText.Text = ok and text or ("信息读取失败：" .. tostring(text))
 end
 
 local function refreshPlayerList()
@@ -274,23 +396,19 @@ local function refreshPlayerList()
         for _, v in pairs(ListScroll:GetChildren()) do
             if v:IsA("Frame") then v:Destroy() end
         end
-
         local localRoot = nil
         if LocalPlayer.Character then
             localRoot = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
         end
-
         local list = Players:GetPlayers()
         for _, plr in ipairs(list) do
             local char = plr.Character
             local hum = char and char:FindFirstChild("Humanoid")
             local hrp = char and char:FindFirstChild("HumanoidRootPart")
-
             local dist = "N/A"
             if hrp and localRoot then
                 dist = tostring(math.floor((hrp.Position - localRoot.Position).Magnitude))
             end
-
             local hp = hum and tostring(math.floor(hum.Health)) or "N/A"
             local maxHp = hum and tostring(math.floor(hum.MaxHealth)) or "N/A"
             local teamName = (plr.Team and plr.Team.Name) or "无队伍"
@@ -299,7 +417,7 @@ local function refreshPlayerList()
 
             local entry = Instance.new("Frame")
             entry.Size = UDim2.new(1, 0, 0, 56)
-            entry.BackgroundColor3 = Color3.fromRGB(32, 32, 32)
+            entry.BackgroundColor3 = Color3.fromRGB(38, 38, 38)
             entry.Parent = ListScroll
             addCorner(entry, UDim.new(0.06, 0))
 
@@ -320,52 +438,34 @@ local function refreshPlayerList()
             info.Parent = entry
         end
     end)
-
-    if not ok then
-        warn("[玩家列表] 刷新出错：", err)
-    end
+    if not ok then warn("[玩家列表] 刷新出错：", err) end
 end
 
--- ========== 关闭与灵动岛开关 ==========
 local function closeMainWindow()
     isOpen = false
     MainWindow.Visible = false
-    TweenService:Create(Island, tweenInfo, {Size = UDim2.new(0, 86, 0, 26)}):Play()
+    TweenService:Create(Island, tweenInfo, {Size = UDim2.new(0, 90, 0, 28)}):Play()
     IslandLabel.Text = "灵动岛"
 end
 
 local function openMainWindow()
     isOpen = true
     MainWindow.Visible = true
-    TweenService:Create(Island, tweenInfo, {Size = UDim2.new(0, 110, 0, 30)}):Play()
+    TweenService:Create(Island, tweenInfo, {Size = UDim2.new(0, 116, 0, 32)}):Play()
     IslandLabel.Text = "已打开"
     refreshServerInfo()
     refreshPlayerList()
     setActiveView(InfoView)
+    applyTheme(currentThemeIndex)
 end
 
 CloseBtn.MouseButton1Click:Connect(closeMainWindow)
-
 IslandClick.MouseButton1Click:Connect(function()
-    if isOpen then
-        closeMainWindow()
-    else
-        openMainWindow()
-    end
+    if isOpen then closeMainWindow() else openMainWindow() end
 end)
 
--- ========== 自动刷新 ==========
-Players.PlayerAdded:Connect(function()
-    if ListView.Visible then
-        refreshPlayerList()
-    end
-end)
-
-Players.PlayerRemoving:Connect(function()
-    if ListView.Visible then
-        refreshPlayerList()
-    end
-end)
+Players.PlayerAdded:Connect(function() if ListView.Visible then refreshPlayerList() end end)
+Players.PlayerRemoving:Connect(function() if ListView.Visible then refreshPlayerList() end end)
 
 task.spawn(function()
     while task.wait(1.2) do
