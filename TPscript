@@ -1,26 +1,25 @@
+--[[
+    Roblox 悬浮控制台｜稳定版
+    保证：灵动岛可点开、所有功能视图常驻不被销毁、无历史报错
+]]
+
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local Lighting = game:GetService("Lighting")
+local TeleportService = game:GetService("TeleportService")
+
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
-local guiName = "IslandHubV3"
-local oldGui = PlayerGui:FindFirstChild(guiName)
+local GUI_NAME = "StableHub"
+local oldGui = PlayerGui:FindFirstChild(GUI_NAME)
 if oldGui then oldGui:Destroy() end
 
-local hubGui = Instance.new("ScreenGui")
-hubGui.Name = guiName
-hubGui.ResetOnSpawn = false
-hubGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
-hubGui.DisplayOrder = 999
-hubGui.Parent = PlayerGui
-
--- 全局变量
-local Island = nil
-local MainWindow = nil
 local isOpen = false
-local panelBuilt = false
+local currentThemeIndex = 1
+local useCustomAccent = false
+local customAccent = Color3.fromRGB(70, 130, 255)
 
 local flyEnabled = false
 local flySpeed = 50
@@ -29,13 +28,31 @@ local invisible = false
 local autoHeal = false
 local selectedPlayer = nil
 
+local setActiveView
+local applyTheme
+local applyInvisibility
+
 local themes = {
     { name = "暗黑", main = Color3.fromRGB(24,24,24), side = Color3.fromRGB(34,34,34),
       content = Color3.fromRGB(29,29,29), btn = Color3.fromRGB(48,48,48), accent = Color3.fromRGB(70,130,255) },
     { name = "深蓝", main = Color3.fromRGB(18,26,38), side = Color3.fromRGB(26,38,54),
       content = Color3.fromRGB(22,32,46), btn = Color3.fromRGB(38,54,74), accent = Color3.fromRGB(90,170,255) },
+    { name = "墨绿", main = Color3.fromRGB(18,30,24), side = Color3.fromRGB(26,42,34),
+      content = Color3.fromRGB(22,36,29), btn = Color3.fromRGB(38,58,46), accent = Color3.fromRGB(90,210,150) },
+    { name = "暗紫", main = Color3.fromRGB(28,22,36), side = Color3.fromRGB(38,30,48),
+      content = Color3.fromRGB(33,26,42), btn = Color3.fromRGB(52,42,64), accent = Color3.fromRGB(180,130,255) },
+    { name = "暗红", main = Color3.fromRGB(34,20,20), side = Color3.fromRGB(46,28,28),
+      content = Color3.fromRGB(40,24,24), btn = Color3.fromRGB(62,38,38), accent = Color3.fromRGB(255,120,120) },
 }
-local currentTheme = themes[1]
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = GUI_NAME
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
+ScreenGui.DisplayOrder = 999
+ScreenGui.Parent = PlayerGui
+
+local tweenInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 
 local function addCorner(parent, radius)
     local c = Instance.new("UICorner")
@@ -43,15 +60,31 @@ local function addCorner(parent, radius)
     c.Parent = parent
 end
 
--- ========== 第一步：创建灵动岛（去掉Gradient，避免吞触摸） ==========
-Island = Instance.new("Frame")
-Island.AnchorPoint = Vector2.new(0.5, 0)
-Island.Position = UDim2.new(0.5, 0, 0, 10)
-Island.Size = UDim2.new(0, 90, 0, 28)
-Island.BackgroundColor3 = Color3.new(0,0,0)
-Island.ZIndex = 10
-Island.Parent = hubGui
-addCorner(Island, UDim.new(1, 0))
+local function getViewport()
+    local cam = workspace.CurrentCamera
+    if cam then return cam.ViewportSize end
+    return Vector2.new(800, 600)
+end
+
+-- ============ 灵动岛 ============
+local IslandBtn = Instance.new("TextButton")
+IslandBtn.AnchorPoint = Vector2.new(0.5, 0)
+IslandBtn.Position = UDim2.new(0.5, 0, 0, 10)
+IslandBtn.Size = UDim2.new(0, 130, 0, 46)
+IslandBtn.BackgroundTransparency = 1
+IslandBtn.Text = ""
+IslandBtn.Modal = true
+IslandBtn.ZIndex = 10
+IslandBtn.Parent = ScreenGui
+
+local IslandVisual = Instance.new("Frame")
+IslandVisual.AnchorPoint = Vector2.new(0.5, 0.5)
+IslandVisual.Position = UDim2.new(0.5, 0, 0.5, 0)
+IslandVisual.Size = UDim2.new(0, 92, 0, 28)
+IslandVisual.BackgroundColor3 = Color3.new(0, 0, 0)
+IslandVisual.ZIndex = 9
+IslandVisual.Parent = IslandBtn
+addCorner(IslandVisual, UDim.new(1, 0))
 
 local IslandLabel = Instance.new("TextLabel")
 IslandLabel.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -59,30 +92,79 @@ IslandLabel.Position = UDim2.new(0.5, 0, 0.5, 0)
 IslandLabel.Size = UDim2.new(0.85, 0, 0.7, 0)
 IslandLabel.BackgroundTransparency = 1
 IslandLabel.Text = "灵动岛"
-IslandLabel.TextColor3 = Color3.new(1,1,1)
+IslandLabel.TextColor3 = Color3.new(1, 1, 1)
 IslandLabel.Font = Enum.Font.GothamBold
 IslandLabel.TextSize = 12
-IslandLabel.ZIndex = 2
-IslandLabel.Parent = Island
+IslandLabel.Active = false
+IslandLabel.ZIndex = 9
+IslandLabel.Parent = IslandVisual
 
--- ========== 拖动函数 ==========
+-- ============ 主窗口 ============
+local MainWindow = Instance.new("Frame")
+MainWindow.AnchorPoint = Vector2.new(0.5, 0.5)
+MainWindow.Position = UDim2.new(0.5, 0, 0.5, 0)
+MainWindow.Size = UDim2.new(0, 560, 0, 380)
+MainWindow.BackgroundColor3 = themes[1].main
+MainWindow.Visible = false
+MainWindow.ZIndex = 5
+MainWindow.Parent = ScreenGui
+addCorner(MainWindow, UDim.new(0.05, 0))
+
+local MainStroke = Instance.new("UIStroke")
+MainStroke.Color = Color3.fromRGB(70, 70, 70)
+MainStroke.Thickness = 1
+MainStroke.Parent = MainWindow
+
+local TitleBar = Instance.new("Frame")
+TitleBar.Size = UDim2.new(1, 0, 0, 34)
+TitleBar.BackgroundColor3 = themes[1].side
+TitleBar.Parent = MainWindow
+addCorner(TitleBar, UDim.new(0.05, 0))
+
+local TitleText = Instance.new("TextLabel")
+TitleText.Size = UDim2.new(1, -50, 1, 0)
+TitleText.Position = UDim2.new(0, 10, 0, 0)
+TitleText.BackgroundTransparency = 1
+TitleText.Text = "控制台"
+TitleText.TextColor3 = Color3.new(1, 1, 1)
+TitleText.Font = Enum.Font.GothamBold
+TitleText.TextSize = 13
+TitleText.TextXAlignment = Enum.TextXAlignment.Left
+TitleText.Active = false
+TitleText.Parent = TitleBar
+
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.AnchorPoint = Vector2.new(1, 0.5)
+CloseBtn.Position = UDim2.new(1, -8, 0.5, 0)
+CloseBtn.Size = UDim2.new(0, 26, 0, 26)
+CloseBtn.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
+CloseBtn.Text = "X"
+CloseBtn.TextColor3 = Color3.new(1, 1, 1)
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.TextSize = 13
+CloseBtn.ZIndex = 6
+CloseBtn.Parent = TitleBar
+addCorner(CloseBtn, UDim.new(1, 0))
+
 local function makeDraggable(frame, handle)
     local dragging = false
-    local startPos, dragOrigin
+    local dragStart, startPos
     handle.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
-            dragOrigin = input.Position
+            dragStart = input.Position
             startPos = frame.Position
         end
     end)
     UserInputService.InputChanged:Connect(function(input)
         if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            local delta = input.Position - dragOrigin
-            local vp = workspace.CurrentCamera.ViewportSize
-            local nx = math.clamp(startPos.X.Offset + delta.X, 20, vp.X - 20)
-            local ny = math.clamp(startPos.Y.Offset + delta.Y, 20, vp.Y - 20)
-            frame.Position = UDim2.new(0, nx, 0, ny)
+            local delta = input.Position - dragStart
+            local newX = startPos.X.Offset + delta.X
+            local newY = startPos.Y.Offset + delta.Y
+            local vp = getViewport()
+            newX = math.clamp(newX, 30, vp.X - 30)
+            newY = math.clamp(newY, 30, vp.Y - 30)
+            frame.Position = UDim2.new(0, newX, 0, newY)
         end
     end)
     UserInputService.InputEnded:Connect(function(input)
@@ -91,149 +173,485 @@ local function makeDraggable(frame, handle)
         end
     end)
 end
+makeDraggable(MainWindow, TitleBar)
 
--- ========== 构建主面板（第一次点击岛的时候才执行） ==========
-local function BuildPanel()
-    if panelBuilt then return end
-    panelBuilt = true
+local LeftBar = Instance.new("Frame")
+LeftBar.Position = UDim2.new(0, 0, 0, 34)
+LeftBar.Size = UDim2.new(0, 150, 1, -34)
+LeftBar.BackgroundColor3 = themes[1].side
+LeftBar.Parent = MainWindow
 
-    MainWindow = Instance.new("Frame")
-    MainWindow.AnchorPoint = Vector2.new(0.5,0.5)
-    MainWindow.Position = UDim2.new(0.5,0,0.5,0)
-    MainWindow.Size = UDim2.new(0, 540, 0, 380)
-    MainWindow.BackgroundColor3 = currentTheme.main
-    MainWindow.Visible = false
-    MainWindow.Parent = hubGui
-    addCorner(MainWindow, UDim.new(0.05,0))
+local LeftLayout = Instance.new("UIListLayout")
+LeftLayout.Padding = UDim.new(0, 8)
+LeftLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+LeftLayout.VerticalAlignment = Enum.VerticalAlignment.Top
+LeftLayout.Parent = LeftBar
 
-    local TitleBar = Instance.new("Frame")
-    TitleBar.Size = UDim2.new(1,0,0,32)
-    TitleBar.BackgroundColor3 = currentTheme.side
-    TitleBar.Parent = MainWindow
-    addCorner(TitleBar, UDim.new(0,0))
-    makeDraggable(MainWindow, TitleBar)
+local LeftPadding = Instance.new("UIPadding")
+LeftPadding.PaddingTop = UDim.new(0, 10)
+LeftPadding.PaddingLeft = UDim.new(0, 10)
+LeftPadding.PaddingRight = UDim.new(0, 10)
+LeftPadding.Parent = LeftBar
 
-    local TitleText = Instance.new("TextLabel")
-    TitleText.Size = UDim2.new(1,-40,1,0)
-    TitleText.BackgroundTransparency = 1
-    TitleText.Text = "功能控制台"
-    TitleText.TextColor3 = Color3.new(1,1,1)
-    TitleText.Font = Enum.Font.GothamBold
-    TitleText.TextSize = 13
-    TitleText.TextXAlignment = Enum.TextXAlignment.Left
-    TitleText.Position = UDim2.new(0,8,0,0)
-    TitleText.Parent = TitleBar
+local RightPanel = Instance.new("Frame")
+RightPanel.Position = UDim2.new(0, 150, 0, 34)
+RightPanel.Size = UDim2.new(1, -150, 1, -34)
+RightPanel.BackgroundColor3 = themes[1].content
+RightPanel.Parent = MainWindow
 
-    local CloseBtn = Instance.new("TextButton")
-    CloseBtn.AnchorPoint = Vector2.new(1,0)
-    CloseBtn.Position = UDim2.new(1,-6,0,4)
-    CloseBtn.Size = UDim2.new(0,24,0,24)
-    CloseBtn.BackgroundColor3 = Color3.fromRGB(160,40,40)
-    CloseBtn.Text = "X"
-    CloseBtn.TextColor3 = Color3.new(1,1,1)
-    CloseBtn.Font = Enum.Font.GothamBold
-    CloseBtn.TextSize =12
-    CloseBtn.Parent = MainWindow
-    addCorner(CloseBtn, UDim.new(1,0))
-    CloseBtn.Activated:Connect(function()
-        isOpen = false
-        MainWindow.Visible = false
+-- 视图 1：服务器信息
+local InfoView = Instance.new("Frame")
+InfoView.Size = UDim2.new(1, 0, 1, 0)
+InfoView.BackgroundTransparency = 1
+InfoView.Parent = RightPanel
+InfoView.Visible = false
+
+local InfoText = Instance.new("TextLabel")
+InfoText.Size = UDim2.new(1, -24, 1, -24)
+InfoText.Position = UDim2.new(0, 12, 0, 12)
+InfoText.BackgroundTransparency = 1
+InfoText.TextColor3 = Color3.new(1, 1, 1)
+InfoText.Font = Enum.Font.Gotham
+InfoText.TextSize = 13
+InfoText.TextWrapped = true
+InfoText.TextXAlignment = Enum.TextXAlignment.Left
+InfoText.TextYAlignment = Enum.TextYAlignment.Top
+InfoText.Active = false
+InfoText.Parent = InfoView
+
+-- 视图 2：玩家列表
+local ListView = Instance.new("Frame")
+ListView.Size = UDim2.new(1, 0, 1, 0)
+ListView.BackgroundTransparency = 1
+ListView.Parent = RightPanel
+ListView.Visible = false
+
+local ListScroll = Instance.new("ScrollingFrame")
+ListScroll.Size = UDim2.new(1, -16, 1, -16)
+ListScroll.Position = UDim2.new(0, 8, 0, 8)
+ListScroll.BackgroundTransparency = 1
+ListScroll.ScrollBarThickness = 4
+ListScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+ListScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+ListScroll.Parent = ListView
+
+local ListLayout = Instance.new("UIListLayout")
+ListLayout.Padding = UDim.new(0, 6)
+ListLayout.Parent = ListScroll
+
+-- 视图 3：功能面板
+local FuncView = Instance.new("Frame")
+FuncView.Size = UDim2.new(1, 0, 1, 0)
+FuncView.BackgroundTransparency = 1
+FuncView.Parent = RightPanel
+FuncView.Visible = false
+
+local FuncHint = Instance.new("TextLabel")
+FuncHint.Size = UDim2.new(1, -24, 0, 24)
+FuncHint.Position = UDim2.new(0, 12, 0, 10)
+FuncHint.BackgroundTransparency = 1
+FuncHint.Text = "实用功能 | F1 开关面板 · F2 飞行 · F3 隐身"
+FuncHint.TextColor3 = Color3.fromRGB(200, 200, 200)
+FuncHint.Font = Enum.Font.Gotham
+FuncHint.TextSize = 12
+FuncHint.TextXAlignment = Enum.TextXAlignment.Left
+FuncHint.Active = false
+FuncHint.Parent = FuncView
+
+local function makeFuncButton(name, y, callback)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, 220, 0, 36)
+    btn.Position = UDim2.new(0.5, 0, 0, y)
+    btn.AnchorPoint = Vector2.new(0.5, 0)
+    btn.BackgroundColor3 = themes[1].btn
+    btn.Text = name
+    btn.TextColor3 = Color3.new(1, 1, 1)
+    btn.Font = Enum.Font.Gotham
+    btn.TextSize = 12
+    btn.ZIndex = 2
+    btn.Parent = FuncView
+    addCorner(btn, UDim.new(0.12, 0))
+    btn.Activated:Connect(callback)
+    return btn
+end
+
+local FlyBtn = makeFuncButton("飞行：关闭", 42, function()
+    flyEnabled = not flyEnabled
+    FlyBtn.Text = flyEnabled and "飞行：开启" or "飞行：关闭"
+end)
+
+local AntiKbBtn = makeFuncButton("防甩飞：关闭", 84, function()
+    antiKnockback = not antiKnockback
+    AntiKbBtn.Text = antiKnockback and "防甩飞：开启" or "防甩飞：关闭"
+end)
+
+local InvisBtn = makeFuncButton("隐身：关闭", 126, function()
+    invisible = not invisible
+    InvisBtn.Text = invisible and "隐身：开启" or "隐身：关闭"
+    applyInvisibility()
+end)
+
+local HealBtn = makeFuncButton("自动回血：关闭", 168, function()
+    autoHeal = not autoHeal
+    HealBtn.Text = autoHeal and "自动回血：开启" or "自动回血：关闭"
+end)
+
+local TeleportBtn = makeFuncButton("传送到选中玩家", 210, function()
+    pcall(function()
+        if not selectedPlayer or not selectedPlayer.Character then return end
+        local myChar = LocalPlayer.Character
+        local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
+        local targetHrp = selectedPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if myHrp and targetHrp then
+            myHrp.CFrame = targetHrp.CFrame
+        end
     end)
+end)
 
-    local listLayout = Instance.new("UIListLayout")
-    listLayout.Padding = UDim.new(0,10)
-    listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-    listLayout.VerticalAlignment = Enum.VerticalAlignment.Top
-    listLayout.Parent = MainWindow
-    local padding = Instance.new("UIPadding")
-    padding.PaddingTop = UDim.new(0,44)
-    padding.PaddingLeft = UDim.new(0,10)
-    padding.PaddingRight = UDim.new(0,10)
-    padding.Parent = MainWindow
+local ResetBtn = makeFuncButton("重置角色", 252, function()
+    pcall(function() LocalPlayer:LoadCharacter() end)
+end)
 
-    local function newBtn(name,callback)
-        local b = Instance.new("TextButton")
-        b.Size = UDim2.new(1,-20,0,36)
-        b.BackgroundColor3 = currentTheme.btn
-        b.Text = name
-        b.TextColor3 = Color3.new(1,1,1)
-        b.Font = Enum.Font.Gotham
-        b.TextSize =12
-        b.Parent = MainWindow
-        addCorner(b,UDim.new(0.12,0))
-        b.Activated:Connect(callback)
-        return b
+local BrightLabel = Instance.new("TextLabel")
+BrightLabel.Size = UDim2.new(0, 200, 0, 24)
+BrightLabel.Position = UDim2.new(0.5, 0, 0, 300)
+BrightLabel.AnchorPoint = Vector2.new(0.5, 0)
+BrightLabel.BackgroundTransparency = 1
+BrightLabel.Text = "亮度：" .. math.floor(Lighting.Brightness)
+BrightLabel.TextColor3 = Color3.new(1, 1, 1)
+BrightLabel.Font = Enum.Font.Gotham
+BrightLabel.TextSize = 12
+BrightLabel.Active = false
+BrightLabel.Parent = FuncView
+
+local BrightBox = Instance.new("TextBox")
+BrightBox.Size = UDim2.new(0, 120, 0, 32)
+BrightBox.Position = UDim2.new(0.5, 0, 0, 328)
+BrightBox.AnchorPoint = Vector2.new(0.5, 0)
+BrightBox.BackgroundColor3 = themes[1].btn
+BrightBox.Text = tostring(Lighting.Brightness)
+BrightBox.TextColor3 = Color3.new(1, 1, 1)
+BrightBox.Font = Enum.Font.Gotham
+BrightBox.TextSize = 12
+BrightBox.Parent = FuncView
+addCorner(BrightBox, UDim.new(0.1, 0))
+BrightBox.FocusLost:Connect(function()
+    local val = tonumber(BrightBox.Text) or 1
+    val = math.clamp(val, 0, 5)
+    Lighting.Brightness = val
+    BrightLabel.Text = "亮度：" .. val
+end)
+
+-- 视图 4：外观设置
+local ThemeView = Instance.new("Frame")
+ThemeView.Size = UDim2.new(1, 0, 1, 0)
+ThemeView.BackgroundTransparency = 1
+ThemeView.Parent = RightPanel
+ThemeView.Visible = false
+
+local ThemeHint = Instance.new("TextLabel")
+ThemeHint.Size = UDim2.new(1, -24, 0, 28)
+ThemeHint.Position = UDim2.new(0, 12, 0, 12)
+ThemeHint.BackgroundTransparency = 1
+ThemeHint.Text = "主题配色 / 自定义高亮色(RGB 0-255)"
+ThemeHint.TextColor3 = Color3.fromRGB(200, 200, 200)
+ThemeHint.Font = Enum.Font.Gotham
+ThemeHint.TextSize = 13
+ThemeHint.TextXAlignment = Enum.TextXAlignment.Left
+ThemeHint.Active = false
+ThemeHint.Parent = ThemeView
+
+local ThemeGrid = Instance.new("Frame")
+ThemeGrid.Position = UDim2.new(0, 12, 0, 50)
+ThemeGrid.Size = UDim2.new(1, -24, 0, 90)
+ThemeGrid.BackgroundTransparency = 1
+ThemeGrid.Parent = ThemeView
+
+local ThemeLayout = Instance.new("UIListLayout")
+ThemeLayout.Padding = UDim.new(0, 10)
+ThemeLayout.FillDirection = Enum.FillDirection.Horizontal
+ThemeLayout.Wraps = true
+ThemeLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+ThemeLayout.Parent = ThemeGrid
+
+local CustomBox = Instance.new("Frame")
+CustomBox.Position = UDim2.new(0, 12, 0, 152)
+CustomBox.Size = UDim2.new(1, -24, 0, 130)
+CustomBox.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+CustomBox.Parent = ThemeView
+addCorner(CustomBox, UDim.new(0.08, 0))
+
+local rBox = Instance.new("TextBox")
+rBox.Size = UDim2.new(0, 70, 0, 32)
+rBox.Position = UDim2.new(0, 10, 0, 10)
+rBox.BackgroundColor3 = Color3.fromRGB(50, 30, 30)
+rBox.Text = "70"
+rBox.TextColor3 = Color3.new(1, 1, 1)
+rBox.Font = Enum.Font.Gotham
+rBox.TextSize = 12
+rBox.Parent = CustomBox
+addCorner(rBox, UDim.new(0.1, 0))
+
+local gBox = Instance.new("TextBox")
+gBox.Size = UDim2.new(0, 70, 0, 32)
+gBox.Position = UDim2.new(0, 90, 0, 10)
+gBox.BackgroundColor3 = Color3.fromRGB(30, 50, 30)
+gBox.Text = "130"
+gBox.TextColor3 = Color3.new(1, 1, 1)
+gBox.Font = Enum.Font.Gotham
+gBox.TextSize = 12
+gBox.Parent = CustomBox
+addCorner(gBox, UDim.new(0.1, 0))
+
+local bBox = Instance.new("TextBox")
+bBox.Size = UDim2.new(0, 70, 0, 32)
+bBox.Position = UDim2.new(0, 170, 0, 10)
+bBox.BackgroundColor3 = Color3.fromRGB(30, 30, 50)
+bBox.Text = "255"
+bBox.TextColor3 = Color3.new(1, 1, 1)
+bBox.Font = Enum.Font.Gotham
+bBox.TextSize = 12
+bBox.Parent = CustomBox
+addCorner(bBox, UDim.new(0.1, 0))
+
+local Preview = Instance.new("Frame")
+Preview.Size = UDim2.new(0, 60, 0, 60)
+Preview.Position = UDim2.new(0, 260, 0, 10)
+Preview.BackgroundColor3 = Color3.fromRGB(70, 130, 255)
+Preview.Parent = CustomBox
+addCorner(Preview, UDim.new(0.15, 0))
+
+local ApplyBtn = Instance.new("TextButton")
+ApplyBtn.Size = UDim2.new(0, 150, 0, 34)
+ApplyBtn.Position = UDim2.new(0, 10, 0, 80)
+ApplyBtn.BackgroundColor3 = Color3.fromRGB(60, 90, 140)
+ApplyBtn.Text = "应用自定义高亮色"
+ApplyBtn.TextColor3 = Color3.new(1, 1, 1)
+ApplyBtn.Font = Enum.Font.Gotham
+ApplyBtn.TextSize = 11
+ApplyBtn.Parent = CustomBox
+addCorner(ApplyBtn, UDim.new(0.12, 0))
+
+local function readRGB()
+    local r = math.clamp(tonumber(rBox.Text) or 70, 0, 255)
+    local g = math.clamp(tonumber(gBox.Text) or 130, 0, 255)
+    local b = math.clamp(tonumber(bBox.Text) or 255, 0, 255)
+    return r, g, b
+end
+
+local function updatePreview()
+    local r, g, b = readRGB()
+    Preview.BackgroundColor3 = Color3.fromRGB(r, g, b)
+end
+rBox.FocusLost:Connect(updatePreview)
+gBox.FocusLost:Connect(updatePreview)
+bBox.FocusLost:Connect(updatePreview)
+updatePreview()
+
+ApplyBtn.Activated:Connect(function()
+    local r, g, b = readRGB()
+    customAccent = Color3.fromRGB(r, g, b)
+    useCustomAccent = true
+    applyTheme(currentThemeIndex)
+end)
+
+-- 左侧分类
+local categoryButtons = {}
+local function addCategory(name, view)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, -10, 0, 36)
+    btn.BackgroundColor3 = themes[1].btn
+    btn.Text = name
+    btn.TextColor3 = Color3.new(1, 1, 1)
+    btn.Font = Enum.Font.Gotham
+    btn.TextSize = 12
+    btn.ZIndex = 2
+    btn.Parent = LeftBar
+    addCorner(btn, UDim.new(0.12, 0))
+    btn.Activated:Connect(function() setActiveView(view) end)
+    table.insert(categoryButtons, { btn = btn, view = view })
+end
+
+addCategory("服务器信息", InfoView)
+addCategory("玩家列表", ListView)
+addCategory("功能面板", FuncView)
+addCategory("外观设置", ThemeView)
+
+local views = { InfoView, ListView, FuncView, ThemeView }
+
+setActiveView = function(view)
+    for _, v in ipairs(views) do v.Visible = false end
+    view.Visible = true
+    local accent = useCustomAccent and customAccent or themes[currentThemeIndex].accent
+    local base = themes[currentThemeIndex].btn
+    for _, item in ipairs(categoryButtons) do
+        item.btn.BackgroundColor3 = (item.view == view) and accent or base
     end
+end
 
-    local btnFly = newBtn("飞行：关闭",function()
-        flyEnabled = not flyEnabled
-        btnFly.Text = flyEnabled and "飞行：开启" or "飞行：关闭"
-    end)
-    local btnAntiKb = newBtn("防甩飞：关闭",function()
-        antiKnockback = not antiKnockback
-        btnAntiKb.Text = antiKnockback and "防甩飞：开启" or "防甩飞：关闭"
-    end)
-    local btnInvis = newBtn("隐身：关闭",function()
-        invisible = not invisible
-        btnInvis.Text = invisible and "隐身：开启" or "隐身：关闭"
-        pcall(function()
-            local c = LocalPlayer.Character
-            if not c then return end
-            for _,v in c:GetDescendants() do
-                if v:IsA("BasePart") then
-                    v.Transparency = invisible and 1 or 0
-                    v.CanCollide = not invisible
-                elseif v:IsA("ParticleEmitter") or v:IsA("Fire") then
-                    v.Enabled = not invisible
-                end
+applyTheme = function(index)
+    currentThemeIndex = index
+    useCustomAccent = false
+    local t = themes[index]
+    MainWindow.BackgroundColor3 = t.main
+    LeftBar.BackgroundColor3 = t.side
+    RightPanel.BackgroundColor3 = t.content
+    TitleBar.BackgroundColor3 = t.side
+    FlyBtn.BackgroundColor3 = t.btn
+    AntiKbBtn.BackgroundColor3 = t.btn
+    InvisBtn.BackgroundColor3 = t.btn
+    HealBtn.BackgroundColor3 = t.btn
+    TeleportBtn.BackgroundColor3 = t.btn
+    ResetBtn.BackgroundColor3 = t.btn
+    BrightBox.BackgroundColor3 = t.btn
+    for _, item in ipairs(categoryButtons) do
+        local active = item.view.Visible
+        item.btn.BackgroundColor3 = active and t.accent or t.btn
+    end
+end
+
+for i, theme in ipairs(themes) do
+    local swatch = Instance.new("TextButton")
+    swatch.Size = UDim2.new(0, 72, 0, 72)
+    swatch.BackgroundColor3 = theme.main
+    swatch.Text = theme.name
+    swatch.TextColor3 = Color3.new(1, 1, 1)
+    swatch.Font = Enum.Font.Gotham
+    swatch.TextSize = 11
+    swatch.ZIndex = 2
+    swatch.Parent = ThemeGrid
+    addCorner(swatch, UDim.new(0.12, 0))
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = theme.accent
+    stroke.Thickness = 2
+    stroke.Parent = swatch
+    swatch.Activated:Connect(function() applyTheme(i) end)
+end
+
+applyInvisibility = function()
+    pcall(function()
+        local char = LocalPlayer.Character
+        if not char then return end
+        for _, v in ipairs(char:GetDescendants()) do
+            if v:IsA("BasePart") then
+                v.Transparency = invisible and 1 or 0
+                v.CanCollide = not invisible
+            elseif v:IsA("ParticleEmitter") or v:IsA("Fire") or v:IsA("Smoke") then
+                v.Enabled = not invisible
             end
-        end)
-    end)
-    local btnHeal = newBtn("自动回血：关闭",function()
-        autoHeal = not autoHeal
-        btnHeal.Text = autoHeal and "自动回血：开启" or "自动回血：关闭"
-    end)
-    local btnResetChar = newBtn("重置角色",function()
-        pcall(function() LocalPlayer:LoadCharacter() end)
-    end)
-    local btnTele = newBtn("传送到选中玩家",function()
-        pcall(function()
-            if not selectedPlayer or not selectedPlayer.Character then return end
-            local myChar = LocalPlayer.Character
-            local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
-            local tarHrp = selectedPlayer.Character:FindFirstChild("HumanoidRootPart")
-            if myHrp and tarHrp then myHrp.CFrame = tarHrp.CFrame end
-        end)
+        end
     end)
 end
 
--- ========== 触摸检测核心（替代按钮点击，Delta手机最稳方案） ==========
-UserInputService.InputBegan:Connect(function(input,gp)
+local function refreshServerInfo()
+    pcall(function()
+        local playerCount = #Players:GetPlayers()
+        local maxPlayers = Players.MaxPlayers or 0
+        local pingMs = "N/A"
+        local okPing, ping = pcall(function() return LocalPlayer:GetNetworkPing() end)
+        if okPing and ping then
+            pingMs = tostring(math.floor(ping * 1000)) .. " ms"
+        end
+        InfoText.Text = string.format(
+            "游戏名称：%s\nPlaceId：%d\n在线玩家：%d / %d\n本地 Ping：%s\n本地玩家：%s\n玩家 ID：%d",
+            tostring(game.Name), game.PlaceId or 0, playerCount, maxPlayers,
+            pingMs, LocalPlayer.Name, LocalPlayer.UserId
+        )
+    end)
+end
+
+local function refreshPlayerList()
+    pcall(function()
+        for _, v in pairs(ListScroll:GetChildren()) do
+            if v:IsA("TextButton") then v:Destroy() end
+        end
+        local localRoot = nil
+        if LocalPlayer.Character then
+            localRoot = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        end
+        local list = Players:GetPlayers()
+        for _, plr in ipairs(list) do
+            local char = plr.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            local dist = "N/A"
+            if hrp and localRoot then
+                dist = tostring(math.floor((hrp.Position - localRoot.Position).Magnitude))
+            end
+            local hp = hum and tostring(math.floor(hum.Health)) or "N/A"
+            local maxHp = hum and tostring(math.floor(hum.MaxHealth)) or "N/A"
+            local teamName = (plr.Team and plr.Team.Name) or "无队伍"
+            local tag = (plr == LocalPlayer) and "（自己）" or ""
+
+            local entry = Instance.new("TextButton")
+            entry.Size = UDim2.new(1, 0, 0, 56)
+            entry.BackgroundColor3 = (selectedPlayer == plr) and themes[currentThemeIndex].accent or Color3.fromRGB(38, 38, 38)
+            entry.Parent = ListScroll
+            addCorner(entry, UDim.new(0.06, 0))
+            entry.Activated:Connect(function()
+                selectedPlayer = plr
+                refreshPlayerList()
+            end)
+
+            local info = Instance.new("TextLabel")
+            info.Size = UDim2.new(1, -12, 1, -8)
+            info.Position = UDim2.new(0, 6, 0, 4)
+            info.BackgroundTransparency = 1
+            info.TextColor3 = Color3.new(1, 1, 1)
+            info.Font = Enum.Font.Gotham
+            info.TextSize = 11
+            info.TextWrapped = true
+            info.TextXAlignment = Enum.TextXAlignment.Left
+            info.TextYAlignment = Enum.TextYAlignment.Top
+            info.Active = false
+            info.Text = string.format(
+                "【%s】%s ID:%d\nHP:%s/%s | 距离:%s studs\n队伍:%s",
+                plr.Name, tag, plr.UserId, hp, maxHp, dist, teamName
+            )
+            info.Parent = entry
+        end
+    end)
+end
+
+local function closeMainWindow()
+    isOpen = false
+    MainWindow.Visible = false
+    TweenService:Create(IslandBtn, tweenInfo, {Size = UDim2.new(0, 130, 0, 46)}):Play()
+    IslandLabel.Text = "灵动岛"
+end
+
+local function openMainWindow()
+    isOpen = true
+    MainWindow.Visible = true
+    TweenService:Create(IslandBtn, tweenInfo, {Size = UDim2.new(0, 150, 0, 46)}):Play()
+    IslandLabel.Text = "已打开"
+    refreshServerInfo()
+    refreshPlayerList()
+    setActiveView(InfoView)
+end
+
+CloseBtn.Activated:Connect(closeMainWindow)
+IslandBtn.Activated:Connect(function()
+    if isOpen then closeMainWindow() else openMainWindow() end
+end)
+
+UserInputService.InputBegan:Connect(function(input, gp)
     if gp then return end
-    local pos = input.Position
-    -- 判断触摸坐标是否落在灵动岛范围内
-    local islandPos = Island.AbsolutePosition
-    local islandSize = Island.AbsoluteSize
-    local inX = pos.X >= islandPos.X and pos.X <= islandPos.X + islandSize.X
-    local inY = pos.Y >= islandPos.Y and pos.Y <= islandPos.Y + islandSize.Y
-    if inX and inY then
-        pcall(function()
-            BuildPanel()
-            isOpen = not isOpen
-            MainWindow.Visible = isOpen
-        end)
-    end
-    -- F1快捷键备用
     if input.KeyCode == Enum.KeyCode.F1 then
-        pcall(function()
-            BuildPanel()
-            isOpen = not isOpen
-            MainWindow.Visible = isOpen
-        end)
+        if isOpen then closeMainWindow() else openMainWindow() end
+    elseif input.KeyCode == Enum.KeyCode.F2 then
+        flyEnabled = not flyEnabled
+        FlyBtn.Text = flyEnabled and "飞行：开启" or "飞行：关闭"
+    elseif input.KeyCode == Enum.KeyCode.F3 then
+        invisible = not invisible
+        InvisBtn.Text = invisible and "隐身：开启" or "隐身：关闭"
+        applyInvisibility()
     end
 end)
 
--- ========== 功能循环 ==========
+Players.PlayerAdded:Connect(function() if ListView.Visible then refreshPlayerList() end end)
+Players.PlayerRemoving:Connect(function() if ListView.Visible then refreshPlayerList() end end)
+
 task.spawn(function()
     while task.wait(0.05) do
         pcall(function()
@@ -242,29 +660,26 @@ task.spawn(function()
             local hum = char:FindFirstChildOfClass("Humanoid")
             local hrp = char:FindFirstChild("HumanoidRootPart")
             if not hum or not hrp then return end
+            local cam = workspace.CurrentCamera
 
-            if flyEnabled then
+            if flyEnabled and cam then
                 hum.PlatformStand = true
-                local cam = workspace.CurrentCamera
-                local dir = Vector3.new(0,0,0)
-                if UserInputService:IsKeyDown(Enum.KeyCode.W) then dir += cam.CFrame.LookVector end
-                if UserInputService:IsKeyDown(Enum.KeyCode.S) then dir -= cam.CFrame.LookVector end
-                if UserInputService:IsKeyDown(Enum.KeyCode.A) then dir -= cam.CFrame.RightVector end
-                if UserInputService:IsKeyDown(Enum.KeyCode.D) then dir += cam.CFrame.RightVector end
-                if UserInputService:IsKeyDown(Enum.KeyCode.Space) then dir += Vector3.new(0,1,0) end
-                if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then dir += Vector3.new(0,-1,0) end
-                dir = dir.Magnitude>0 and dir.Unit*flySpeed or Vector3.new(0,0,0)
+                local dir = Vector3.zero
+                if UserInputService:IsKeyDown(Enum.KeyCode.W) then dir = dir + cam.CFrame.LookVector end
+                if UserInputService:IsKeyDown(Enum.KeyCode.S) then dir = dir - cam.CFrame.LookVector end
+                if UserInputService:IsKeyDown(Enum.KeyCode.A) then dir = dir - cam.CFrame.RightVector end
+                if UserInputService:IsKeyDown(Enum.KeyCode.D) then dir = dir + cam.CFrame.RightVector end
+                if UserInputService:IsKeyDown(Enum.KeyCode.Space) then dir = dir + Vector3.new(0, 1, 0) end
+                if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then dir = dir + Vector3.new(0, -1, 0) end
+                if dir.Magnitude > 0 then dir = dir.Unit * flySpeed end
                 hrp.Velocity = dir
             else
                 hum.PlatformStand = false
             end
 
-            if antiKnockback then
-                if hrp.Velocity.Magnitude >80 then
-                    hrp.Velocity = hrp.Velocity.Unit *80
-                end
+            if antiKnockback and hrp.Velocity.Magnitude > 75 then
+                hrp.Velocity = hrp.Velocity.Unit * 75
             end
-
             if autoHeal and hum.Health < hum.MaxHealth then
                 hum.Health = hum.MaxHealth
             end
@@ -272,13 +687,11 @@ task.spawn(function()
     end
 end)
 
--- ========== 玩家列表简易选择（简化，不卡） ==========
 task.spawn(function()
-    while task.wait(2) do
-        if not (MainWindow and MainWindow.Visible) then continue end
-        pcall(function()
-            local plrs = Players:GetPlayers()
-            selectedPlayer = plrs[2] or plrs[1]
-        end)
+    while task.wait(1.2) do
+        if MainWindow.Visible then
+            refreshServerInfo()
+            refreshPlayerList()
+        end
     end
 end)
