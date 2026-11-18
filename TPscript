@@ -1,9 +1,10 @@
--- Roblox 模拟苹果灵动岛 UI ｜点击展开悬浮面板
+-- Roblox 灵动岛UI｜可拖拽悬浮窗 + 服务器玩家信息面板
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 local PlayerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+local LocalPlayer = Players.LocalPlayer
 
--- 清理旧UI
 if PlayerGui:FindFirstChild("DynamicIslandDemo") then
     PlayerGui.DynamicIslandDemo:Destroy()
 end
@@ -35,7 +36,7 @@ IslandText.Font = Enum.Font.GothamBold
 IslandText.TextSize = 12
 IslandText.Parent = IslandFrame
 
--- 悬浮面板（带缩放动画）
+-- 主悬浮面板
 local MainPanel = Instance.new("Frame")
 MainPanel.Name = "FloatPanel"
 MainPanel.AnchorPoint = Vector2.new(0.5, 0)
@@ -43,26 +44,152 @@ MainPanel.Position = UDim2.new(0.5,0,0,48)
 MainPanel.Size = UDim2.new(0, 240, 0, 280)
 MainPanel.BackgroundColor3 = Color3.fromRGB(25,25,25)
 MainPanel.BackgroundTransparency = 0.05
-MainPanel.Visible = true
 MainPanel.Transparency = 1
-MainPanel.SizeConstraint = Enum.SizeConstraint.RelativeYY
 MainPanel.CornerRadius = UDim.new(0.08,0)
 MainPanel.Parent = ScreenGui
 
-local PanelTitle = Instance.new("TextLabel")
-PanelTitle.Size = UDim2.new(1,0,0,36)
-PanelTitle.BackgroundColor3 = Color3.fromRGB(40,40,40)
-PanelTitle.Text = "功能悬浮窗"
-PanelTitle.TextColor3 = Color3.new(1,1,1)
-PanelTitle.Font = Enum.Font.GothamBold
-PanelTitle.TextSize = 14
-PanelTitle.Parent = MainPanel
+-- 拖动标题栏
+local DragHandle = Instance.new("TextButton")
+DragHandle.Name = "DragHandle"
+DragHandle.Size = UDim2.new(1,0,0,36)
+DragHandle.BackgroundColor3 = Color3.fromRGB(40,40,40)
+DragHandle.Text = "功能悬浮窗（可拖动）"
+DragHandle.TextColor3 = Color3.new(1,1,1)
+DragHandle.Font = Enum.Font.GothamBold
+DragHandle.TextSize = 14
+DragHandle.Parent = MainPanel
 
--- 创建按钮函数
-local function createBtn(name, yOffset)
+-- 拖拽逻辑 + 边界限制
+local dragging = false
+local dragStart
+local startPos
+DragHandle.MouseButton1Down:Connect(function(x,y)
+    dragging = true
+    dragStart = Vector2.new(x,y)
+    startPos = MainPanel.Position
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local delta = Vector2.new(input.Position.X, input.Position.Y) - dragStart
+        local newX = startPos.X.Offset + delta.X
+        local newY = startPos.Y.Offset + delta.Y
+        local minX = MainPanel.Size.X.Offset / 2
+        local maxX = workspace.CurrentCamera.ViewportSize.X - minX
+        local minY = MainPanel.Size.Y.Offset / 2
+        local maxY = workspace.CurrentCamera.ViewportSize.Y - MainPanel.Size.Y.Offset / 2
+        newX = math.clamp(newX, minX, maxX)
+        newY = math.clamp(newY, minY, maxY)
+        MainPanel.Position = UDim2.new(0, newX, 0, newY)
+    end
+end)
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = false
+    end
+end)
+
+-- ===== 【玩家列表弹窗】 =====
+local PlayerListWindow = Instance.new("Frame")
+PlayerListWindow.Name = "PlayerListWindow"
+PlayerListWindow.AnchorPoint = Vector2.new(0.5,0.5)
+PlayerListWindow.Position = UDim2.new(0.5,0,0.5,0)
+PlayerListWindow.Size = UDim2.new(0, 340, 0, 380)
+PlayerListWindow.BackgroundColor3 = Color3.fromRGB(20,20,20)
+PlayerListWindow.CornerRadius = UDim.new(0.08,0)
+PlayerListWindow.Visible = false
+PlayerListWindow.Parent = ScreenGui
+
+local PLDrag = Instance.new("TextButton")
+PLDrag.Size = UDim2.new(1,0,0,34)
+PLDrag.BackgroundColor3 = Color3.fromRGB(35,35,35)
+PLDrag.Text = "服务器玩家列表 | 自动刷新"
+PLDrag.TextColor3 = Color3.new(1,1,1)
+PLDrag.Font = Enum.Font.GothamBold
+PLDrag.TextSize = 13
+PLDrag.Parent = PlayerListWindow
+
+-- 玩家列表滚动框
+local ScrollFrame = Instance.new("ScrollingFrame")
+ScrollFrame.Name = "ScrollFrame"
+ScrollFrame.Position = UDim2.new(0, 8, 0, 42)
+ScrollFrame.Size = UDim2.new(1, -16, 1, -50)
+ScrollFrame.BackgroundTransparency = 1
+ScrollFrame.ScrollBarThickness = 4
+ScrollFrame.Parent = PlayerListWindow
+
+local UIListLayout = Instance.new("UIListLayout")
+UIListLayout.Padding = UDim.new(0,6)
+UIListLayout.Parent = ScrollFrame
+
+-- 关闭玩家列表按钮
+local ClosePL = Instance.new("TextButton")
+ClosePL.AnchorPoint = Vector2.new(1,0)
+ClosePL.Position = UDim2.new(1,-4,4,0)
+ClosePL.Size = UDim2.new(0,28,0,28)
+ClosePL.BackgroundColor3 = Color3.fromRGB(180,50,50)
+ClosePL.Text = "X"
+ClosePL.TextColor3 = Color3.new(1,1,1)
+ClosePL.Font = Enum.Font.GothamBold
+ClosePL.TextSize = 14
+ClosePL.CornerRadius = UDim.new(0.5,0)
+ClosePL.Parent = PlayerListWindow
+ClosePL.MouseButton1Click:Connect(function()
+    PlayerListWindow.Visible = false
+end)
+
+-- 刷新玩家列表函数
+local function RefreshPlayerList()
+    -- 清空旧条目
+    for _,v in pairs(ScrollFrame:GetChildren()) do
+        if v:IsA("Frame") then v:Destroy() end
+    end
+    for _,plr in ipairs(Players:GetPlayers()) do
+        local entry = Instance.new("Frame")
+        entry.Size = UDim2.new(1,0,0,52)
+        entry.BackgroundColor3 = Color3.fromRGB(32,32,32)
+        entry.CornerRadius = UDim.new(0.06,0)
+        entry.Parent = ScrollFrame
+
+        local char = plr.Character
+        local hum = char and char:FindFirstChild("Humanoid")
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        local dist = hrp and math.floor((hrp.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude) or "N/A"
+        local hp = hum and math.floor(hum.Health) or "N/A"
+        local maxHp = hum and math.floor(hum.MaxHealth) or "N/A"
+        local teamName = plr.Team and plr.Team.Name or "无队伍"
+        local hasChar = char and "✅已加载" or "❌无角色"
+
+        local infoText = Instance.new("TextLabel")
+        infoText.Size = UDim2.new(1,-10,1,0)
+        infoText.Position = UDim2.new(0,5,0,0)
+        infoText.BackgroundTransparency = 1
+        infoText.TextColor3 = Color3.new(1,1,1)
+        infoText.Font = Enum.Font.Gotham
+        infoText.TextSize = 11
+        infoText.Text = string.format(
+            "【%s】ID:%d\nHP:%s/%s | 距离:%s studs\n队伍:%s | %s",
+            plr.Name, plr.UserId, hp, maxHp, dist, teamName, hasChar
+        )
+        infoText.TextXAlignment = Enum.TextXAlignment.Left
+        infoText.Parent = entry
+    end
+    ScrollFrame.CanvasSize = UDim2.new(0,0,0, UIListLayout.AbsoluteContentSize.Y)
+end
+
+-- 自动刷新循环
+task.spawn(function()
+    while task.wait(1.2) do
+        if PlayerListWindow.Visible then
+            RefreshPlayerList()
+        end
+    end
+end)
+
+-- 生成按钮函数
+local function createBtn(name, yOffset, callback)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(0.8,0,0,32)
-    btn.AnchorPoint = Vector2.new(0.5,0)
+    btn.AnchorPoint = Vector2.new(0.5, 0)
     btn.Position = UDim2.new(0.5, 0, 0, yOffset)
     btn.BackgroundColor3 = Color3.fromRGB(55,55,55)
     btn.Text = name
@@ -71,27 +198,31 @@ local function createBtn(name, yOffset)
     btn.TextSize = 12
     btn.CornerRadius = UDim.new(0.12,0)
     btn.Parent = MainPanel
-    btn.MouseButton1Click:Connect(function()
-        print("点击了："..name)
-    end)
+    btn.MouseButton1Click:Connect(callback)
     return btn
 end
 
-createBtn("测试功能A", 46)
-createBtn("测试功能B", 84)
-createBtn("测试功能C", 122)
-createBtn("关闭面板", 160).MouseButton1Click:Connect(function()
-    -- 关闭动画
+createBtn("测试功能A", 46, function()
+    print("点击了：测试功能A")
+end)
+createBtn("测试功能B", 84, function()
+    print("点击了：测试功能B")
+end)
+createBtn("打开玩家列表", 122, function()
+    PlayerListWindow.Visible = true
+    RefreshPlayerList()
+end)
+createBtn("关闭面板", 160, function()
     TweenService:Create(IslandFrame, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
         {Size = UDim2.new(0,90,0,26)}):Play()
     TweenService:Create(MainPanel, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
         {Transparency = 1}):Play()
+    isOpen = false
 end)
 
 local isOpen = false
 local tweenInfo = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 
--- 改用TextButton做点击区域，更稳定，不会误触
 local ClickArea = Instance.new("TextButton")
 ClickArea.Size = UDim2.new(1,0,1,0)
 ClickArea.BackgroundTransparency = 1
