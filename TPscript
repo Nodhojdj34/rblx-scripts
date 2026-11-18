@@ -1,6 +1,7 @@
 --[[
-    Roblox 灵动岛 UI｜美化版 左分类右内容
-    功能：服务器信息 / 玩家列表 / 玩家操作(重生·重进服务器) / 外观换色
+    Roblox 灵动岛UI｜修复点击失效版
+    修复：文字Label遮挡点击
+    功能：服务器信息 / 玩家列表 / 重生 / 重进服务器 / 自定义主题配色
 ]]
 
 local Players = game:GetService("Players")
@@ -11,6 +12,7 @@ local TeleportService = game:GetService("TeleportService")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
+-- 清理旧GUI防止重复
 local oldGui = PlayerGui:FindFirstChild("IslandHub")
 if oldGui then oldGui:Destroy() end
 
@@ -22,7 +24,7 @@ local applyTheme
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "IslandHub"
 ScreenGui.ResetOnSpawn = false
-ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Global -- 改用Global，层级可控，避免渲染顺序坑
 ScreenGui.DisplayOrder = 999
 ScreenGui.Parent = PlayerGui
 
@@ -87,12 +89,13 @@ local themes = {
       content = Color3.fromRGB(40,24,24), btn = Color3.fromRGB(62,38,38), accent = Color3.fromRGB(255,120,120) },
 }
 
--- ============ 灵动岛胶囊 ============
+-- ============ 灵动岛胶囊【重点修复顺序：先按钮、后文字，文字不挡点击】 ============
 local Island = Instance.new("Frame")
 Island.AnchorPoint = Vector2.new(0.5, 0)
 Island.Position = UDim2.new(0.5, 0, 0, 10)
 Island.Size = UDim2.new(0, 90, 0, 28)
 Island.BackgroundColor3 = Color3.new(0, 0, 0)
+Island.ZIndex = 10
 Island.Parent = ScreenGui
 addCorner(Island, UDim.new(1, 0))
 
@@ -101,6 +104,15 @@ IslandGradient.Color = ColorSequence.new(Color3.fromRGB(20,20,20), Color3.fromRG
 IslandGradient.Rotation = 0
 IslandGradient.Parent = Island
 
+-- 【按钮放在底层，优先接收点击】
+local IslandClick = Instance.new("TextButton")
+IslandClick.Size = UDim2.new(1, 0, 1, 0)
+IslandClick.BackgroundTransparency = 1
+IslandClick.Text = ""
+IslandClick.ZIndex = 1
+IslandClick.Parent = Island
+
+-- 【文字放上层，设置Active=false，不再拦截鼠标！关键修复】
 local IslandLabel = Instance.new("TextLabel")
 IslandLabel.AnchorPoint = Vector2.new(0.5, 0.5)
 IslandLabel.Position = UDim2.new(0.5, 0, 0.5, 0)
@@ -110,13 +122,9 @@ IslandLabel.Text = "灵动岛"
 IslandLabel.TextColor3 = Color3.new(1, 1, 1)
 IslandLabel.Font = Enum.Font.GothamBold
 IslandLabel.TextSize = 12
+IslandLabel.ZIndex = 2
+IslandLabel.Active = false -- 禁止这个Label捕获鼠标
 IslandLabel.Parent = Island
-
-local IslandClick = Instance.new("TextButton")
-IslandClick.Size = UDim2.new(1, 0, 1, 0)
-IslandClick.BackgroundTransparency = 1
-IslandClick.Text = ""
-IslandClick.Parent = Island
 
 -- ============ 主窗口 ============
 local MainWindow = Instance.new("Frame")
@@ -125,6 +133,7 @@ MainWindow.Position = UDim2.new(0.5, 0, 0.5, 0)
 MainWindow.Size = UDim2.new(0, 560, 0, 360)
 MainWindow.BackgroundColor3 = themes[1].main
 MainWindow.Visible = false
+MainWindow.ZIndex = 5
 MainWindow.Parent = ScreenGui
 addCorner(MainWindow, UDim.new(0.05, 0))
 
@@ -141,18 +150,20 @@ TitleBar.TextColor3 = Color3.new(1, 1, 1)
 TitleBar.Font = Enum.Font.GothamBold
 TitleBar.TextSize = 13
 TitleBar.TextXAlignment = Enum.TextXAlignment.Left
+TitleBar.ZIndex = 2
 TitleBar.Parent = MainWindow
 makeDraggable(MainWindow, TitleBar)
 
 local CloseBtn = Instance.new("TextButton")
 CloseBtn.AnchorPoint = Vector2.new(1, 0)
-CloseBtn.Position = UDim2.new(1, -6, 4, 4)
+CloseBtn.Position = UDim2.new(1, -6, 0, 4)
 CloseBtn.Size = UDim2.new(0, 26, 0, 26)
 CloseBtn.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
 CloseBtn.Text = "X"
 CloseBtn.TextColor3 = Color3.new(1, 1, 1)
 CloseBtn.Font = Enum.Font.GothamBold
 CloseBtn.TextSize = 13
+CloseBtn.ZIndex = 3
 CloseBtn.Parent = MainWindow
 addCorner(CloseBtn, UDim.new(0.5, 0))
 
@@ -160,6 +171,7 @@ local LeftBar = Instance.new("Frame")
 LeftBar.Position = UDim2.new(0, 0, 0, 34)
 LeftBar.Size = UDim2.new(0, 150, 1, -34)
 LeftBar.BackgroundColor3 = themes[1].side
+LeftBar.ZIndex = 1
 LeftBar.Parent = MainWindow
 
 local LeftLayout = Instance.new("UIListLayout")
@@ -178,6 +190,7 @@ local RightPanel = Instance.new("Frame")
 RightPanel.Position = UDim2.new(0, 150, 0, 34)
 RightPanel.Size = UDim2.new(1, -150, 1, -34)
 RightPanel.BackgroundColor3 = themes[1].content
+RightPanel.ZIndex = 1
 RightPanel.Parent = MainWindow
 
 -- ============ 视图：服务器信息 ============
@@ -197,6 +210,7 @@ InfoText.TextSize = 13
 InfoText.TextWrapped = true
 InfoText.TextXAlignment = Enum.TextXAlignment.Left
 InfoText.TextYAlignment = Enum.TextYAlignment.Top
+InfoText.Active = false
 InfoText.Parent = InfoView
 
 -- ============ 视图：玩家列表 ============
@@ -235,6 +249,7 @@ ActionHint.TextColor3 = Color3.new(200, 200, 200)
 ActionHint.Font = Enum.Font.Gotham
 ActionHint.TextSize = 13
 ActionHint.TextXAlignment = Enum.TextXAlignment.Left
+ActionHint.Active = false
 ActionHint.Parent = ActionView
 
 local function makeActionButton(name, y, callback)
@@ -247,9 +262,10 @@ local function makeActionButton(name, y, callback)
     btn.TextColor3 = Color3.new(1, 1, 1)
     btn.Font = Enum.Font.Gotham
     btn.TextSize = 12
+    btn.ZIndex = 2
     btn.Parent = ActionView
     addCorner(btn, UDim.new(0.12, 0))
-    btn.MouseButton1Click:Connect(callback)
+    btn.Activated:Connect(callback)
     return btn
 end
 
@@ -287,6 +303,7 @@ ThemeHint.TextColor3 = Color3.new(200, 200, 200)
 ThemeHint.Font = Enum.Font.Gotham
 ThemeHint.TextSize = 13
 ThemeHint.TextXAlignment = Enum.TextXAlignment.Left
+ThemeHint.Active = false
 ThemeHint.Parent = ThemeView
 
 local ThemeGrid = Instance.new("Frame")
@@ -311,9 +328,10 @@ local function addCategory(name, view)
     btn.TextColor3 = Color3.new(1, 1, 1)
     btn.Font = Enum.Font.Gotham
     btn.TextSize = 12
+    btn.ZIndex = 2
     btn.Parent = LeftBar
     addCorner(btn, UDim.new(0.12, 0))
-    btn.MouseButton1Click:Connect(function()
+    btn.Activated:Connect(function()
         setActiveView(view)
     end)
     table.insert(categoryButtons, { btn = btn, view = view })
@@ -362,13 +380,14 @@ for i, theme in ipairs(themes) do
     swatch.TextColor3 = Color3.new(1, 1, 1)
     swatch.Font = Enum.Font.Gotham
     swatch.TextSize = 11
+    swatch.ZIndex = 2
     swatch.Parent = ThemeGrid
     addCorner(swatch, UDim.new(0.12, 0))
     local swatchStroke = Instance.new("UIStroke")
     swatchStroke.Color = theme.accent
     swatchStroke.Thickness = 2
     swatchStroke.Parent = swatch
-    swatch.MouseButton1Click:Connect(function()
+    swatch.Activated:Connect(function()
         applyTheme(i)
     end)
 end
@@ -403,7 +422,7 @@ local function refreshPlayerList()
         local list = Players:GetPlayers()
         for _, plr in ipairs(list) do
             local char = plr.Character
-            local hum = char and char:FindFirstChild("Humanoid")
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
             local hrp = char and char:FindFirstChild("HumanoidRootPart")
             local dist = "N/A"
             if hrp and localRoot then
@@ -431,6 +450,7 @@ local function refreshPlayerList()
             info.TextWrapped = true
             info.TextXAlignment = Enum.TextXAlignment.Left
             info.TextYAlignment = Enum.TextYAlignment.Top
+            info.Active = false
             info.Text = string.format(
                 "【%s】%s ID:%d\nHP:%s/%s | 距离:%s studs\n队伍:%s | %s",
                 plr.Name, tag, plr.UserId, hp, maxHp, dist, teamName, hasChar
@@ -459,9 +479,14 @@ local function openMainWindow()
     applyTheme(currentThemeIndex)
 end
 
-CloseBtn.MouseButton1Click:Connect(closeMainWindow)
-IslandClick.MouseButton1Click:Connect(function()
-    if isOpen then closeMainWindow() else openMainWindow() end
+CloseBtn.Activated:Connect(closeMainWindow)
+-- 灵动岛点击事件，换成Activated，鼠标+触屏通用
+IslandClick.Activated:Connect(function()
+    if isOpen then
+        closeMainWindow()
+    else
+        openMainWindow()
+    end
 end)
 
 Players.PlayerAdded:Connect(function() if ListView.Visible then refreshPlayerList() end end)
