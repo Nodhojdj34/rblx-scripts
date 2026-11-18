@@ -11,11 +11,22 @@ local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local Lighting = game:GetService("Lighting")
 local LocalPlayer = Players.LocalPlayer
+if not LocalPlayer then
+    LocalPlayer = Players:WaitForChild("LocalPlayer")
+end
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
-local GUI_NAME = "StableHubV6"
-local oldGui = PlayerGui:FindFirstChild(GUI_NAME)
-if oldGui then oldGui:Destroy() end
+local GUI_NAME = "StableHubV7"
+
+-- 清理本工具所有历史版本残留的界面壳，避免旧层叠加遮挡新界面
+for _, g in pairs(PlayerGui:GetChildren()) do
+    if g:IsA("ScreenGui") then
+        local n = g.Name or ""
+        if n:match("^StableHub") or n:match("^IslandHub") then
+            g:Destroy()
+        end
+    end
+end
 
 -- ============ 状态（提前声明，避免前向引用） ============
 local isOpen = false
@@ -31,8 +42,8 @@ local setActiveView
 local applyInvisibility
 
 -- 岛热区常量（固定居中，不依赖控件 AbsolutePosition）
-local ISLAND_W = 120
-local ISLAND_H = 40
+local ISLAND_W = 160
+local ISLAND_H = 44
 local ISLAND_TOP = 12
 
 -- ============ 配色（提亮中灰，保证任何场景下轮廓与文字可见） ============
@@ -72,16 +83,28 @@ local function addStroke(parent, color, thickness)
     return s
 end
 
--- ============ 灵动岛（纯视觉 Frame，不拦截输入；触发靠坐标判定） ============
+-- ============ 灵动岛（外层按钮触发层 + 内层视觉；原生事件与坐标判定双兜底） ============
+local IslandBtn = Instance.new("TextButton")
+IslandBtn.AnchorPoint = Vector2.new(0.5, 0)
+IslandBtn.Position = UDim2.new(0.5, 0, 0, ISLAND_TOP)
+IslandBtn.Size = UDim2.new(0, ISLAND_W, 0, ISLAND_H)
+IslandBtn.BackgroundTransparency = 1
+IslandBtn.Text = ""
+IslandBtn.Modal = true
+IslandBtn.Active = true
+IslandBtn.AutoButtonColor = false
+IslandBtn.ZIndex = 10
+IslandBtn.Parent = ScreenGui
+
 local IslandVisual = Instance.new("Frame")
-IslandVisual.AnchorPoint = Vector2.new(0.5, 0)
-IslandVisual.Position = UDim2.new(0.5, 0, 0, ISLAND_TOP)
-IslandVisual.Size = UDim2.new(0, 110, 0, 34)
+IslandVisual.AnchorPoint = Vector2.new(0.5, 0.5)
+IslandVisual.Position = UDim2.new(0.5, 0, 0.5, 0)
+IslandVisual.Size = UDim2.new(0, 120, 0, 34)
 IslandVisual.BackgroundColor3 = COLOR.side
 IslandVisual.BackgroundTransparency = 0
 IslandVisual.Active = false
-IslandVisual.ZIndex = 10
-IslandVisual.Parent = ScreenGui
+IslandVisual.ZIndex = 9
+IslandVisual.Parent = IslandBtn
 addCorner(IslandVisual, UDim.new(1, 0))
 addStroke(IslandVisual, COLOR.stroke, 1)
 
@@ -567,6 +590,11 @@ local function toggleIsland()
     if isOpen then closeMainWindow() else openMainWindow() end
 end
 
+-- 原生按钮事件兜底（与坐标判定互为备份）
+IslandBtn.Activated:Connect(toggleIsland)
+IslandBtn.MouseButton1Click:Connect(toggleIsland)
+IslandBtn.MouseButton1Down:Connect(toggleIsland)
+
 -- 岛热区命中：按屏幕居中固定矩形计算，不依赖控件 AbsolutePosition
 local function hitIsland(pos)
     local vp = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(800, 600)
@@ -597,6 +625,9 @@ UserInputService.InputBegan:Connect(function(input, gp)
         applyInvisibility()
     end
 end)
+
+-- 走到这里说明脚本初始化完成、输入事件已连上（岛文字作为加载成功标志）
+IslandLabel.Text = "点我打开"
 
 -- 玩家进出刷新
 Players.PlayerAdded:Connect(function() if ListView.Visible then refreshPlayerList() end end)
