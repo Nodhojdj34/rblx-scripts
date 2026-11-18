@@ -1,5 +1,5 @@
 --[[
-    Roblox 灵动岛 UI ｜ 服务器信息 + 玩家列表（稳定版）
+    Roblox 灵动岛 UI｜中间长方形面板 + 左侧分类 + 右侧功能区（稳定版）
 ]]
 
 local Players = game:GetService("Players")
@@ -13,7 +13,6 @@ local oldGui = PlayerGui:FindFirstChild("IslandHub")
 if oldGui then oldGui:Destroy() end
 
 local isOpen = false
-local setMainPanel
 
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "IslandHub"
@@ -24,12 +23,6 @@ ScreenGui.Parent = PlayerGui
 
 local tweenInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 
-local function getViewport()
-    local cam = workspace.CurrentCamera
-    if cam then return cam.ViewportSize end
-    return nil
-end
-
 local function addCorner(parent, radius)
     local c = Instance.new("UICorner")
     c.CornerRadius = radius
@@ -37,47 +30,17 @@ local function addCorner(parent, radius)
     return c
 end
 
-local function makeDraggable(frame, handle)
-    local dragging = false
-    local dragStart
-    local startPos
-
-    handle.MouseButton1Down:Connect(function()
-        dragging = true
-        dragStart = UserInputService:GetMouseLocation()
-        startPos = frame.Position
-    end)
-
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-            local delta = Vector2.new(input.Position.X, input.Position.Y) - dragStart
-            local newX = startPos.X.Offset + delta.X
-            local newY = startPos.Y.Offset + delta.Y
-            local vp = getViewport()
-            if vp then
-                local minX = frame.Size.X.Offset / 2
-                local maxX = vp.X - minX
-                local minY = frame.Size.Y.Offset / 2
-                local maxY = vp.Y - frame.Size.Y.Offset / 2
-                newX = math.clamp(newX, minX, maxX)
-                newY = math.clamp(newY, minY, maxY)
-            end
-            frame.Position = UDim2.new(0, newX, 0, newY)
-        end
-    end)
-
-    UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = false
-        end
-    end)
+local function getViewport()
+    local cam = workspace.CurrentCamera
+    if cam then return cam.ViewportSize end
+    return nil
 end
 
--- ============ 灵动岛胶囊 ============
+-- ========== 灵动岛胶囊 ==========
 local Island = Instance.new("Frame")
 Island.AnchorPoint = Vector2.new(0.5, 0)
 Island.Position = UDim2.new(0.5, 0, 0, 10)
-Island.Size = UDim2.new(0, 80, 0, 24)
+Island.Size = UDim2.new(0, 86, 0, 26)
 Island.BackgroundColor3 = Color3.new(0, 0, 0)
 Island.Parent = ScreenGui
 addCorner(Island, UDim.new(1, 0))
@@ -90,7 +53,7 @@ IslandLabel.BackgroundTransparency = 1
 IslandLabel.Text = "灵动岛"
 IslandLabel.TextColor3 = Color3.new(1, 1, 1)
 IslandLabel.Font = Enum.Font.GothamBold
-IslandLabel.TextSize = 11
+IslandLabel.TextSize = 12
 IslandLabel.Parent = Island
 
 local IslandClick = Instance.new("TextButton")
@@ -99,96 +62,179 @@ IslandClick.BackgroundTransparency = 1
 IslandClick.Text = ""
 IslandClick.Parent = Island
 
--- ============ 主功能面板 ============
-local MainPanel = Instance.new("Frame")
-MainPanel.AnchorPoint = Vector2.new(0.5, 0)
-MainPanel.Position = UDim2.new(0.5, 0, 0, 40)
-MainPanel.Size = UDim2.new(0, 220, 0, 220)
-MainPanel.BackgroundColor3 = Color3.fromRGB(22, 22, 22)
-MainPanel.Visible = false
-MainPanel.Parent = ScreenGui
-addCorner(MainPanel, UDim.new(0.08, 0))
+-- ========== 中间长方形主窗口 ==========
+local MainWindow = Instance.new("Frame")
+MainWindow.AnchorPoint = Vector2.new(0.5, 0.5)
+MainWindow.Position = UDim2.new(0.5, 0, 0.5, 0)
+MainWindow.Size = UDim2.new(0, 520, 0, 340)
+MainWindow.BackgroundColor3 = Color3.fromRGB(22, 22, 22)
+MainWindow.Visible = false
+MainWindow.Parent = ScreenGui
+addCorner(MainWindow, UDim.new(0.06, 0))
 
-local MainDrag = Instance.new("TextButton")
-MainDrag.Size = UDim2.new(1, 0, 0, 34)
-MainDrag.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-MainDrag.Text = "功能菜单（可拖动）"
-MainDrag.TextColor3 = Color3.new(1, 1, 1)
-MainDrag.Font = Enum.Font.GothamBold
-MainDrag.TextSize = 12
-MainDrag.Parent = MainPanel
-addCorner(MainDrag, UDim.new(0.08, 0))
-makeDraggable(MainPanel, MainDrag)
+-- 关闭按钮
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.AnchorPoint = Vector2.new(1, 0)
+CloseBtn.Position = UDim2.new(1, -6, 6, 6)
+CloseBtn.Size = UDim2.new(0, 28, 0, 28)
+CloseBtn.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
+CloseBtn.Text = "X"
+CloseBtn.TextColor3 = Color3.new(1, 1, 1)
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.TextSize = 14
+CloseBtn.Parent = MainWindow
+addCorner(CloseBtn, UDim.new(0.5, 0))
 
-local function addButton(parent, name, y, callback)
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0.8, 0, 0, 30)
-    btn.AnchorPoint = Vector2.new(0.5, 0)
-    btn.Position = UDim2.new(0.5, 0, 0, y)
-    btn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-    btn.Text = name
-    btn.TextColor3 = Color3.new(1, 1, 1)
-    btn.Font = Enum.Font.Gotham
-    btn.TextSize = 11
-    btn.Parent = parent
-    addCorner(btn, UDim.new(0.12, 0))
-    btn.MouseButton1Click:Connect(callback)
-    return btn
-end
+-- 左侧分类区
+local LeftBar = Instance.new("Frame")
+LeftBar.AnchorPoint = Vector2.new(0, 0)
+LeftBar.Position = UDim2.new(0, 0, 0, 0)
+LeftBar.Size = UDim2.new(0, 140, 1, 0)
+LeftBar.BackgroundColor3 = Color3.fromRGB(32, 32, 32)
+LeftBar.Parent = MainWindow
+addCorner(LeftBar, UDim.new(0.06, 0))
 
--- ============ 通用弹窗 ============
-local function createWindow(title, width, height)
-    local win = Instance.new("Frame")
-    win.AnchorPoint = Vector2.new(0.5, 0.5)
-    win.Position = UDim2.new(0.5, 0, 0.5, 0)
-    win.Size = UDim2.new(0, width, 0, height)
-    win.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-    win.Visible = false
-    win.Parent = ScreenGui
-    addCorner(win, UDim.new(0.08, 0))
+local LeftLayout = Instance.new("UIListLayout")
+LeftLayout.Padding = UDim.new(0, 8)
+LeftLayout.FillDirection = Enum.FillDirection.Vertical
+LeftLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+LeftLayout.VerticalAlignment = Enum.VerticalAlignment.Top
+LeftLayout.Parent = LeftBar
 
-    local bar = Instance.new("TextButton")
-    bar.Size = UDim2.new(1, 0, 0, 34)
-    bar.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-    bar.Text = title
-    bar.TextColor3 = Color3.new(1, 1, 1)
-    bar.Font = Enum.Font.GothamBold
-    bar.TextSize = 12
-    bar.Parent = win
-    addCorner(bar, UDim.new(0.08, 0))
-    makeDraggable(win, bar)
+local LeftPadding = Instance.new("UIPadding")
+LeftPadding.PaddingTop = UDim.new(0, 10)
+LeftPadding.PaddingLeft = UDim.new(0, 10)
+LeftPadding.PaddingRight = UDim.new(0, 10)
+LeftPadding.Parent = LeftBar
 
-    local close = Instance.new("TextButton")
-    close.AnchorPoint = Vector2.new(1, 0)
-    close.Position = UDim2.new(1, -4, 4, 0)
-    close.Size = UDim2.new(0, 26, 0, 26)
-    close.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
-    close.Text = "X"
-    close.TextColor3 = Color3.new(1, 1, 1)
-    close.Font = Enum.Font.GothamBold
-    close.TextSize = 13
-    close.Parent = win
-    addCorner(close, UDim.new(0.5, 0))
-    close.MouseButton1Click:Connect(function() win.Visible = false end)
+-- 右侧功能区
+local RightPanel = Instance.new("Frame")
+RightPanel.AnchorPoint = Vector2.new(0, 0)
+RightPanel.Position = UDim2.new(0, 140, 0, 0)
+RightPanel.Size = UDim2.new(1, -140, 1, 0)
+RightPanel.BackgroundColor3 = Color3.fromRGB(28, 28, 28)
+RightPanel.Parent = MainWindow
+addCorner(RightPanel, UDim.new(0.06, 0))
 
-    return win, bar
-end
+-- 右侧内容容器
+local RightContent = Instance.new("Frame")
+RightContent.AnchorPoint = Vector2.new(0, 0)
+RightContent.Position = UDim2.new(0, 0, 0, 0)
+RightContent.Size = UDim2.new(1, 0, 1, 0)
+RightContent.BackgroundTransparency = 1
+RightContent.Parent = RightPanel
 
--- ============ 服务器信息弹窗 ============
-local InfoWindow, InfoBar = createWindow("服务器信息", 300, 240)
+-- ========== 右侧：服务器信息 ==========
+local InfoView = Instance.new("Frame")
+InfoView.Size = UDim2.new(1, 0, 1, 0)
+InfoView.BackgroundTransparency = 1
+InfoView.Parent = RightContent
+InfoView.Visible = false
 
 local InfoText = Instance.new("TextLabel")
-InfoText.Size = UDim2.new(1, -20, 1, -48)
-InfoText.Position = UDim2.new(0, 10, 0, 42)
+InfoText.Size = UDim2.new(1, -20, 1, -20)
+InfoText.Position = UDim2.new(0, 10, 0, 10)
 InfoText.BackgroundTransparency = 1
 InfoText.TextColor3 = Color3.new(1, 1, 1)
 InfoText.Font = Enum.Font.Gotham
-InfoText.TextSize = 12
+InfoText.TextSize = 13
 InfoText.TextWrapped = true
 InfoText.TextXAlignment = Enum.TextXAlignment.Left
 InfoText.TextYAlignment = Enum.TextYAlignment.Top
-InfoText.Parent = InfoWindow
+InfoText.Parent = InfoView
 
+-- ========== 右侧：玩家列表 ==========
+local ListView = Instance.new("Frame")
+ListView.Size = UDim2.new(1, 0, 1, 0)
+ListView.BackgroundTransparency = 1
+ListView.Parent = RightContent
+ListView.Visible = false
+
+local ListScroll = Instance.new("ScrollingFrame")
+ListScroll.Size = UDim2.new(1, -16, 1, -16)
+ListScroll.Position = UDim2.new(0, 8, 0, 8)
+ListScroll.BackgroundTransparency = 1
+ListScroll.ScrollBarThickness = 4
+ListScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+ListScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+ListScroll.Parent = ListView
+
+local ListLayout = Instance.new("UIListLayout")
+ListLayout.Padding = UDim.new(0, 6)
+ListLayout.Parent = ListScroll
+
+-- ========== 右侧：测试功能 ==========
+local TestView = Instance.new("Frame")
+TestView.Size = UDim2.new(1, 0, 1, 0)
+TestView.BackgroundTransparency = 1
+TestView.Parent = RightContent
+TestView.Visible = false
+
+local TestBtnA = Instance.new("TextButton")
+TestBtnA.Size = UDim2.new(0, 180, 0, 34)
+TestBtnA.Position = UDim2.new(0.5, 0, 0, 30)
+TestBtnA.AnchorPoint = Vector2.new(0.5, 0)
+TestBtnA.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+TestBtnA.Text = "测试功能 A"
+TestBtnA.TextColor3 = Color3.new(1, 1, 1)
+TestBtnA.Font = Enum.Font.Gotham
+TestBtnA.TextSize = 12
+TestBtnA.Parent = TestView
+addCorner(TestBtnA, UDim.new(0.12, 0))
+
+local TestBtnB = Instance.new("TextButton")
+TestBtnB.Size = UDim2.new(0, 180, 0, 34)
+TestBtnB.Position = UDim2.new(0.5, 0, 0, 80)
+TestBtnB.AnchorPoint = Vector2.new(0.5, 0)
+TestBtnB.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+TestBtnB.Text = "测试功能 B"
+TestBtnB.TextColor3 = Color3.new(1, 1, 1)
+TestBtnB.Font = Enum.Font.Gotham
+TestBtnB.TextSize = 12
+TestBtnB.Parent = TestView
+addCorner(TestBtnB, UDim.new(0.12, 0))
+
+TestBtnA.MouseButton1Click:Connect(function()
+    print("触发测试功能 A")
+end)
+
+TestBtnB.MouseButton1Click:Connect(function()
+    print("触发测试功能 B")
+end)
+
+-- ========== 分类按钮逻辑 ==========
+local function hideAllViews()
+    InfoView.Visible = false
+    ListView.Visible = false
+    TestView.Visible = false
+end
+
+local function setActiveView(view)
+    hideAllViews()
+    view.Visible = true
+end
+
+local function addCategoryButton(name, view)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, -10, 0, 34)
+    btn.BackgroundColor3 = Color3.fromRGB(46, 46, 46)
+    btn.Text = name
+    btn.TextColor3 = Color3.new(1, 1, 1)
+    btn.Font = Enum.Font.Gotham
+    btn.TextSize = 12
+    btn.Parent = LeftBar
+    addCorner(btn, UDim.new(0.12, 0))
+
+    btn.MouseButton1Click:Connect(function()
+        setActiveView(view)
+    end)
+end
+
+addCategoryButton("服务器信息", InfoView)
+addCategoryButton("玩家列表", ListView)
+addCategoryButton("测试功能", TestView)
+
+-- ========== 数据刷新逻辑 ==========
 local function refreshServerInfo()
     local ok, text = pcall(function()
         local playerCount = #Players:GetPlayers()
@@ -215,6 +261,7 @@ local function refreshServerInfo()
             LocalPlayer.UserId
         )
     end)
+
     if ok then
         InfoText.Text = text
     else
@@ -222,25 +269,9 @@ local function refreshServerInfo()
     end
 end
 
--- ============ 玩家列表弹窗 ============
-local ListWindow, ListBar = createWindow("服务器玩家列表", 340, 380)
-
-local Scroll = Instance.new("ScrollingFrame")
-Scroll.Position = UDim2.new(0, 8, 0, 42)
-Scroll.Size = UDim2.new(1, -16, 1, -50)
-Scroll.BackgroundTransparency = 1
-Scroll.ScrollBarThickness = 4
-Scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-Scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-Scroll.Parent = ListWindow
-
-local layout = Instance.new("UIListLayout")
-layout.Padding = UDim.new(0, 6)
-layout.Parent = Scroll
-
 local function refreshPlayerList()
     local ok, err = pcall(function()
-        for _, v in pairs(Scroll:GetChildren()) do
+        for _, v in pairs(ListScroll:GetChildren()) do
             if v:IsA("Frame") then v:Destroy() end
         end
 
@@ -259,6 +290,7 @@ local function refreshPlayerList()
             if hrp and localRoot then
                 dist = tostring(math.floor((hrp.Position - localRoot.Position).Magnitude))
             end
+
             local hp = hum and tostring(math.floor(hum.Health)) or "N/A"
             local maxHp = hum and tostring(math.floor(hum.MaxHealth)) or "N/A"
             local teamName = (plr.Team and plr.Team.Name) or "无队伍"
@@ -268,7 +300,7 @@ local function refreshPlayerList()
             local entry = Instance.new("Frame")
             entry.Size = UDim2.new(1, 0, 0, 56)
             entry.BackgroundColor3 = Color3.fromRGB(32, 32, 32)
-            entry.Parent = Scroll
+            entry.Parent = ListScroll
             addCorner(entry, UDim.new(0.06, 0))
 
             local info = Instance.new("TextLabel")
@@ -287,56 +319,59 @@ local function refreshPlayerList()
             )
             info.Parent = entry
         end
-
-        ListBar.Text = string.format("服务器玩家列表 | 共 %d 人", #list)
     end)
+
     if not ok then
         warn("[玩家列表] 刷新出错：", err)
     end
 end
 
--- ============ 主面板按钮 ============
-addButton(MainPanel, "服务器信息", 44, function()
-    refreshServerInfo()
-    InfoWindow.Visible = true
-end)
-
-addButton(MainPanel, "玩家列表", 82, function()
-    refreshPlayerList()
-    ListWindow.Visible = true
-end)
-
-addButton(MainPanel, "关闭菜单", 120, function()
-    setMainPanel(false)
-end)
-
-setMainPanel = function(open)
-    isOpen = open
-    if open then
-        MainPanel.Visible = true
-        TweenService:Create(Island, tweenInfo, {Size = UDim2.new(0, 105, 0, 28)}):Play()
-        IslandLabel.Text = "已点开"
-    else
-        MainPanel.Visible = false
-        TweenService:Create(Island, tweenInfo, {Size = UDim2.new(0, 80, 0, 24)}):Play()
-        IslandLabel.Text = "灵动岛"
-    end
+-- ========== 关闭与灵动岛开关 ==========
+local function closeMainWindow()
+    isOpen = false
+    MainWindow.Visible = false
+    TweenService:Create(Island, tweenInfo, {Size = UDim2.new(0, 86, 0, 26)}):Play()
+    IslandLabel.Text = "灵动岛"
 end
 
+local function openMainWindow()
+    isOpen = true
+    MainWindow.Visible = true
+    TweenService:Create(Island, tweenInfo, {Size = UDim2.new(0, 110, 0, 30)}):Play()
+    IslandLabel.Text = "已打开"
+    refreshServerInfo()
+    refreshPlayerList()
+    setActiveView(InfoView)
+end
+
+CloseBtn.MouseButton1Click:Connect(closeMainWindow)
+
 IslandClick.MouseButton1Click:Connect(function()
-    setMainPanel(not isOpen)
+    if isOpen then
+        closeMainWindow()
+    else
+        openMainWindow()
+    end
 end)
 
+-- ========== 自动刷新 ==========
 Players.PlayerAdded:Connect(function()
-    if ListWindow.Visible then refreshPlayerList() end
+    if ListView.Visible then
+        refreshPlayerList()
+    end
 end)
+
 Players.PlayerRemoving:Connect(function()
-    if ListWindow.Visible then refreshPlayerList() end
+    if ListView.Visible then
+        refreshPlayerList()
+    end
 end)
 
 task.spawn(function()
     while task.wait(1.2) do
-        if InfoWindow.Visible then refreshServerInfo() end
-        if ListWindow.Visible then refreshPlayerList() end
+        if MainWindow.Visible then
+            refreshServerInfo()
+            refreshPlayerList()
+        end
     end
 end)
