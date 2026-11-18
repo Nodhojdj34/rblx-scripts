@@ -1,8 +1,9 @@
--- 模拟苹果灵动岛 + 点击展开悬浮面板 Demo
+-- Roblox 模拟苹果灵动岛 UI ｜点击展开悬浮面板
 local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
 local PlayerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
 
--- 销毁旧界面，防止重复创建
+-- 清理旧UI
 if PlayerGui:FindFirstChild("DynamicIslandDemo") then
     PlayerGui.DynamicIslandDemo:Destroy()
 end
@@ -13,14 +14,13 @@ ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.Parent = PlayerGui
 
--- 灵动岛容器（默认收起状态）
+-- 灵动岛本体
 local IslandFrame = Instance.new("Frame")
 IslandFrame.Name = "Island"
 IslandFrame.AnchorPoint = Vector2.new(0.5, 0)
 IslandFrame.Position = UDim2.new(0.5, 0, 0, 12)
 IslandFrame.Size = UDim2.new(0, 90, 0, 26)
 IslandFrame.BackgroundColor3 = Color3.new(0,0,0)
-IslandFrame.BackgroundTransparency = 0
 IslandFrame.CornerRadius = UDim.new(1,0)
 IslandFrame.Parent = ScreenGui
 
@@ -35,7 +35,7 @@ IslandText.Font = Enum.Font.GothamBold
 IslandText.TextSize = 12
 IslandText.Parent = IslandFrame
 
--- 悬浮主面板（默认隐藏）
+-- 悬浮面板（带缩放动画）
 local MainPanel = Instance.new("Frame")
 MainPanel.Name = "FloatPanel"
 MainPanel.AnchorPoint = Vector2.new(0.5, 0)
@@ -43,8 +43,9 @@ MainPanel.Position = UDim2.new(0.5,0,0,48)
 MainPanel.Size = UDim2.new(0, 240, 0, 280)
 MainPanel.BackgroundColor3 = Color3.fromRGB(25,25,25)
 MainPanel.BackgroundTransparency = 0.05
-MainPanel.Visible = false
-MainPanel.ClipsDescendants = true
+MainPanel.Visible = true
+MainPanel.Transparency = 1
+MainPanel.SizeConstraint = Enum.SizeConstraint.RelativeYY
 MainPanel.CornerRadius = UDim.new(0.08,0)
 MainPanel.Parent = ScreenGui
 
@@ -57,7 +58,7 @@ PanelTitle.Font = Enum.Font.GothamBold
 PanelTitle.TextSize = 14
 PanelTitle.Parent = MainPanel
 
--- 测试按钮示例
+-- 创建按钮函数
 local function createBtn(name, yOffset)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(0.8,0,0,32)
@@ -80,26 +81,30 @@ createBtn("测试功能A", 46)
 createBtn("测试功能B", 84)
 createBtn("测试功能C", 122)
 createBtn("关闭面板", 160).MouseButton1Click:Connect(function()
-    MainPanel.Visible = false
+    -- 关闭动画
+    TweenService:Create(IslandFrame, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+        {Size = UDim2.new(0,90,0,26)}):Play()
+    TweenService:Create(MainPanel, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+        {Transparency = 1}):Play()
 end)
 
--- 动画变量
 local isOpen = false
-local TweenService = game:GetService("TweenService")
 local tweenInfo = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 
--- 灵动岛点击事件
-IslandFrame.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        isOpen = not isOpen
-        if isOpen then
-            -- 灵动岛放大一点 + 显示面板
-            TweenService:Create(IslandFrame, tweenInfo, {Size = UDim2.new(0,110,0,30)}):Play()
-            MainPanel.Visible = true
-        else
-            -- 还原灵动岛 + 隐藏面板
-            TweenService:Create(IslandFrame, tweenInfo, {Size = UDim2.new(0,90,0,26)}):Play()
-            MainPanel.Visible = false
-        end
+-- 改用TextButton做点击区域，更稳定，不会误触
+local ClickArea = Instance.new("TextButton")
+ClickArea.Size = UDim2.new(1,0,1,0)
+ClickArea.BackgroundTransparency = 1
+ClickArea.Text = ""
+ClickArea.Parent = IslandFrame
+
+ClickArea.MouseButton1Click:Connect(function()
+    isOpen = not isOpen
+    if isOpen then
+        TweenService:Create(IslandFrame, tweenInfo, {Size = UDim2.new(0,110,0,30)}):Play()
+        TweenService:Create(MainPanel, tweenInfo, {Transparency = 0}):Play()
+    else
+        TweenService:Create(IslandFrame, tweenInfo, {Size = UDim2.new(0,90,0,26)}):Play()
+        TweenService:Create(MainPanel, tweenInfo, {Transparency = 1}):Play()
     end
 end)
