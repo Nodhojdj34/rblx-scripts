@@ -1,451 +1,278 @@
---[[
-    灵动岛 + 悬浮窗 + 音乐播放器（完整修复版）
-    放置位置：StarterPlayer > StarterPlayerScripts 下的 LocalScript
-]]
-
 local Players = game:GetService("Players")
-local TweenService = game:GetService("TweenService")
-local SoundService = game:GetService("SoundService")
+local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 
-local player = Players.LocalPlayer
-local playerGui = player:WaitForChild("PlayerGui")
-
-local oldGui = playerGui:FindFirstChild("DynamicIslandGui")
-if oldGui then oldGui:Destroy() end
-
--- ===================== 音乐列表（自行替换成你有权使用的音频）=====================
-local musicList = {
-    { id = "rbxassetid://1837879082", name = "Outer Space Ambience", artist = "Roblox Audio" },
-    { id = "rbxassetid://9046863574", name = "Chill Vibes",        artist = "Roblox Audio" },
-    { id = "rbxassetid://1848354536", name = "Peaceful Piano",     artist = "Roblox Audio" },
-}
-local currentIndex = 1
-local isPlaying = false
-
-local sound = Instance.new("Sound")
-sound.Name = "IslandMusic"
-sound.Volume = 0.4
-sound.Looped = false
-sound.SoundId = musicList[currentIndex].id
-sound.Parent = SoundService
-
--- ===================== ScreenGui =====================
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "DynamicIslandGui"
-screenGui.ResetOnSpawn = false
-screenGui.IgnoreGuiInset = false
-screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-screenGui.DisplayOrder = 100
-screenGui.Parent = playerGui
-
--- ===================== 灵动岛 =====================
-local island = Instance.new("Frame")
-island.Name = "DynamicIsland"
-island.AnchorPoint = Vector2.new(0.5, 0)
-island.Position = UDim2.new(0.5, 0, 0, 8)
-island.Size = UDim2.new(0, 150, 0, 36)
-island.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-island.BackgroundTransparency = 0.05
-island.BorderSizePixel = 0
-island.ZIndex = 10
-island.Parent = screenGui
-Instance.new("UICorner", island).CornerRadius = UDim.new(1, 0)
-
-local dot = Instance.new("Frame")
-dot.Name = "StatusDot"
-dot.Size = UDim2.new(0, 8, 0, 8)
-dot.Position = UDim2.new(0, 14, 0.5, -4)
-dot.BackgroundColor3 = Color3.fromRGB(0, 220, 120)
-dot.BorderSizePixel = 0
-dot.ZIndex = 11
-dot.Parent = island
-Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
-
--- 跑马灯容器
-local labelContainer = Instance.new("Frame")
-labelContainer.Name = "LabelContainer"
-labelContainer.Size = UDim2.new(1, -32, 1, 0)
-labelContainer.Position = UDim2.new(0, 28, 0, 0)
-labelContainer.BackgroundTransparency = 1
-labelContainer.ClipsDescendants = true
-labelContainer.ZIndex = 11
-labelContainer.Parent = island
-
-local islandLabel = Instance.new("TextLabel")
-islandLabel.Name = "Label"
-islandLabel.Size = UDim2.new(0, 1000, 1, 0)   -- 足够宽以测量文字
-islandLabel.Position = UDim2.new(0, 0, 0, 0)
-islandLabel.BackgroundTransparency = 1
-islandLabel.Text = "--:--"
-islandLabel.TextColor3 = Color3.new(1, 1, 1)
-islandLabel.TextXAlignment = Enum.TextXAlignment.Left
-islandLabel.TextWrapped = false
-islandLabel.Font = Enum.Font.GothamMedium
-islandLabel.TextSize = 14
-islandLabel.ZIndex = 11
-islandLabel.Parent = labelContainer
-
-local clickBtn = Instance.new("TextButton")
-clickBtn.Name = "ClickButton"
-clickBtn.Size = UDim2.new(1, 0, 1, 0)
-clickBtn.BackgroundTransparency = 1
-clickBtn.Text = ""
-clickBtn.AutoButtonColor = false
-clickBtn.ZIndex = 20
-clickBtn.Parent = island
-
--- ===================== 悬浮窗 =====================
-local panel = Instance.new("Frame")
-panel.Name = "FloatingPanel"
-panel.AnchorPoint = Vector2.new(0.5, 0)
-panel.Position = UDim2.new(0.5, 0, 0, 52)
-panel.Size = UDim2.new(0, 300, 0, 0)
-panel.BackgroundColor3 = Color3.fromRGB(28, 28, 30)
-panel.BackgroundTransparency = 1
-panel.BorderSizePixel = 0
-panel.ClipsDescendants = true
-panel.Visible = false
-panel.ZIndex = 30
-panel.Parent = screenGui
-Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 20)
-
-local stroke = Instance.new("UIStroke")
-stroke.Color = Color3.fromRGB(70, 70, 75)
-stroke.Thickness = 1
-stroke.Transparency = 0.4
-stroke.Parent = panel
-
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, -120, 0, 24)
-title.Position = UDim2.new(0, 20, 0, 14)
-title.BackgroundTransparency = 1
-title.Text = "灵动岛控制中心"
-title.TextColor3 = Color3.new(1, 1, 1)
-title.TextXAlignment = Enum.TextXAlignment.Left
-title.Font = Enum.Font.GothamBold
-title.TextSize = 16
-title.ZIndex = 31
-title.Parent = panel
-
-local closeBtn = Instance.new("TextButton")
-closeBtn.Size = UDim2.new(0, 60, 0, 26)
-closeBtn.AnchorPoint = Vector2.new(1, 0)
-closeBtn.Position = UDim2.new(1, -14, 0, 13)
-closeBtn.BackgroundColor3 = Color3.fromRGB(70, 70, 75)
-closeBtn.Text = "关闭"
-closeBtn.TextColor3 = Color3.new(1, 1, 1)
-closeBtn.Font = Enum.Font.GothamMedium
-closeBtn.TextSize = 13
-closeBtn.ZIndex = 32
-closeBtn.Parent = panel
-Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 8)
-
-local divider = Instance.new("Frame")
-divider.Size = UDim2.new(1, -40, 0, 1)
-divider.Position = UDim2.new(0, 20, 0, 46)
-divider.BackgroundColor3 = Color3.fromRGB(70, 70, 75)
-divider.BorderSizePixel = 0
-divider.ZIndex = 31
-divider.Parent = panel
-
-local songNameLabel = Instance.new("TextLabel")
-songNameLabel.Size = UDim2.new(1, -40, 0, 22)
-songNameLabel.Position = UDim2.new(0, 20, 0, 58)
-songNameLabel.BackgroundTransparency = 1
-songNameLabel.Text = "--"
-songNameLabel.TextColor3 = Color3.new(1, 1, 1)
-songNameLabel.TextXAlignment = Enum.TextXAlignment.Left
-songNameLabel.Font = Enum.Font.GothamBold
-songNameLabel.TextSize = 16
-songNameLabel.ZIndex = 31
-songNameLabel.Parent = panel
-
-local artistLabel = Instance.new("TextLabel")
-artistLabel.Size = UDim2.new(1, -40, 0, 18)
-artistLabel.Position = UDim2.new(0, 20, 0, 82)
-artistLabel.BackgroundTransparency = 1
-artistLabel.Text = "--"
-artistLabel.TextColor3 = Color3.fromRGB(180, 180, 185)
-artistLabel.TextXAlignment = Enum.TextXAlignment.Left
-artistLabel.Font = Enum.Font.Gotham
-artistLabel.TextSize = 12
-artistLabel.ZIndex = 31
-artistLabel.Parent = panel
-
-local progressBg = Instance.new("Frame")
-progressBg.Size = UDim2.new(1, -40, 0, 4)
-progressBg.Position = UDim2.new(0, 20, 0, 110)
-progressBg.BackgroundColor3 = Color3.fromRGB(60, 60, 65)
-progressBg.BorderSizePixel = 0
-progressBg.ZIndex = 31
-progressBg.Parent = panel
-Instance.new("UICorner", progressBg).CornerRadius = UDim.new(1, 0)
-
-local progressFill = Instance.new("Frame")
-progressFill.Size = UDim2.new(0, 0, 1, 0)
-progressFill.BackgroundColor3 = Color3.fromRGB(0, 180, 255)
-progressFill.BorderSizePixel = 0
-progressFill.ZIndex = 32
-progressFill.Parent = progressBg
-Instance.new("UICorner", progressFill).CornerRadius = UDim.new(1, 0)
-
-local progressBtn = Instance.new("TextButton")
-progressBtn.Size = UDim2.new(1, 0, 0, 20)
-progressBtn.AnchorPoint = Vector2.new(0, 0.5)
-progressBtn.Position = UDim2.new(0, 0, 0.5, 0)
-progressBtn.BackgroundTransparency = 1
-progressBtn.Text = ""
-progressBtn.ZIndex = 33
-progressBtn.Parent = progressBg
-
-local timeText = Instance.new("TextLabel")
-timeText.Size = UDim2.new(1, -40, 0, 14)
-timeText.Position = UDim2.new(0, 20, 0, 118)
-timeText.BackgroundTransparency = 1
-timeText.Text = "0:00 / 0:00"
-timeText.TextColor3 = Color3.fromRGB(160, 160, 165)
-timeText.TextXAlignment = Enum.TextXAlignment.Left
-timeText.Font = Enum.Font.Gotham
-timeText.TextSize = 11
-timeText.ZIndex = 31
-timeText.Parent = panel
-
-local function makeButton(text, cx, w)
-    local b = Instance.new("TextButton")
-    b.AnchorPoint = Vector2.new(0.5, 0)
-    b.Position = UDim2.new(0, cx, 0, 148)
-    b.Size = UDim2.new(0, w, 0, 42)
-    b.BackgroundColor3 = Color3.fromRGB(50, 50, 55)
-    b.Text = text
-    b.TextColor3 = Color3.new(1, 1, 1)
-    b.Font = Enum.Font.GothamBold
-    b.TextSize = 13
-    b.ZIndex = 32
-    b.Parent = panel
-    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 10)
-    return b
+local LocalPlayer = Players.LocalPlayer
+if not LocalPlayer then
+    LocalPlayer = Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
 end
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
-local prevBtn      = makeButton("上一首", 70,  76)
-local playPauseBtn = makeButton("播放",   150, 76)
-local nextBtn      = makeButton("下一首", 230, 76)
-
-local panelTime = Instance.new("TextLabel")
-panelTime.Size = UDim2.new(1, -40, 0, 16)
-panelTime.Position = UDim2.new(0, 20, 0, 202)
-panelTime.BackgroundTransparency = 1
-panelTime.Text = "当前时间：--:--:--"
-panelTime.TextColor3 = Color3.fromRGB(0, 180, 255)
-panelTime.TextXAlignment = Enum.TextXAlignment.Left
-panelTime.Font = Enum.Font.GothamMedium
-panelTime.TextSize = 13
-panelTime.ZIndex = 31
-panelTime.Parent = panel
-
-local desc = Instance.new("TextLabel")
-desc.Size = UDim2.new(1, -40, 0, 36)
-desc.Position = UDim2.new(0, 20, 0, 224)
-desc.BackgroundTransparency = 1
-desc.Text = "点击灵动岛可打开/关闭此面板\n播放状态会同步到灵动岛滚动显示"
-desc.TextColor3 = Color3.fromRGB(160, 160, 165)
-desc.TextXAlignment = Enum.TextXAlignment.Left
-desc.TextYAlignment = Enum.TextYAlignment.Top
-desc.TextWrapped = true
-desc.Font = Enum.Font.Gotham
-desc.TextSize = 12
-desc.ZIndex = 31
-desc.Parent = panel
-
--- ===================== 逻辑 =====================
-local isOpen = false
-local marqueeX, marqueePause = 0, 0
-local islandTween, panelTween
-
-local function formatTime(t)
-    t = math.max(0, math.floor(t or 0))
-    return string.format("%d:%02d", math.floor(t / 60), t % 60)
-end
-
-local function tweenIsland(targetSize)
-    if islandTween then islandTween:Cancel() end
-    islandTween = TweenService:Create(island,
-        TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
-        { Size = targetSize })
-    islandTween:Play()
-end
-
-local function tweenPanel(targetSize, targetTransparency)
-    if panelTween then panelTween:Cancel() end
-    panelTween = TweenService:Create(panel,
-        TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
-        { Size = targetSize, BackgroundTransparency = targetTransparency })
-    panelTween:Play()
-    return panelTween
-end
-
-local function refreshIslandText()
-    if isOpen then
-        islandLabel.Text = "控制中心"
-        islandLabel.Position = UDim2.new(0, 0, 0, 0)
-        dot.BackgroundColor3 = Color3.fromRGB(0, 180, 255)
-    elseif isPlaying then
-        islandLabel.Text = "♪ " .. musicList[currentIndex].name .. "  ·  " .. musicList[currentIndex].artist
-        dot.BackgroundColor3 = Color3.fromRGB(255, 120, 80)
-        marqueeX = 0
-        marqueePause = 1.0
-        islandLabel.Position = UDim2.new(0, 0, 0, 0)
-    else
-        islandLabel.Text = os.date("%H:%M")
-        islandLabel.Position = UDim2.new(0, 0, 0, 0)
-        dot.BackgroundColor3 = Color3.fromRGB(0, 220, 120)
+-- 清理所有旧GUI残留，防止旧界面遮挡
+for _,gui in ipairs(PlayerGui:GetChildren()) do
+    if gui:IsA("ScreenGui") and (gui.Name:find("Hub") or gui.Name:find("Island")) then
+        gui:Destroy()
     end
 end
 
-local function updateMusicUI()
-    local track = musicList[currentIndex]
-    songNameLabel.Text = track.name
-    artistLabel.Text = track.artist
-    playPauseBtn.Text = isPlaying and "暂停" or "播放"
-    playPauseBtn.BackgroundColor3 = isPlaying
-        and Color3.fromRGB(0, 140, 220)
-        or Color3.fromRGB(50, 50, 55)
-    refreshIslandText()
+-- 创建主GUI
+local HubGui = Instance.new("ScreenGui")
+HubGui.Name = "NewStableHub"
+HubGui.ResetOnSpawn = false
+HubGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
+HubGui.DisplayOrder = 999
+HubGui.IgnoreGuiInset = true
+HubGui.Parent = PlayerGui
+
+-- 状态变量
+local WindowOpen = false
+local Window = nil
+local Fly = false
+local FlySpeed = 2
+local AntiKnockback = false
+local Invisible = false
+local AutoHeal = false
+local SelectedPlayer = nil
+local Debounce = 0.25
+local LastClick = 0
+
+-- 圆角工具函数
+local function AddCorner(Obj, Radius)
+    local Corner = Instance.new("UICorner")
+    Corner.CornerRadius = Radius
+    Corner.Parent = Obj
 end
 
-local function loadTrack(index, autoplay)
-    currentIndex = index
-    sound:Stop()
-    sound.TimePosition = 0
-    sound.SoundId = musicList[index].id
-    progressFill.Size = UDim2.new(0, 0, 1, 0)
-    timeText.Text = "0:00 / 0:00"
-    if autoplay then
-        sound:Play()
-        isPlaying = true
-    else
-        isPlaying = false
+-- ========== 灵动岛（按钮本体就是胶囊，无遮挡层！核心修复点击失效） ==========
+local IslandBtn = Instance.new("TextButton")
+IslandBtn.AnchorPoint = Vector2.new(0.5, 0)
+IslandBtn.Position = UDim2.new(0.5, 0, 0, 10)
+IslandBtn.Size = UDim2.new(0, 120, 0, 36)
+IslandBtn.BackgroundColor3 = Color3.fromRGB(28, 30, 36)
+IslandBtn.Text = ""
+IslandBtn.ZIndex = 10
+AddCorner(IslandBtn, UDim.new(1, 0))
+IslandBtn.Parent = HubGui
+
+-- 灵动岛文字（Active=false，不拦截触摸）
+local IslandText = Instance.new("TextLabel")
+IslandText.Size = UDim2.new(1, 0, 1, 0)
+IslandText.BackgroundTransparency = 1
+IslandText.Text = "点我打开面板"
+IslandText.TextColor3 = Color3.new(1,1,1)
+IslandText.Font = Enum.Font.GothamBold
+IslandText.TextSize = 11
+IslandText.Active = false
+IslandText.Parent = IslandBtn
+
+-- 切换窗口函数
+local function ToggleWindow()
+    local Now = os.clock()
+    if Now - LastClick < Debounce then return end
+    LastClick = Now
+    WindowOpen = not WindowOpen
+    if Window then
+        Window.Visible = WindowOpen
     end
-    updateMusicUI()
 end
 
--- 按钮事件
-playPauseBtn.Activated:Connect(function()
-    if isPlaying then
-        sound:Pause()
-        isPlaying = false
-    else
-        sound:Play()
-        isPlaying = true
-    end
-    updateMusicUI()
-end)
+-- 绑定多个点击事件兜底
+IslandBtn.Activated:Connect(ToggleWindow)
+IslandBtn.MouseButton1Click:Connect(ToggleWindow)
+IslandBtn.MouseButton1Down:Connect(ToggleWindow)
 
-prevBtn.Activated:Connect(function()
-    local wasPlaying = isPlaying
-    local i = currentIndex - 1
-    if i < 1 then i = #musicList end
-    loadTrack(i, wasPlaying)
-end)
-
-nextBtn.Activated:Connect(function()
-    local wasPlaying = isPlaying
-    local i = currentIndex + 1
-    if i > #musicList then i = 1 end
-    loadTrack(i, wasPlaying)
-end)
-
-sound.Ended:Connect(function()
-    local i = currentIndex + 1
-    if i > #musicList then i = 1 end
-    loadTrack(i, true)
-end)
-
--- 进度条点击跳转
-progressBtn.Activated:Connect(function(input)
-    local x
-    if input and input.Position then
-        x = input.Position.X
-    else
-        x = game:GetService("UserInputService"):GetMouseLocation().X
-    end
-    local relX = x - progressBg.AbsolutePosition.X
-    local ratio = math.clamp(relX / math.max(1, progressBg.AbsoluteSize.X), 0, 1)
-    if sound.TimeLength > 0 then
-        sound.TimePosition = ratio * sound.TimeLength
+-- F1快捷键兜底
+UserInputService.InputBegan:Connect(function(Input, GameProcessed)
+    if GameProcessed then return end
+    if Input.KeyCode == Enum.KeyCode.F1 then
+        ToggleWindow()
     end
 end)
 
--- 打开 / 关闭悬浮窗
-local function openPanel()
-    if isOpen then return end
-    isOpen = true
-    tweenIsland(UDim2.new(0, 170, 0, 36))
-    panel.Visible = true
-    tweenPanel(UDim2.new(0, 300, 0, 280), 0)
-    refreshIslandText()
-end
+-- ========== 构建主窗口（高对比纯色，杜绝黑屏） ==========
+local function BuildWindow()
+    if Window then return end
+    Window = Instance.new("Frame")
+    Window.AnchorPoint = Vector2.new(0.5,0.5)
+    Window.Position = UDim2.new(0.5,0,0.5,0)
+    Window.Size = UDim2.new(0, 420, 0, 320)
+    Window.BackgroundColor3 = Color3.fromRGB(55, 58, 66)
+    Window.Visible = false
+    Window.ZIndex = 11
+    AddCorner(Window, UDim.new(0.07,0))
+    Window.Parent = HubGui
 
-local function closePanel()
-    if not isOpen then return end
-    isOpen = false
-    tweenIsland(UDim2.new(0, 150, 0, 36))
-    local t = tweenPanel(UDim2.new(0, 300, 0, 0), 1)
-    t.Completed:Once(function()
-        if not isOpen then panel.Visible = false end
+    -- 标题栏（拖动）
+    local TitleBar = Instance.new("Frame")
+    TitleBar.Size = UDim2.new(1,0,0,32)
+    TitleBar.BackgroundColor3 = Color3.fromRGB(70,74,84)
+    TitleBar.Parent = Window
+    AddCorner(TitleBar, UDim.new(0.07,0))
+
+    local TitleLabel = Instance.new("TextLabel")
+    TitleLabel.Size = UDim2.new(1,-40,1,0)
+    TitleLabel.BackgroundTransparency = 1
+    TitleLabel.Text = "功能面板"
+    TitleLabel.TextColor3 = Color3.new(1,1,1)
+    TitleLabel.Font = Enum.Font.GothamBold
+    TitleLabel.TextSize =13
+    TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    TitleLabel.Position = UDim2.new(0,10,0,0)
+    TitleLabel.Active = false
+    TitleLabel.Parent = TitleBar
+
+    -- 关闭按钮
+    local CloseBtn = Instance.new("TextButton")
+    CloseBtn.AnchorPoint = Vector2.new(1,0.5)
+    CloseBtn.Position = UDim2.new(1,-8,0.5,0)
+    CloseBtn.Size = UDim2.new(0,24,0,24)
+    CloseBtn.BackgroundColor3 = Color3.fromRGB(180,40,40)
+    CloseBtn.Text = "X"
+    CloseBtn.TextColor3 = Color3.new(1,1,1)
+    CloseBtn.Font = Enum.Font.GothamBold
+    CloseBtn.TextSize =11
+    AddCorner(CloseBtn,UDim.new(1,0))
+    CloseBtn.Parent = TitleBar
+    CloseBtn.Activated:Connect(function()
+        WindowOpen = false
+        Window.Visible = false
     end)
-    refreshIslandText()
+
+    -- 窗口拖动逻辑
+    local Drag = false
+    local DragStart, WinStart
+    TitleBar.InputBegan:Connect(function(Input)
+        if Input.UserInputType == Enum.UserInputType.Touch then
+            Drag = true
+            DragStart = Input.Position
+            WinStart = Window.Position
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(Input)
+        if Drag and Input.UserInputType == Enum.UserInputType.Touch then
+            local Delta = Input.Position - DragStart
+            Window.Position = UDim2.new(WinStart.X.Scale, WinStart.X.Offset + Delta.X, WinStart.Y.Scale, WinStart.Y.Offset + Delta.Y)
+        end
+    end)
+    UserInputService.InputEnded:Connect(function(Input)
+        if Input.UserInputType == Enum.UserInputType.Touch then Drag = false end
+    end)
+
+    local Padding = Instance.new("UIPadding")
+    Padding.PaddingTop = UDim.new(0,40)
+    Padding.PaddingLeft = UDim.new(0,12)
+    Padding.PaddingRight = UDim.new(0,12)
+    Padding.Parent = Window
+
+    local Layout = Instance.new("UIListLayout")
+    Layout.Padding = UDim.new(0,8)
+    Layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    Layout.Parent = Window
+
+    -- 创建按钮工具
+    local function MakeBtn(Name, Callback)
+        local Btn = Instance.new("TextButton")
+        Btn.Size = UDim2.new(1,-10,0,32)
+        Btn.BackgroundColor3 = Color3.fromRGB(80,84,96)
+        Btn.Text = Name
+        Btn.TextColor3 = Color3.new(1,1,1)
+        Btn.Font = Enum.Font.Gotham
+        Btn.TextSize =12
+        AddCorner(Btn,UDim.new(0.12,0))
+        Btn.Parent = Window
+        Btn.Activated:Connect(Callback)
+        return Btn
+    end
+
+    local BtnFly = MakeBtn("飞行：关闭",function()
+        Fly = not Fly
+        BtnFly.Text = Fly and "飞行：开启" or "飞行：关闭"
+    end)
+    local BtnAntiKb = MakeBtn("防甩飞：关闭",function()
+        AntiKnockback = not AntiKnockback
+        BtnAntiKb.Text = AntiKnockback and "防甩飞：开启" or "防甩飞：关闭"
+    end)
+    local BtnInvis = MakeBtn("隐身：关闭",function()
+        Invisible = not Invisible
+        BtnInvis.Text = Invisible and "隐身：开启" or "隐身：关闭"
+        pcall(function()
+            local Char = LocalPlayer.Character
+            if not Char then return end
+            for _,v in ipairs(Char:GetDescendants()) do
+                if v:IsA("BasePart") then
+                    v.Transparency = Invisible and 1 or 0
+                elseif v:IsA("ParticleEmitter") then
+                    v.Enabled = not Invisible
+                end
+            end
+        end)
+    end)
+    local BtnHeal = MakeBtn("自动回血：关闭",function()
+        AutoHeal = not AutoHeal
+        BtnHeal.Text = AutoHeal and "自动回血：开启" or "自动回血：关闭"
+    end)
+    MakeBtn("重置角色",function()
+        pcall(function() LocalPlayer:LoadCharacter() end)
+    end)
 end
 
-clickBtn.Activated:Connect(function()
-    if isOpen then closePanel() else openPanel() end
-end)
+BuildWindow()
 
-closeBtn.Activated:Connect(closePanel)
+-- ========== 主循环｜飞行、功能逻辑（低检测风险） ==========
+RunService.RenderStepped:Connect(function()
+    pcall(function()
+        local Char = LocalPlayer.Character
+        if not Char then return end
+        local Hum = Char:FindFirstChildOfClass("Humanoid")
+        local Hrp = Char:FindFirstChild("HumanoidRootPart")
+        if not Hum or not Hrp then return end
+        local Cam = workspace.CurrentCamera
 
--- 进度条 & 时间刷新
-task.spawn(function()
-    while screenGui.Parent do
-        if sound.TimeLength > 0 then
-            local ratio = sound.TimePosition / sound.TimeLength
-            progressFill.Size = UDim2.new(math.clamp(ratio, 0, 1), 0, 1, 0)
-            timeText.Text = formatTime(sound.TimePosition) .. " / " .. formatTime(sound.TimeLength)
+        -- 飞行 CFrame位移
+        if Fly then
+            Hum.PlatformStand = true
+            local MoveDir = Vector3.zero
+            if UserInputService:IsKeyDown(Enum.KeyCode.W) then MoveDir += Cam.CFrame.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.S) then MoveDir -= Cam.CFrame.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.A) then MoveDir -= Cam.CFrame.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.D) then MoveDir += Cam.CFrame.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.Space) then MoveDir += Vector3.new(0,1,0) end
+            if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then MoveDir += Vector3.new(0,-1,0) end
+            if MoveDir.Magnitude > 0 then
+                MoveDir = MoveDir.Unit * FlySpeed
+                Hrp.CFrame = Hrp.CFrame + MoveDir
+            end
+        else
+            Hum.PlatformStand = false
         end
-        task.wait(0.1)
-    end
-end)
 
--- 面板内实时时间
-task.spawn(function()
-    while screenGui.Parent do
-        panelTime.Text = "当前时间：" .. os.date("%H:%M:%S")
-        if not isOpen and not isPlaying then
-            islandLabel.Text = os.date("%H:%M")
+        -- 防甩飞
+        if AntiKnockback then
+            if Hrp.Velocity.Magnitude > 70 then
+                Hrp.Velocity = Hrp.Velocity.Unit * 70
+            end
         end
-        task.wait(1)
-    end
+
+        -- 自动回血
+        if AutoHeal and Hum.Health < Hum.MaxHealth then
+            Hum.Health = Hum.MaxHealth
+        end
+
+        -- 选中玩家简易逻辑
+        local Plrs = Players:GetPlayers()
+        if #Plrs >= 2 then
+            SelectedPlayer = Plrs[2]
+        end
+    end)
 end)
 
--- 灵动岛跑马灯（只在播放且面板关闭时）
-RunService.Heartbeat:Connect(function(dt)
-    if isOpen or not isPlaying then return end
-    local textW = islandLabel.TextBounds.X
-    local containerW = labelContainer.AbsoluteSize.X
-    if textW <= containerW or containerW <= 0 then
-        islandLabel.Position = UDim2.new(0, 0, 0, 0)
-        return
+-- ========== GUI守护循环，防止界面被删除消失 ==========
+task.spawn(function()
+    while task.wait(1) do
+        pcall(function()
+            if HubGui.Parent ~= PlayerGui then
+                HubGui.Parent = PlayerGui
+            end
+        end)
     end
-    if marqueePause > 0 then
-        marqueePause = marqueePause - dt
-        return
-    end
-    marqueeX = marqueeX - dt * 40
-    if marqueeX < -textW - 20 then
-        marqueeX = containerW
-        marqueePause = 1.0
-    end
-    islandLabel.Position = UDim2.new(0, marqueeX, 0, 0)
 end)
-
--- 初始化
-updateMusicUI()
