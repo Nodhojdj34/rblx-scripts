@@ -1,7 +1,7 @@
 --[[
-    Roblox 悬浮控制台｜可见性修复版 v4
-    目标：灵动岛可点开 / 功能常驻不消失 / 界面清晰可见 / 飞行生效
-    可见性加固：去掉 UIGradient（部分客户端渐变渲染发黑）/ 背景显式不透明 / 配色提亮 / 亮描边轮廓
+    Roblox 悬浮控制台｜最终稳定版 v6
+    目标：灵动岛可点开 / 功能常驻不消失 / 界面可见 / 飞行生效
+    交互：岛触发走 UserInputService 坐标判定（不依赖在本环境不触发的按钮事件），命中判定先于 gameProcessed 跳过
     规避：CornerRadius直赋 / 非法Transparency / 前向引用 / WrapMode废弃API / 标签遮挡点击
     飞行：CFrame 位移式（RenderStepped 驱动），不依赖 Velocity，不易被游戏覆盖
 ]]
@@ -13,7 +13,7 @@ local Lighting = game:GetService("Lighting")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
-local GUI_NAME = "StableHubV4"
+local GUI_NAME = "StableHubV6"
 local oldGui = PlayerGui:FindFirstChild(GUI_NAME)
 if oldGui then oldGui:Destroy() end
 
@@ -29,6 +29,11 @@ local lastToggle = 0
 
 local setActiveView
 local applyInvisibility
+
+-- 岛热区常量（固定居中，不依赖控件 AbsolutePosition）
+local ISLAND_W = 120
+local ISLAND_H = 40
+local ISLAND_TOP = 12
 
 -- ============ 配色（提亮中灰，保证任何场景下轮廓与文字可见） ============
 local COLOR = {
@@ -67,21 +72,18 @@ local function addStroke(parent, color, thickness)
     return s
 end
 
--- ============ 灵动岛（按钮即胶囊，减少遮挡层，多层事件兜底） ============
-local IslandBtn = Instance.new("TextButton")
-IslandBtn.AnchorPoint = Vector2.new(0.5, 0)
-IslandBtn.Position = UDim2.new(0.5, 0, 0, 12)
-IslandBtn.Size = UDim2.new(0, 150, 0, 50)
-IslandBtn.BackgroundColor3 = COLOR.side
-IslandBtn.BackgroundTransparency = 0
-IslandBtn.Text = ""
-IslandBtn.Modal = true
-IslandBtn.Active = true
-IslandBtn.AutoButtonColor = false
-IslandBtn.ZIndex = 10
-IslandBtn.Parent = ScreenGui
-addCorner(IslandBtn, UDim.new(1, 0))
-addStroke(IslandBtn, COLOR.stroke, 1)
+-- ============ 灵动岛（纯视觉 Frame，不拦截输入；触发靠坐标判定） ============
+local IslandVisual = Instance.new("Frame")
+IslandVisual.AnchorPoint = Vector2.new(0.5, 0)
+IslandVisual.Position = UDim2.new(0.5, 0, 0, ISLAND_TOP)
+IslandVisual.Size = UDim2.new(0, 110, 0, 34)
+IslandVisual.BackgroundColor3 = COLOR.side
+IslandVisual.BackgroundTransparency = 0
+IslandVisual.Active = false
+IslandVisual.ZIndex = 10
+IslandVisual.Parent = ScreenGui
+addCorner(IslandVisual, UDim.new(1, 0))
+addStroke(IslandVisual, COLOR.stroke, 1)
 
 -- 左侧状态圆点（关闭=灰，打开=绿），不拦截输入
 local IslandDot = Instance.new("Frame")
@@ -92,7 +94,7 @@ IslandDot.BackgroundColor3 = Color3.fromRGB(150, 156, 168)
 IslandDot.BackgroundTransparency = 0
 IslandDot.Active = false
 IslandDot.ZIndex = 9
-IslandDot.Parent = IslandBtn
+IslandDot.Parent = IslandVisual
 addCorner(IslandDot, UDim.new(1, 0))
 
 local IslandLabel = Instance.new("TextLabel")
@@ -106,7 +108,7 @@ IslandLabel.Font = Enum.Font.GothamBold
 IslandLabel.TextSize = 13
 IslandLabel.Active = false
 IslandLabel.ZIndex = 9
-IslandLabel.Parent = IslandBtn
+IslandLabel.Parent = IslandVisual
 
 -- ============ 主窗口 ============
 local MainWindow = Instance.new("Frame")
@@ -130,7 +132,6 @@ TitleBar.ZIndex = 3
 TitleBar.Parent = MainWindow
 addCorner(TitleBar, UDim.new(0.09, 0))
 
--- 标题左侧装饰竖条
 local TitleAccent = Instance.new("Frame")
 TitleAccent.AnchorPoint = Vector2.new(0, 0.5)
 TitleAccent.Position = UDim2.new(0, 14, 0.5, 0)
@@ -499,7 +500,6 @@ local function refreshPlayerList()
                 refreshPlayerList()
             end)
 
-            -- 首字母圆块
             local avatar = Instance.new("Frame")
             avatar.AnchorPoint = Vector2.new(0, 0.5)
             avatar.Position = UDim2.new(0, 10, 0.5, 0)
@@ -559,7 +559,7 @@ end
 
 CloseBtn.Activated:Connect(closeMainWindow)
 
--- 灵动岛开关（防抖，避免多事件重复触发导致来回切换）
+-- 灵动岛开关（防抖）
 local function toggleIsland()
     local now = os.clock()
     if now - lastToggle < 0.25 then return end
@@ -567,25 +567,23 @@ local function toggleIsland()
     if isOpen then closeMainWindow() else openMainWindow() end
 end
 
-IslandBtn.Activated:Connect(toggleIsland)
-IslandBtn.MouseButton1Click:Connect(toggleIsland)
-IslandBtn.MouseButton1Down:Connect(toggleIsland)
-
--- 坐标命中兜底：原生按钮事件失效时，用触摸/鼠标位置判断是否点在岛上
+-- 岛热区命中：按屏幕居中固定矩形计算，不依赖控件 AbsolutePosition
 local function hitIsland(pos)
-    local p = IslandBtn.AbsolutePosition
-    local s = IslandBtn.AbsoluteSize
-    return pos.X >= p.X and pos.X <= p.X + s.X and pos.Y >= p.Y and pos.Y <= p.Y + s.Y
+    local vp = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(800, 600)
+    local cx = vp.X / 2
+    local left = cx - ISLAND_W / 2
+    local right = cx + ISLAND_W / 2
+    return pos.X >= left and pos.X <= right and pos.Y >= ISLAND_TOP and pos.Y <= ISLAND_TOP + ISLAND_H
 end
 
--- 快捷键 + 灵动岛坐标命中兜底
+-- 输入监听：岛命中判定放在 gameProcessed 跳过之前（点在 GUI 上 gp 可能为 true）
 UserInputService.InputBegan:Connect(function(input, gp)
-    if gp then return end
     if (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1)
         and hitIsland(input.Position) then
         toggleIsland()
         return
     end
+    if gp then return end
     if input.KeyCode == Enum.KeyCode.F1 then
         if isOpen then closeMainWindow() else openMainWindow() end
     elseif input.KeyCode == Enum.KeyCode.F2 then
