@@ -1,278 +1,879 @@
+-- ==================== 灵动岛 · 神级扩展终极版 (极限防Bug) ====================
+-- 适配：PC端与移动端通用，没有任何前置依赖，直接运行。
+
 local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+local SoundService = game:GetService("SoundService")
 
-local LocalPlayer = Players.LocalPlayer
-if not LocalPlayer then
-    LocalPlayer = Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+-- ==================== 音效系统 ====================
+local function playSound(soundId)
+	pcall(function()
+		local sound = Instance.new("Sound")
+		sound.SoundId = "rbxassetid://" .. soundId
+		sound.Volume = 0.25
+		sound.Parent = SoundService
+		sound:Play()
+		task.delay(2, function() if sound then sound:Destroy() end end)
+	end)
 end
-local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+local sndClick = 6895079853 
+local sndToggle = 6895077728 
+local sndWarn = 6895072181 
 
--- 清理所有旧GUI残留，防止旧界面遮挡
-for _,gui in ipairs(PlayerGui:GetChildren()) do
-    if gui:IsA("ScreenGui") and (gui.Name:find("Hub") or gui.Name:find("Island")) then
-        gui:Destroy()
-    end
+-- ==================== 高级配色主题 ====================
+local THEME = {
+	BgDark = Color3.fromRGB(12, 12, 18),
+	BgPanel = Color3.fromRGB(28, 28, 38),
+	Accent = Color3.fromRGB(0, 160, 255),
+	AccentGrad = ColorSequence.new{
+		ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 160, 255)), 
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(180, 0, 255))
+	},
+	TextWhite = Color3.fromRGB(255, 255, 255),
+	TextGray = Color3.fromRGB(170, 170, 180),
+	Success = Color3.fromRGB(40, 220, 120),
+	Danger = Color3.fromRGB(255, 60, 80)
+}
+
+-- ==================== 全局状态机 (防功能丢失) ====================
+local GlobalState = {
+	IsFlying = false, IsNoclipping = false, IsInfJump = false, IsFreecam = false,
+	IsAutoAttack = false, IsAutoRun = false, IsAutoJump = false, IsLockHealth = false,
+	TargetWalkSpeed = 16, TargetJumpPower = 50,
+	FlyBV = nil, FlyConn = nil, NoclipConn = nil, InfJumpConn = nil, 
+	AutoFarmConn = nil, AutoAttackConn = nil, AutoRunConn = nil, AutoJumpConn = nil, LockHealthConn = nil,
+	AntiCheatWarning = Instance.new("BindableEvent")
+}
+
+local MusicPlayer = Instance.new("Sound")
+MusicPlayer.Name = "GlobalMusicPlayer"
+MusicPlayer.Volume = 0.5
+MusicPlayer.Looped = true 
+MusicPlayer.Parent = workspace.CurrentCamera
+
+local function PanicDisableCheats(reason)
+	GlobalState.IsFlying = false; GlobalState.IsNoclipping = false; GlobalState.IsInfJump = false; GlobalState.IsAutoAttack = false
+	GlobalState.IsAutoRun = false; GlobalState.IsAutoJump = false; GlobalState.IsLockHealth = false
+	
+	if GlobalState.AutoAttackConn then task.cancel(GlobalState.AutoAttackConn); GlobalState.AutoAttackConn = nil end
+	if GlobalState.AutoRunConn then task.cancel(GlobalState.AutoRunConn); GlobalState.AutoRunConn = nil end
+	if GlobalState.AutoJumpConn then task.cancel(GlobalState.AutoJumpConn); GlobalState.AutoJumpConn = nil end
+	if GlobalState.LockHealthConn then task.cancel(GlobalState.LockHealthConn); GlobalState.LockHealthConn = nil end
+	
+	local char = player.Character
+	if char then
+		local hum = char:FindFirstChild("Humanoid"); local hrp = char:FindFirstChild("HumanoidRootPart")
+		if hum then GlobalState.TargetWalkSpeed = 16; GlobalState.TargetJumpPower = 50; hum.WalkSpeed = 16; hum.UseJumpPower = true; hum.JumpPower = 50; hum.PlatformStand = false end
+		if hrp then
+			if GlobalState.FlyBV then GlobalState.FlyBV:Destroy() GlobalState.FlyBV = nil end
+			for _, v in pairs(char:GetDescendants()) do if v:IsA("BasePart") then v.CanCollide = true end end
+		end
+		if GlobalState.FlyConn then GlobalState.FlyConn:Disconnect() GlobalState.FlyConn = nil end
+		if GlobalState.NoclipConn then GlobalState.NoclipConn:Disconnect() GlobalState.NoclipConn = nil end
+		if GlobalState.InfJumpConn then GlobalState.InfJumpConn:Disconnect() GlobalState.InfJumpConn = nil end
+	end
+	GlobalState.AntiCheatWarning:Fire(reason)
 end
 
--- 创建主GUI
-local HubGui = Instance.new("ScreenGui")
-HubGui.Name = "NewStableHub"
-HubGui.ResetOnSpawn = false
-HubGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
-HubGui.DisplayOrder = 999
-HubGui.IgnoreGuiInset = true
-HubGui.Parent = PlayerGui
+-- ==================== 顶层 UI ====================
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "DynamicIslandUltimateV5"
+screenGui.ResetOnSpawn = false
+screenGui.IgnoreGuiInset = true
+screenGui.DisplayOrder = 999999 
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent = playerGui
 
--- 状态变量
-local WindowOpen = false
-local Window = nil
-local Fly = false
-local FlySpeed = 2
-local AntiKnockback = false
-local Invisible = false
-local AutoHeal = false
-local SelectedPlayer = nil
-local Debounce = 0.25
-local LastClick = 0
-
--- 圆角工具函数
-local function AddCorner(Obj, Radius)
-    local Corner = Instance.new("UICorner")
-    Corner.CornerRadius = Radius
-    Corner.Parent = Obj
-end
-
--- ========== 灵动岛（按钮本体就是胶囊，无遮挡层！核心修复点击失效） ==========
-local IslandBtn = Instance.new("TextButton")
-IslandBtn.AnchorPoint = Vector2.new(0.5, 0)
-IslandBtn.Position = UDim2.new(0.5, 0, 0, 10)
-IslandBtn.Size = UDim2.new(0, 120, 0, 36)
-IslandBtn.BackgroundColor3 = Color3.fromRGB(28, 30, 36)
-IslandBtn.Text = ""
-IslandBtn.ZIndex = 10
-AddCorner(IslandBtn, UDim.new(1, 0))
-IslandBtn.Parent = HubGui
-
--- 灵动岛文字（Active=false，不拦截触摸）
-local IslandText = Instance.new("TextLabel")
-IslandText.Size = UDim2.new(1, 0, 1, 0)
-IslandText.BackgroundTransparency = 1
-IslandText.Text = "点我打开面板"
-IslandText.TextColor3 = Color3.new(1,1,1)
-IslandText.Font = Enum.Font.GothamBold
-IslandText.TextSize = 11
-IslandText.Active = false
-IslandText.Parent = IslandBtn
-
--- 切换窗口函数
-local function ToggleWindow()
-    local Now = os.clock()
-    if Now - LastClick < Debounce then return end
-    LastClick = Now
-    WindowOpen = not WindowOpen
-    if Window then
-        Window.Visible = WindowOpen
-    end
-end
-
--- 绑定多个点击事件兜底
-IslandBtn.Activated:Connect(ToggleWindow)
-IslandBtn.MouseButton1Click:Connect(ToggleWindow)
-IslandBtn.MouseButton1Down:Connect(ToggleWindow)
-
--- F1快捷键兜底
-UserInputService.InputBegan:Connect(function(Input, GameProcessed)
-    if GameProcessed then return end
-    if Input.KeyCode == Enum.KeyCode.F1 then
-        ToggleWindow()
-    end
+local uiVisible = true
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if not gameProcessed and input.KeyCode == Enum.KeyCode.H then
+		uiVisible = not uiVisible; screenGui.Enabled = uiVisible
+	end
 end)
 
--- ========== 构建主窗口（高对比纯色，杜绝黑屏） ==========
-local function BuildWindow()
-    if Window then return end
-    Window = Instance.new("Frame")
-    Window.AnchorPoint = Vector2.new(0.5,0.5)
-    Window.Position = UDim2.new(0.5,0,0.5,0)
-    Window.Size = UDim2.new(0, 420, 0, 320)
-    Window.BackgroundColor3 = Color3.fromRGB(55, 58, 66)
-    Window.Visible = false
-    Window.ZIndex = 11
-    AddCorner(Window, UDim.new(0.07,0))
-    Window.Parent = HubGui
+-- ==================== 1. 灵动岛本体 ====================
+local island = Instance.new("TextButton")
+island.AnchorPoint = Vector2.new(0.5, 0) 
+island.Position = UDim2.new(0.5, 0, 0, 15) 
+island.Size = UDim2.fromOffset(180, 40)
+island.BackgroundColor3 = THEME.BgDark
+island.Text = ""; island.AutoButtonColor = false; island.ZIndex = 10
+island.Parent = screenGui
 
-    -- 标题栏（拖动）
-    local TitleBar = Instance.new("Frame")
-    TitleBar.Size = UDim2.new(1,0,0,32)
-    TitleBar.BackgroundColor3 = Color3.fromRGB(70,74,84)
-    TitleBar.Parent = Window
-    AddCorner(TitleBar, UDim.new(0.07,0))
-
-    local TitleLabel = Instance.new("TextLabel")
-    TitleLabel.Size = UDim2.new(1,-40,1,0)
-    TitleLabel.BackgroundTransparency = 1
-    TitleLabel.Text = "功能面板"
-    TitleLabel.TextColor3 = Color3.new(1,1,1)
-    TitleLabel.Font = Enum.Font.GothamBold
-    TitleLabel.TextSize =13
-    TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
-    TitleLabel.Position = UDim2.new(0,10,0,0)
-    TitleLabel.Active = false
-    TitleLabel.Parent = TitleBar
-
-    -- 关闭按钮
-    local CloseBtn = Instance.new("TextButton")
-    CloseBtn.AnchorPoint = Vector2.new(1,0.5)
-    CloseBtn.Position = UDim2.new(1,-8,0.5,0)
-    CloseBtn.Size = UDim2.new(0,24,0,24)
-    CloseBtn.BackgroundColor3 = Color3.fromRGB(180,40,40)
-    CloseBtn.Text = "X"
-    CloseBtn.TextColor3 = Color3.new(1,1,1)
-    CloseBtn.Font = Enum.Font.GothamBold
-    CloseBtn.TextSize =11
-    AddCorner(CloseBtn,UDim.new(1,0))
-    CloseBtn.Parent = TitleBar
-    CloseBtn.Activated:Connect(function()
-        WindowOpen = false
-        Window.Visible = false
-    end)
-
-    -- 窗口拖动逻辑
-    local Drag = false
-    local DragStart, WinStart
-    TitleBar.InputBegan:Connect(function(Input)
-        if Input.UserInputType == Enum.UserInputType.Touch then
-            Drag = true
-            DragStart = Input.Position
-            WinStart = Window.Position
-        end
-    end)
-    UserInputService.InputChanged:Connect(function(Input)
-        if Drag and Input.UserInputType == Enum.UserInputType.Touch then
-            local Delta = Input.Position - DragStart
-            Window.Position = UDim2.new(WinStart.X.Scale, WinStart.X.Offset + Delta.X, WinStart.Y.Scale, WinStart.Y.Offset + Delta.Y)
-        end
-    end)
-    UserInputService.InputEnded:Connect(function(Input)
-        if Input.UserInputType == Enum.UserInputType.Touch then Drag = false end
-    end)
-
-    local Padding = Instance.new("UIPadding")
-    Padding.PaddingTop = UDim.new(0,40)
-    Padding.PaddingLeft = UDim.new(0,12)
-    Padding.PaddingRight = UDim.new(0,12)
-    Padding.Parent = Window
-
-    local Layout = Instance.new("UIListLayout")
-    Layout.Padding = UDim.new(0,8)
-    Layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-    Layout.Parent = Window
-
-    -- 创建按钮工具
-    local function MakeBtn(Name, Callback)
-        local Btn = Instance.new("TextButton")
-        Btn.Size = UDim2.new(1,-10,0,32)
-        Btn.BackgroundColor3 = Color3.fromRGB(80,84,96)
-        Btn.Text = Name
-        Btn.TextColor3 = Color3.new(1,1,1)
-        Btn.Font = Enum.Font.Gotham
-        Btn.TextSize =12
-        AddCorner(Btn,UDim.new(0.12,0))
-        Btn.Parent = Window
-        Btn.Activated:Connect(Callback)
-        return Btn
-    end
-
-    local BtnFly = MakeBtn("飞行：关闭",function()
-        Fly = not Fly
-        BtnFly.Text = Fly and "飞行：开启" or "飞行：关闭"
-    end)
-    local BtnAntiKb = MakeBtn("防甩飞：关闭",function()
-        AntiKnockback = not AntiKnockback
-        BtnAntiKb.Text = AntiKnockback and "防甩飞：开启" or "防甩飞：关闭"
-    end)
-    local BtnInvis = MakeBtn("隐身：关闭",function()
-        Invisible = not Invisible
-        BtnInvis.Text = Invisible and "隐身：开启" or "隐身：关闭"
-        pcall(function()
-            local Char = LocalPlayer.Character
-            if not Char then return end
-            for _,v in ipairs(Char:GetDescendants()) do
-                if v:IsA("BasePart") then
-                    v.Transparency = Invisible and 1 or 0
-                elseif v:IsA("ParticleEmitter") then
-                    v.Enabled = not Invisible
-                end
-            end
-        end)
-    end)
-    local BtnHeal = MakeBtn("自动回血：关闭",function()
-        AutoHeal = not AutoHeal
-        BtnHeal.Text = AutoHeal and "自动回血：开启" or "自动回血：关闭"
-    end)
-    MakeBtn("重置角色",function()
-        pcall(function() LocalPlayer:LoadCharacter() end)
-    end)
-end
-
-BuildWindow()
-
--- ========== 主循环｜飞行、功能逻辑（低检测风险） ==========
-RunService.RenderStepped:Connect(function()
-    pcall(function()
-        local Char = LocalPlayer.Character
-        if not Char then return end
-        local Hum = Char:FindFirstChildOfClass("Humanoid")
-        local Hrp = Char:FindFirstChild("HumanoidRootPart")
-        if not Hum or not Hrp then return end
-        local Cam = workspace.CurrentCamera
-
-        -- 飞行 CFrame位移
-        if Fly then
-            Hum.PlatformStand = true
-            local MoveDir = Vector3.zero
-            if UserInputService:IsKeyDown(Enum.KeyCode.W) then MoveDir += Cam.CFrame.LookVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.S) then MoveDir -= Cam.CFrame.LookVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.A) then MoveDir -= Cam.CFrame.RightVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.D) then MoveDir += Cam.CFrame.RightVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.Space) then MoveDir += Vector3.new(0,1,0) end
-            if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then MoveDir += Vector3.new(0,-1,0) end
-            if MoveDir.Magnitude > 0 then
-                MoveDir = MoveDir.Unit * FlySpeed
-                Hrp.CFrame = Hrp.CFrame + MoveDir
-            end
-        else
-            Hum.PlatformStand = false
-        end
-
-        -- 防甩飞
-        if AntiKnockback then
-            if Hrp.Velocity.Magnitude > 70 then
-                Hrp.Velocity = Hrp.Velocity.Unit * 70
-            end
-        end
-
-        -- 自动回血
-        if AutoHeal and Hum.Health < Hum.MaxHealth then
-            Hum.Health = Hum.MaxHealth
-        end
-
-        -- 选中玩家简易逻辑
-        local Plrs = Players:GetPlayers()
-        if #Plrs >= 2 then
-            SelectedPlayer = Plrs[2]
-        end
-    end)
-end)
-
--- ========== GUI守护循环，防止界面被删除消失 ==========
+local islandGrad = Instance.new("UIGradient"); islandGrad.Color = THEME.AccentGrad; islandGrad.Parent = island
 task.spawn(function()
-    while task.wait(1) do
-        pcall(function()
-            if HubGui.Parent ~= PlayerGui then
-                HubGui.Parent = PlayerGui
-            end
-        end)
-    end
+	while island.Parent do
+		TweenService:Create(islandGrad, TweenInfo.new(3, Enum.EasingStyle.Sine), {Rotation = 180}):Play()
+		task.wait(3)
+		TweenService:Create(islandGrad, TweenInfo.new(3, Enum.EasingStyle.Sine), {Rotation = 0}):Play()
+		task.wait(3)
+	end
 end)
+
+local islandCorner = Instance.new("UICorner"); islandCorner.CornerRadius = UDim.new(1, 0); islandCorner.Parent = island
+local islandStroke = Instance.new("UIStroke"); islandStroke.Color = Color3.fromRGB(150, 150, 255); islandStroke.Thickness = 1.5; islandStroke.Transparency = 0.4; islandStroke.Parent = island
+
+local collapsedText = Instance.new("TextLabel")
+collapsedText.Size = UDim2.fromScale(1, 1); collapsedText.BackgroundTransparency = 1
+collapsedText.Text = "✨ 控制中心 (按H隐藏) ✨"; collapsedText.TextColor3 = THEME.TextWhite
+collapsedText.Font = Enum.Font.GothamBold; collapsedText.TextSize = 13; collapsedText.ZIndex = 11
+collapsedText.Parent = island
+
+local expandedFrame = Instance.new("Frame")
+expandedFrame.Size = UDim2.fromScale(1, 1); expandedFrame.BackgroundTransparency = 1
+expandedFrame.Visible = false; expandedFrame.ZIndex = 12; expandedFrame.Parent = island
+
+local uiList = Instance.new("UIListLayout")
+uiList.FillDirection = Enum.FillDirection.Horizontal
+uiList.HorizontalAlignment = Enum.HorizontalAlignment.Center
+uiList.VerticalAlignment = Enum.VerticalAlignment.Center
+uiList.Padding = UDim.new(0, 4); uiList.Parent = expandedFrame
+
+local function createCategoryBtn(text, icon)
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.fromOffset(74, 34); btn.BackgroundColor3 = THEME.BgPanel
+	btn.Text = icon .. " " .. text; btn.TextColor3 = THEME.TextWhite
+	btn.TextSize = 11; btn.Font = Enum.Font.GothamBold; btn.AutoButtonColor = false
+	btn.ZIndex = 13; btn.Parent = expandedFrame
+
+	local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 8); c.Parent = btn
+	local s = Instance.new("UIStroke"); s.Color = Color3.fromRGB(80,80,90); s.Thickness = 1; s.Transparency = 0.5; s.Parent = btn
+	
+	btn.MouseEnter:Connect(function() 
+		TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(60, 60, 75)}):Play()
+		TweenService:Create(s, TweenInfo.new(0.2), {Color = THEME.Accent, Transparency = 0}):Play()
+	end)
+	btn.MouseLeave:Connect(function() 
+		TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = THEME.BgPanel}):Play()
+		TweenService:Create(s, TweenInfo.new(0.2), {Color = Color3.fromRGB(80,80,90), Transparency = 0.5}):Play()
+	end)
+	btn.Activated:Connect(function() playSound(sndClick) end)
+	return btn
+end
+
+local btnHome = createCategoryBtn("状态", "📊")
+local btnSettings = createCategoryBtn("属性", "⚡")
+local btnTools = createCategoryBtn("实用", "🛠️")
+local btnVisuals = createCategoryBtn("视觉", "👁️")
+local btnUtils = createCategoryBtn("坐标", "📌") 
+local btnPlayers = createCategoryBtn("玩家", "👥")
+local btnAntiCheat = createCategoryBtn("安全", "🛡️") 
+local btnMusic = createCategoryBtn("音乐", "🎵") 
+local btnAssist = createCategoryBtn("辅助", "🎯") 
+
+local isExpanded = false
+local isAnimating = false
+local tweenInfo = TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+
+local function toggleIsland()
+	if isAnimating then return end
+	isAnimating = true; isExpanded = not isExpanded
+
+	collapsedText.Visible = not isExpanded
+	expandedFrame.Visible = isExpanded
+	playSound(isExpanded and sndToggle or sndClick)
+
+	local tw = TweenService:Create(island, tweenInfo, { Size = UDim2.fromOffset(isExpanded and 720 or 180, isExpanded and 56 or 40) })
+	local twC = TweenService:Create(islandCorner, tweenInfo, { CornerRadius = isExpanded and UDim.new(0, 16) or UDim.new(1, 0) })
+	tw:Play(); twC:Play()
+	tw.Completed:Connect(function() isAnimating = false; tw:Destroy(); twC:Destroy() end)
+end
+island.Activated:Connect(toggleIsland)
+
+-- ==================== 2. 窗口管理器 ====================
+local currentZIndex = 50
+local windowCount = 0
+
+local function bringToFront(win)
+	currentZIndex = currentZIndex + 1
+	if currentZIndex > 5000 then currentZIndex = 50 end
+	win.ZIndex = currentZIndex
+	for _, child in ipairs(win:GetDescendants()) do
+		if child:IsA("GuiObject") then
+			if child:GetAttribute("BaseZ") then child.ZIndex = currentZIndex + child:GetAttribute("BaseZ") 
+			else child.ZIndex = currentZIndex + 1 end
+		end
+	end
+end
+
+local function makeDraggable(frame, dragArea)
+	local dragging, dragStart, startPos
+	dragArea.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = true; dragStart = input.Position; startPos = frame.Position
+			bringToFront(frame)
+			input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
+		end
+	end)
+	UserInputService.InputChanged:Connect(function(input)
+		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+			local delta = input.Position - dragStart
+			frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+		end
+	end)
+end
+
+local function makeResizable(frame, resizeGrip)
+	local resizing, resizeStart, startSize
+	resizeGrip.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			resizing = true; resizeStart = input.Position; startSize = frame.AbsoluteSize
+			bringToFront(frame)
+			input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then resizing = false end end)
+		end
+	end)
+	UserInputService.InputChanged:Connect(function(input)
+		if resizing and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+			local delta = input.Position - resizeStart
+			local newWidth = math.max(300, startSize.X + delta.X)
+			local newHeight = math.max(200, startSize.Y + delta.Y)
+			frame.Size = UDim2.fromOffset(newWidth, newHeight)
+		end
+	end)
+end
+
+local function createWindow(titleStr, height)
+	if isExpanded and not isAnimating then toggleIsland() end
+	windowCount = windowCount + 1
+	local offset = (windowCount % 5) * 25
+
+	local win = Instance.new("Frame")
+	win.Size = UDim2.fromOffset(340, height or 260)
+	win.AnchorPoint = Vector2.new(0.5, 0.5)
+	win.Position = UDim2.new(0.5, offset, 0.5, offset)
+	win.BackgroundColor3 = THEME.BgDark
+	win.BackgroundTransparency = 0.05 
+	win.BorderSizePixel = 0
+	win.ClipsDescendants = true
+	win.Parent = screenGui
+	win:SetAttribute("BaseZ", 0)
+	
+	local shadow = Instance.new("ImageLabel")
+	shadow.Size = UDim2.new(1, 30, 1, 30); shadow.Position = UDim2.new(0, -15, 0, -15)
+	shadow.BackgroundTransparency = 1; shadow.Image = "rbxassetid://1316045217"
+	shadow.ImageColor3 = Color3.new(0,0,0); shadow.ImageTransparency = 0.4; shadow.ScaleType = Enum.ScaleType.Slice
+	shadow.SliceCenter = Rect.new(10,10,118,118); shadow.Parent = win; shadow:SetAttribute("BaseZ", -1)
+
+	local winGrad = Instance.new("UIGradient")
+	winGrad.Color = ColorSequence.new{ColorSequenceKeypoint.new(0, Color3.fromRGB(35, 35, 45)), ColorSequenceKeypoint.new(1, Color3.fromRGB(15, 15, 20))}
+	winGrad.Rotation = 45; winGrad.Parent = win
+
+	local winCorner = Instance.new("UICorner"); winCorner.CornerRadius = UDim.new(0, 16); winCorner.Parent = win
+	local winStroke = Instance.new("UIStroke"); winStroke.Color = Color3.fromRGB(100, 100, 120); winStroke.Thickness = 1.5; winStroke.Transparency = 0.3; winStroke.Parent = win
+
+	local topBar = Instance.new("TextButton")
+	topBar.Size = UDim2.new(1, 0, 0, 48)
+	topBar.BackgroundColor3 = Color3.fromRGB(45, 45, 55); topBar.BackgroundTransparency = 0.2
+	topBar.Text = "  " .. titleStr
+	topBar.TextColor3 = THEME.TextWhite; topBar.Font = Enum.Font.GothamBold; topBar.TextSize = 15
+	topBar.TextXAlignment = Enum.TextXAlignment.Left; topBar.AutoButtonColor = false
+	topBar.Parent = win; topBar:SetAttribute("BaseZ", 1)
+	
+	local tbCorner = Instance.new("UICorner"); tbCorner.CornerRadius = UDim.new(0, 16); tbCorner.Parent = topBar
+	
+	local closeBtn = Instance.new("TextButton")
+	closeBtn.AnchorPoint = Vector2.new(1, 0.5); closeBtn.Position = UDim2.new(1, -15, 0.5, 0)
+	closeBtn.Size = UDim2.fromOffset(26, 26); closeBtn.BackgroundColor3 = THEME.Danger
+	closeBtn.Text = "✕"; closeBtn.TextColor3 = THEME.TextWhite; closeBtn.TextSize = 14
+	closeBtn.Font = Enum.Font.GothamBold; closeBtn.AutoButtonColor = false
+	closeBtn.Parent = topBar; closeBtn:SetAttribute("BaseZ", 2)
+	
+	local cbCorner = Instance.new("UICorner"); cbCorner.CornerRadius = UDim.new(1, 0); cbCorner.Parent = closeBtn
+
+	local content = Instance.new("Frame")
+	content.Size = UDim2.new(1, -30, 1, -60); content.Position = UDim2.new(0, 15, 0, 55)
+	content.BackgroundTransparency = 1; content.Parent = win; content:SetAttribute("BaseZ", 1)
+	
+	local scroll = Instance.new("ScrollingFrame")
+	scroll.Size = UDim2.fromScale(1,1); scroll.BackgroundTransparency = 1
+	scroll.ScrollBarThickness = 2; scroll.CanvasSize = UDim2.new(0,0,0,0)
+	scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	scroll.ScrollBarImageTransparency = 0.5
+	scroll.Parent = content; scroll:SetAttribute("BaseZ", 1)
+
+	local resizeGrip = Instance.new("TextButton")
+	resizeGrip.AnchorPoint = Vector2.new(1, 1); resizeGrip.Position = UDim2.new(1, 0, 1, 0)
+	resizeGrip.Size = UDim2.fromOffset(25, 25); resizeGrip.BackgroundTransparency = 1
+	resizeGrip.Text = "⤡"; resizeGrip.TextColor3 = THEME.TextGray; resizeGrip.TextSize = 20
+	resizeGrip.AutoButtonColor = false; resizeGrip.ZIndex = 50; resizeGrip.Parent = win
+
+	makeDraggable(win, topBar)
+	makeResizable(win, resizeGrip)
+	win.InputBegan:Connect(function() bringToFront(win) end)
+	
+	closeBtn.Activated:Connect(function() 
+		playSound(sndClick)
+		local tw = TweenService:Create(win, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Size = UDim2.fromOffset(0,0), BackgroundTransparency = 1})
+		tw:Play(); tw.Completed:Connect(function() win:Destroy() end)
+	end)
+
+	local originalSize = win.Size
+	win.Size = UDim2.fromOffset(0, 0); win.BackgroundTransparency = 1
+	TweenService:Create(win, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = originalSize, BackgroundTransparency = 0.05}):Play()
+
+	bringToFront(win)
+	return scroll
+end
+
+-- ==================== 3. UI 组件生成器 ====================
+local function createActionBtn(parent, textStr, yPos, isToggle, callback, initialState)
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(1, 0, 0, 38); btn.Position = UDim2.new(0, 0, 0, yPos)
+	btn.BackgroundColor3 = (isToggle and initialState) and THEME.Success or (isToggle and THEME.BgPanel or THEME.Accent)
+	btn.Text = textStr .. (isToggle and (initialState and " : 开启" or " : 关闭") or "")
+	btn.TextColor3 = THEME.TextWhite; btn.Font = Enum.Font.GothamBold; btn.TextSize = 14
+	btn.Parent = parent; btn:SetAttribute("BaseZ", 2)
+	local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 8); c.Parent = btn
+	
+	local state = initialState or false
+	if isToggle then btn:SetAttribute("IsActive", state) end
+	
+	btn.MouseEnter:Connect(function() TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = state and THEME.Success or (isToggle and Color3.fromRGB(50,50,65) or Color3.fromRGB(0,180,255))}):Play() end)
+	btn.MouseLeave:Connect(function() TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = state and THEME.Success or (isToggle and THEME.BgPanel or THEME.Accent)}):Play() end)
+	
+	btn.Activated:Connect(function()
+		if isToggle then
+			state = not state
+			btn.BackgroundColor3 = state and THEME.Success or THEME.BgPanel
+			btn.Text = textStr .. (state and " : 开启" or " : 关闭")
+			btn:SetAttribute("IsActive", state)
+			playSound(sndToggle)
+		else
+			playSound(sndClick)
+		end
+		callback(state, btn)
+	end)
+	
+	btn:GetAttributeChangedSignal("IsActive"):Connect(function()
+		local active = btn:GetAttribute("IsActive")
+		if active ~= state and isToggle then
+			state = active; btn.BackgroundColor3 = state and THEME.Success or THEME.BgPanel
+			btn.Text = textStr .. (state and " : 开启" or " : 关闭")
+		end
+	end)
+	return btn
+end
+
+local function createSlider(parent, textStr, minVal, maxVal, defaultVal, yPos, callback)
+	local container = Instance.new("Frame")
+	container.Size = UDim2.new(1, 0, 0, 45); container.Position = UDim2.new(0, 0, 0, yPos)
+	container.BackgroundTransparency = 1; container.Parent = parent; container:SetAttribute("BaseZ", 2)
+
+	local title = Instance.new("TextLabel")
+	title.Size = UDim2.new(1, 0, 0, 20); title.BackgroundTransparency = 1
+	title.Text = textStr .. ": " .. tostring(defaultVal); title.TextColor3 = THEME.TextGray
+	title.TextXAlignment = Enum.TextXAlignment.Left; title.Font = Enum.Font.GothamMedium; title.TextSize = 13
+	title.Parent = container; title:SetAttribute("BaseZ", 3)
+
+	local track = Instance.new("Frame")
+	track.Size = UDim2.new(1, 0, 0, 8); track.Position = UDim2.new(0, 0, 0, 28)
+	track.BackgroundColor3 = Color3.fromRGB(60, 60, 70); track.Parent = container; track:SetAttribute("BaseZ", 3)
+	local tCorner = Instance.new("UICorner"); tCorner.CornerRadius = UDim.new(1,0); tCorner.Parent = track
+
+	local fill = Instance.new("Frame")
+	fill.Size = UDim2.new((defaultVal-minVal)/(maxVal-minVal), 0, 1, 0)
+	fill.BackgroundColor3 = THEME.Accent; fill.Parent = track; fill:SetAttribute("BaseZ", 3)
+	local fCorner = Instance.new("UICorner"); fCorner.CornerRadius = UDim.new(1,0); fCorner.Parent = fill
+
+	local knob = Instance.new("TextButton")
+	knob.AnchorPoint = Vector2.new(0.5, 0.5); knob.Size = UDim2.fromOffset(18, 18)
+	knob.Position = UDim2.new((defaultVal-minVal)/(maxVal-minVal), 0, 0.5, 0)
+	knob.BackgroundColor3 = Color3.new(1, 1, 1); knob.Text = ""; knob.AutoButtonColor = false
+	knob.Parent = track; knob:SetAttribute("BaseZ", 4)
+	local kCorner = Instance.new("UICorner"); kCorner.CornerRadius = UDim.new(1,0); kCorner.Parent = knob
+
+	local draggingSlider = false
+	local function updateValue(inputX)
+		local relX = math.clamp((inputX - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1)
+		fill.Size = UDim2.new(relX, 0, 1, 0); knob.Position = UDim2.new(relX, 0, 0.5, 0)
+		local val = minVal + relX * (maxVal - minVal)
+		title.Text = textStr .. ": " .. (type(defaultVal) == "number" and math.floor(val) or tostring(val))
+		callback(val)
+	end
+	track.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then draggingSlider = true; updateValue(input.Position.X) end end)
+	knob.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then draggingSlider = true end end)
+	UserInputService.InputChanged:Connect(function(input) if draggingSlider and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then updateValue(input.Position.X) end end)
+	UserInputService.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then draggingSlider = false end end)
+end
+
+-- ==================== 4. 功能实现 ====================
+
+local function openHomeWindow()
+	local content = createWindow("📊 性能与状态", 190)
+	local fpsLabel = Instance.new("TextLabel"); fpsLabel.Size = UDim2.new(1, 0, 0, 30); fpsLabel.BackgroundTransparency = 1
+	fpsLabel.Text = "FPS: 计算中..."; fpsLabel.TextColor3 = THEME.TextWhite; fpsLabel.TextXAlignment = Enum.TextXAlignment.Left; fpsLabel.Font = Enum.Font.GothamBold; fpsLabel.Parent = content; fpsLabel:SetAttribute("BaseZ", 2)
+
+	local pingLabel = Instance.new("TextLabel"); pingLabel.Size = UDim2.new(1, 0, 0, 30); pingLabel.Position = UDim2.new(0, 0, 0, 30); pingLabel.BackgroundTransparency = 1
+	pingLabel.Text = "Ping: 计算中..."; pingLabel.TextColor3 = THEME.TextWhite; pingLabel.TextXAlignment = Enum.TextXAlignment.Left; pingLabel.Font = Enum.Font.GothamBold; pingLabel.Parent = content; pingLabel:SetAttribute("BaseZ", 2)
+
+	local frames = 0; local lastTime = tick(); local connection
+	connection = RunService.RenderStepped:Connect(function()
+		if not content.Parent then connection:Disconnect() return end
+		frames = frames + 1; local now = tick()
+		if now - lastTime >= 1 then
+			fpsLabel.Text = string.format("FPS: %d", frames)
+			pcall(function() pingLabel.Text = string.format("Ping: %d ms", math.floor(player:GetNetworkPing() * 1000)) end)
+			frames = 0; lastTime = now
+		end
+	end)
+	createActionBtn(content, "🔄 重置角色", 75, false, function() if player.Character and player.Character:FindFirstChild("Humanoid") then player.Character.Humanoid.Health = 0 end end)
+end
+
+local function openSettingsWindow()
+	local content = createWindow("⚡ 属性调节", 190)
+	createSlider(content, "移动速度", 16, 300, GlobalState.TargetWalkSpeed, 0, function(val)
+		GlobalState.TargetWalkSpeed = val
+		if player.Character and player.Character:FindFirstChild("Humanoid") then player.Character.Humanoid.WalkSpeed = val end
+	end)
+	createSlider(content, "跳跃高度", 50, 400, GlobalState.TargetJumpPower, 55, function(val)
+		GlobalState.TargetJumpPower = val
+		if player.Character and player.Character:FindFirstChild("Humanoid") then player.Character.Humanoid.UseJumpPower = true; player.Character.Humanoid.JumpPower = val end
+	end)
+end
+
+local savedCFrame = nil
+local function openToolsWindow()
+	local content = createWindow("🛠️ 神仙实用工具", 340)
+	
+	local flyBtn = createActionBtn(content, "🕊️ 自由飞行模式", 0, true, function(state)
+		GlobalState.IsFlying = state
+		local char = player.Character
+		if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+		local hrp = char.HumanoidRootPart; local hum = char:FindFirstChild("Humanoid")
+		if state then
+			if hum then hum.PlatformStand = true end
+			GlobalState.FlyBV = Instance.new("BodyVelocity"); GlobalState.FlyBV.Name = "FlyBV"; GlobalState.FlyBV.MaxForce = Vector3.new(math.huge, math.huge, math.huge); GlobalState.FlyBV.Velocity = Vector3.new(0,0,0); GlobalState.FlyBV.Parent = hrp
+			GlobalState.FlyConn = RunService.Heartbeat:Connect(function()
+				if not char.Parent or not hrp.Parent or not GlobalState.IsFlying then if GlobalState.FlyConn then GlobalState.FlyConn:Disconnect() end return end
+				local cam = workspace.CurrentCamera; local moveDir = Vector3.new(0,0,0)
+				if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + cam.CFrame.LookVector end
+				if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - cam.CFrame.LookVector end
+				if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - cam.CFrame.RightVector end
+				if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + cam.CFrame.RightVector end
+				if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveDir = moveDir + Vector3.new(0,1,0) end
+				if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then moveDir = moveDir - Vector3.new(0,1,0) end
+				if moveDir.Magnitude > 0 then GlobalState.FlyBV.Velocity = moveDir.Unit * 60 else GlobalState.FlyBV.Velocity = Vector3.new(0,0,0) end
+			end)
+		else
+			if hum then hum.PlatformStand = false end
+			if GlobalState.FlyBV then GlobalState.FlyBV:Destroy(); GlobalState.FlyBV = nil end
+			if GlobalState.FlyConn then GlobalState.FlyConn:Disconnect(); GlobalState.FlyConn = nil end
+		end
+	end, GlobalState.IsFlying)
+
+	local jumpBtn = createActionBtn(content, "🦘 无限跳跃", 45, true, function(state)
+		GlobalState.IsInfJump = state
+		if state then
+			GlobalState.InfJumpConn = UserInputService.JumpRequest:Connect(function()
+				if player.Character and player.Character:FindFirstChildOfClass("Humanoid") then player.Character:FindFirstChildOfClass("Humanoid"):ChangeState(Enum.HumanoidStateType.Jumping) end
+			end)
+		elseif GlobalState.InfJumpConn then GlobalState.InfJumpConn:Disconnect() end
+	end, GlobalState.IsInfJump)
+
+	local noclipBtn = createActionBtn(content, "👻 穿墙模式 (Noclip)", 90, true, function(state)
+		GlobalState.IsNoclipping = state
+		if state then
+			GlobalState.NoclipConn = RunService.Stepped:Connect(function()
+				if player.Character then
+					for _, v in pairs(player.Character:GetDescendants()) do if v:IsA("BasePart") and v.CanCollide then v.CanCollide = false end end
+				end
+			end)
+		elseif GlobalState.NoclipConn then GlobalState.NoclipConn:Disconnect() end
+	end, GlobalState.IsNoclipping)
+	
+	createActionBtn(content, "🌊 水上行走 (本地)", 135, true, function(state)
+		for _, v in pairs(workspace:GetDescendants()) do
+			if v:IsA("BasePart") and v.Material == Enum.Material.Water then
+				v.CanCollide = state
+			end
+		end
+	end)
+
+	createActionBtn(content, "🖱️ 点击传送 (开)", 180, false, function()
+		local clickConn
+		clickConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+			if not gameProcessed and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
+				local cam = workspace.CurrentCamera
+				local ray = Ray.new(cam.CFrame.Position, cam.CFrame.LookVector * 1000)
+				local hitPart, hitPos = workspace:FindPartOnRay(ray, player.Character)
+				if hitPos and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+					player.Character.HumanoidRootPart.CFrame = CFrame.new(hitPos + Vector3.new(0, 5, 0))
+				end
+			end
+		end)
+		task.delay(5, function() if clickConn then clickConn:Disconnect() end end)
+	end)
+
+	createActionBtn(content, "💾 保存当前坐标", 225, false, function() if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then savedCFrame = player.Character.HumanoidRootPart.CFrame end end)
+	createActionBtn(content, "📍 传送回保存点", 270, false, function() if savedCFrame and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then player.Character.HumanoidRootPart.CFrame = savedCFrame end end)
+end
+
+local function openMusicWindow()
+	local content = createWindow("🎵 云端音乐播放器", 320)
+	
+	local statusLbl = Instance.new("TextLabel"); statusLbl.Size = UDim2.new(1, 0, 0, 25); statusLbl.BackgroundTransparency = 1
+	statusLbl.Text = "状态: 准备就绪"; statusLbl.TextColor3 = THEME.TextWhite; statusLbl.TextXAlignment = Enum.TextXAlignment.Left; statusLbl.Font = Enum.Font.GothamBold; statusLbl.TextSize = 13
+	statusLbl.Parent = content; statusLbl:SetAttribute("BaseZ", 2)
+
+	local inputBox = Instance.new("TextBox"); inputBox.Size = UDim2.new(0.65, 0, 0, 35); inputBox.Position = UDim2.new(0, 0, 0, 30)
+	inputBox.BackgroundColor3 = Color3.fromRGB(40, 40, 50); inputBox.TextColor3 = THEME.TextWhite; inputBox.PlaceholderText = "输入纯数字ID..."
+	inputBox.PlaceholderColor3 = THEME.TextGray; inputBox.Font = Enum.Font.GothamMedium; inputBox.TextSize = 13
+	inputBox.Text = ""; inputBox.ClearTextOnFocus = false; inputBox.Parent = content; inputBox:SetAttribute("BaseZ", 2)
+	local ibCorner = Instance.new("UICorner"); ibCorner.CornerRadius = UDim.new(0, 8); ibCorner.Parent = inputBox
+
+	local playBtn = Instance.new("TextButton"); playBtn.Size = UDim2.new(0.3, 0, 0, 35); playBtn.Position = UDim2.new(0.7, 0, 0, 30)
+	playBtn.BackgroundColor3 = THEME.Accent; playBtn.Text = "播放"; playBtn.TextColor3 = THEME.TextWhite; playBtn.Font = Enum.Font.GothamBold; playBtn.TextSize = 14
+	playBtn.Parent = content; playBtn:SetAttribute("BaseZ", 2)
+	local pbCorner = Instance.new("UICorner"); pbCorner.CornerRadius = UDim.new(0, 8); pbCorner.Parent = playBtn
+
+	local isPlaying = false
+	playBtn.Activated:Connect(function()
+		if isPlaying then
+			MusicPlayer:Pause(); isPlaying = false; playBtn.Text = "播放"; playBtn.BackgroundColor3 = THEME.Accent
+			statusLbl.Text = "状态: 已暂停"
+		else
+			local cleanId = string.match(inputBox.Text, "%d+")
+			if cleanId then
+				statusLbl.Text = "状态: 正在加载音频..."; statusLbl.TextColor3 = THEME.Accent
+				pcall(function() MusicPlayer.SoundId = "rbxassetid://" .. cleanId; MusicPlayer:Play() end)
+				task.delay(2, function()
+					if MusicPlayer.TimeLength == 0 then
+						statusLbl.Text = "❌ 加载失败: 无版权/已下架"; statusLbl.TextColor3 = THEME.Danger; MusicPlayer:Stop()
+					else
+						isPlaying = true; playBtn.Text = "暂停"; playBtn.BackgroundColor3 = THEME.Danger
+						statusLbl.Text = "状态: 正在播放 ID " .. cleanId; statusLbl.TextColor3 = THEME.Success
+					end
+				end)
+			else statusLbl.Text = "❌ 错误: 请输入纯数字 ID"; statusLbl.TextColor3 = THEME.Danger end
+		end
+	end)
+
+	createActionBtn(content, "🎶 预设: 测试音 A", 75, false, function() inputBox.Text = "1836247391"; statusLbl.Text = "已填入，请点击播放"; statusLbl.TextColor3 = THEME.Success end)
+	createActionBtn(content, "🎶 预设: 测试音 B", 115, false, function() inputBox.Text = "9119861469"; statusLbl.Text = "已填入，请点击播放"; statusLbl.TextColor3 = THEME.Success end)
+
+	createSlider(content, "音量", 0, 1, 0.5, 160, function(val) MusicPlayer.Volume = val end)
+	createActionBtn(content, "⏹️ 彻底停止并卸载", 215, false, function()
+		MusicPlayer:Stop(); MusicPlayer.SoundId = ""; isPlaying = false; playBtn.Text = "播放"; playBtn.BackgroundColor3 = THEME.Accent
+		statusLbl.Text = "状态: 已停止"; statusLbl.TextColor3 = THEME.TextGray
+	end)
+end
+
+local espFolder = Instance.new("Folder", screenGui)
+local localGlow = nil
+local function openVisualsWindow()
+	local content = createWindow("👁️ 视觉增强", 260)
+	createActionBtn(content, "🔴 穿墙透视 (ESP)", 0, true, function(state)
+		if state then
+			for _, p in ipairs(Players:GetPlayers()) do
+				if p ~= player and p.Character then
+					local hl = Instance.new("Highlight"); hl.Name = p.Name; hl.Adornee = p.Character
+					hl.FillColor = Color3.fromRGB(255, 50, 50); hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop; hl.Parent = espFolder
+				end
+			end
+		else espFolder:ClearAllChildren() end
+	end)
+	
+	createActionBtn(content, "✨ 本地角色发光", 45, true, function(state)
+		if state then
+			local char = player.Character
+			if char then
+				localGlow = Instance.new("Highlight")
+				localGlow.Adornee = char
+				localGlow.FillColor = Color3.fromRGB(0, 255, 255)
+				localGlow.OutlineColor = Color3.fromRGB(255, 255, 255)
+				localGlow.Parent = espFolder
+			end
+		else
+			if localGlow then localGlow:Destroy(); localGlow = nil end
+		end
+	end)
+
+	createActionBtn(content, "🌫️ 本地隐身", 90, true, function(state)
+		local function setTransparency(val) if player.Character then for _, v in pairs(player.Character:GetDescendants()) do if v:IsA("BasePart") or v:IsA("Decal") then v.LocalTransparencyModifier = val end end end end
+		if state then
+			setTransparency(1)
+			local c = player.CharacterAdded:Connect(function() task.wait(0.5); setTransparency(1) end)
+			content.Destroying:Connect(function() c:Disconnect(); setTransparency(0) end)
+		else setTransparency(0) end
+	end)
+	
+	createActionBtn(content, "🌙 全局夜视", 135, true, function(state)
+		if state then Lighting.Ambient = Color3.fromRGB(150, 150, 150); Lighting.OutdoorAmbient = Color3.fromRGB(150, 150, 150)
+		else Lighting.Ambient = Color3.fromRGB(70, 70, 70); Lighting.OutdoorAmbient = Color3.fromRGB(128, 128, 128) end
+	end)
+end
+
+local function openUtilsWindow()
+	local content = createWindow("📌 坐标与快捷操作", 240)
+	local coordLabel = Instance.new("TextLabel"); coordLabel.Size = UDim2.new(1, 0, 0, 30); coordLabel.BackgroundTransparency = 1
+	coordLabel.Text = "坐标获取中..."; coordLabel.TextColor3 = THEME.Success; coordLabel.TextXAlignment = Enum.TextXAlignment.Left; coordLabel.Font = Enum.Font.GothamBold; coordLabel.TextSize = 14
+	coordLabel.Parent = content; coordLabel:SetAttribute("BaseZ", 2)
+
+	local updateCoordConn
+	updateCoordConn = RunService.RenderStepped:Connect(function()
+		if not content.Parent then updateCoordConn:Disconnect() return end
+		local char = player.Character
+		if char and char:FindFirstChild("HumanoidRootPart") then
+			local pos = char.HumanoidRootPart.Position
+			coordLabel.Text = string.format("📍 X: %d, Y: %d, Z: %d", pos.X, pos.Y, pos.Z)
+		end
+	end)
+
+	createActionBtn(content, "🎯 传送到准星位置", 40, false, function()
+		local cam = workspace.CurrentCamera
+		if cam then
+			local ray = Ray.new(cam.CFrame.Position, cam.CFrame.LookVector * 1000)
+			local hitPart, hitPos = workspace:FindPartOnRay(ray, player.Character)
+			if hitPos and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+				player.Character.HumanoidRootPart.CFrame = CFrame.new(hitPos + Vector3.new(0, 5, 0))
+			end
+		end
+	end)
+	createActionBtn(content, "☀️ 清除环境特效 (去雾/去雨)", 85, false, function()
+		Lighting.FogEnd = 100000; Lighting.FogStart = 0
+		for _, v in pairs(Lighting:GetChildren()) do if v:IsA("Atmosphere") then v.Density = 0 end end
+	end)
+end
+
+local function openPlayerWindow()
+	local content = createWindow("👥 玩家列表", 260)
+	local scroll = Instance.new("ScrollingFrame"); scroll.Size = UDim2.fromScale(1, 1); scroll.BackgroundTransparency = 1; scroll.ScrollBarThickness = 4; scroll.Parent = content; scroll:SetAttribute("BaseZ", 2)
+	local list = Instance.new("UIListLayout"); list.Padding = UDim.new(0, 8); list.Parent = scroll
+
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= player then
+			local health = p.Character and p.Character:FindFirstChild("Humanoid") and math.floor(p.Character.Humanoid.Health) .. " HP" or "未知"
+			local pBtn = Instance.new("TextButton"); pBtn.Size = UDim2.new(1, -8, 0, 36); pBtn.BackgroundColor3 = THEME.BgPanel
+			pBtn.Text = string.format("%s (%s)", p.Name, health); pBtn.TextColor3 = THEME.TextWhite; pBtn.Font = Enum.Font.GothamBold; pBtn.TextSize = 13
+			pBtn.Parent = scroll; pBtn:SetAttribute("BaseZ", 2)
+			local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 6); c.Parent = pBtn
+			pBtn.Activated:Connect(function()
+				playSound(sndClick)
+				local char = player.Character; local targetChar = p.Character
+				if char and char:FindFirstChild("HumanoidRootPart") and targetChar and targetChar:FindFirstChild("HumanoidRootPart") then
+					char.HumanoidRootPart.CFrame = targetChar.HumanoidRootPart.CFrame * CFrame.new(0, 0, 3)
+				end
+			end)
+		end
+	end
+end
+
+local function openAntiCheatWindow()
+	local content = createWindow("🛡️ 智能安全中心", 300)
+	local statusLabel = Instance.new("TextLabel"); statusLabel.Size = UDim2.new(1, 0, 0, 40); statusLabel.BackgroundTransparency = 1
+	statusLabel.Text = "状态: 监控中... 未检测到服务器干预"; statusLabel.TextColor3 = THEME.Success; statusLabel.TextXAlignment = Enum.TextXAlignment.Left; statusLabel.Font = Enum.Font.GothamBold; statusLabel.TextSize = 13
+	statusLabel.TextWrapped = true; statusLabel.Parent = content; statusLabel:SetAttribute("BaseZ", 2)
+
+	local logScroll = Instance.new("ScrollingFrame"); logScroll.Size = UDim2.new(1, 0, 1, -100); logScroll.Position = UDim2.new(0, 0, 0, 45)
+	logScroll.BackgroundColor3 = Color3.fromRGB(20, 20, 25); logScroll.BorderSizePixel = 0; logScroll.ScrollBarThickness = 3; logScroll.Parent = content; logScroll:SetAttribute("BaseZ", 2)
+	local sc = Instance.new("UICorner"); sc.CornerRadius = UDim.new(0, 8); sc.Parent = logScroll
+	local list = Instance.new("UIListLayout"); list.Padding = UDim.new(0, 5); list.Parent = logScroll
+
+	local function addLog(text, color)
+		local lbl = Instance.new("TextLabel"); lbl.Size = UDim2.new(1, -10, 0, 25); lbl.BackgroundTransparency = 1
+		lbl.Text = text; lbl.TextColor3 = color or THEME.TextGray; lbl.TextXAlignment = Enum.TextXAlignment.Left; lbl.Font = Enum.Font.GothamMedium; lbl.TextSize = 12
+		lbl.Parent = logScroll
+	end
+
+	createActionBtn(content, "🛡️ 紧急断臂求生 (立刻关闭危险功能)", 210, false, function() PanicDisableCheats("你手动触发了紧急自保！") end)
+
+	local checkConn
+	checkConn = task.spawn(function()
+		while content.Parent do
+			task.wait(0.5)
+			local char = player.Character
+			if char then
+				local hum = char:FindFirstChild("Humanoid"); local hrp = char:FindFirstChild("HumanoidRootPart")
+				if hum and hrp then
+					local triggered = false; local reason = ""
+					if GlobalState.TargetWalkSpeed > 25 and math.abs(hum.WalkSpeed - GlobalState.TargetWalkSpeed) > 10 then triggered = true; reason = "移动速度被服务器强制重置" end
+					if GlobalState.IsFlying and hum.FloorMaterial ~= Enum.Material.Air and not hrp:FindFirstChild("FlyBV") then triggered = true; reason = "飞行状态被服务器强制中断" end
+					if GlobalState.IsNoclipping and (hum:GetState() == Enum.HumanoidStateType.Ragdoll or hum:GetState() == Enum.HumanoidStateType.FallingDown) then triggered = true; reason = "疑似穿墙触发物理回弹" end
+					
+					if triggered then
+						statusLabel.Text = "⚠️ 警告: 检测到服务器反作弊干预！\n已自动关闭所有危险功能保命。"; statusLabel.TextColor3 = THEME.Danger
+						addLog("[警告] 触发原因: " .. reason, THEME.Danger); addLog("[系统] 已执行断臂求生，恢复安全属性。", THEME.Success)
+						playSound(sndWarn); PanicDisableCheats(reason); task.wait(3)
+					end
+				end
+			end
+		end
+	end)
+
+	local warnConn = GlobalState.AntiCheatWarning.Event:Connect(function(reason)
+		if content.Parent then statusLabel.Text = "⚠️ 警告: " .. reason .. "\n已自动执行断臂求生！"; statusLabel.TextColor3 = THEME.Danger; addLog("[系统] 已强制恢复: " .. reason, THEME.Danger) end
+	end)
+
+	content.Destroying:Connect(function() if checkConn then task.cancel(checkConn) end; if warnConn then warnConn:Disconnect() end end)
+end
+
+-- 🎯 辅助与战斗面板 (新增自动奔跑、自动跳跃、锁血、性能模式)
+local function openAssistWindow()
+	local content = createWindow("🎯 战斗与辅助增强", 400)
+	
+	createActionBtn(content, "⚔️ 自动攻击 (Auto-Attack)", 0, true, function(state)
+		GlobalState.IsAutoAttack = state
+		if state then
+			GlobalState.AutoAttackConn = task.spawn(function()
+				while GlobalState.IsAutoAttack do
+					task.wait(0.1)
+					local char = player.Character
+					if char then
+						local tool = char:FindFirstChildOfClass("Tool")
+						if tool then pcall(function() tool:Activate() end) end
+						pcall(function()
+							local vim = game:GetService("VirtualInputManager")
+							vim:SendMouseButtonEvent(0, 0, 0, true, game, 1)
+							task.wait(0.01)
+							vim:SendMouseButtonEvent(0, 0, 0, false, game, 1)
+						end)
+					end
+				end
+			end)
+		else
+			if GlobalState.AutoAttackConn then task.cancel(GlobalState.AutoAttackConn); GlobalState.AutoAttackConn = nil end
+		end
+	end, GlobalState.IsAutoAttack)
+
+	createActionBtn(content, "🏃 自动奔跑 (Auto-Run)", 45, true, function(state)
+		GlobalState.IsAutoRun = state
+		if state then
+			GlobalState.AutoRunConn = task.spawn(function()
+				while GlobalState.IsAutoRun do
+					task.wait(0.1)
+					local char = player.Character
+					if char then
+						local hum = char:FindFirstChild("Humanoid")
+						if hum then
+							-- 持续施加向前的力 (基于相机视角)
+							local cam = workspace.CurrentCamera
+							local moveDir = cam.CFrame.LookVector
+							hum:Move(moveDir, false)
+						end
+					end
+				end
+			end)
+		else
+			if GlobalState.AutoRunConn then task.cancel(GlobalState.AutoRunConn); GlobalState.AutoRunConn = nil end
+		end
+	end, GlobalState.IsAutoRun)
+
+	createActionBtn(content, "🦘 自动跳跃 (Auto-Jump)", 90, true, function(state)
+		GlobalState.IsAutoJump = state
+		if state then
+			GlobalState.AutoJumpConn = RunService.Heartbeat:Connect(function()
+				local char = player.Character
+				if char then
+					local hum = char:FindFirstChild("Humanoid")
+					if hum and hum.FloorMaterial ~= Enum.Material.Air then
+						hum:ChangeState(Enum.HumanoidStateType.Jumping)
+					end
+				end
+			end)
+		else
+			if GlobalState.AutoJumpConn then GlobalState.AutoJumpConn:Disconnect(); GlobalState.AutoJumpConn = nil end
+		end
+	end, GlobalState.IsAutoJump)
+	
+	createActionBtn(content, "🛡️ 锁定血量 (本地)", 135, true, function(state)
+		GlobalState.IsLockHealth = state
+		if state then
+			GlobalState.LockHealthConn = task.spawn(function()
+				while GlobalState.IsLockHealth do
+					task.wait(0.5)
+					local char = player.Character
+					if char then
+						local hum = char:FindFirstChild("Humanoid")
+						if hum and hum.Health < hum.MaxHealth then
+							hum.Health = hum.MaxHealth
+						end
+					end
+				end
+			end)
+		else
+			if GlobalState.LockHealthConn then task.cancel(GlobalState.LockHealthConn); GlobalState.LockHealthConn = nil end
+		end
+	end, GlobalState.IsLockHealth)
+
+	createSlider(content, "视野缩放 (FOV)", 50, 120, workspace.CurrentCamera.FieldOfView, 180, function(val)
+		if workspace.CurrentCamera then workspace.CurrentCamera.FieldOfView = val end
+	end)
+
+	local freecamConn, freecamBV
+	createActionBtn(content, "👁️ 自由视角 (Freecam)", 235, true, function(state)
+		local cam = workspace.CurrentCamera
+		if state then
+			GlobalState.IsFreecam = true
+			cam.CameraType = Enum.CameraType.Scriptable
+			freecamBV = Instance.new("BodyVelocity", cam)
+			freecamBV.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+			freecamBV.Velocity = Vector3.new(0,0,0)
+			
+			freecamConn = RunService.RenderStepped:Connect(function()
+				if not GlobalState.IsFreecam then return end
+				local moveDir = Vector3.new(0,0,0)
+				if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + cam.CFrame.LookVector end
+				if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - cam.CFrame.LookVector end
+				if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - cam.CFrame.RightVector end
+				if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + cam.CFrame.RightVector end
+				if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveDir = moveDir + Vector3.new(0,1,0) end
+				if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then moveDir = moveDir - Vector3.new(0,1,0) end
+				if moveDir.Magnitude > 0 then freecamBV.Velocity = moveDir.Unit * 60 else freecamBV.Velocity = Vector3.new(0,0,0) end
+			end)
+		else
+			GlobalState.IsFreecam = false
+			cam.CameraType = Enum.CameraType.Custom
+			if freecamConn then freecamConn:Disconnect() end
+			if freecamBV then freecamBV:Destroy() end
+		end
+	end)
+	
+	createActionBtn(content, "📦 自动采集/交互", 280, true, function(state)
+		if state then
+			GlobalState.AutoFarmConn = task.spawn(function()
+				while GlobalState.AutoFarmConn do
+					task.wait(0.5)
+					local char = player.Character
+					if char and char:FindFirstChild("HumanoidRootPart") then
+						for _, v in pairs(workspace:GetDescendants()) do
+							if v:IsA("ProximityPrompt") and v.Enabled then
+								local obj = v.Parent
+								if obj and obj:IsA("BasePart") and (obj.Position - char.HumanoidRootPart.Position).Magnitude < 20 then
+									fireproximityprompt(v)
+								end
+							end
+						end
+					end
+				end
+			end)
+		else
+			if GlobalState.AutoFarmConn then task.cancel(GlobalState.AutoFarmConn); GlobalState.AutoFarmConn = nil end
+		end
+	end)
+
+	createActionBtn(content, "🎨 纯色极简模式 (去贴图)", 325, false, function()
+		Lighting.GlobalShadows = false; Lighting.FogEnd = 100000
+		for _, v in pairs(workspace:GetDescendants()) do
+			if v:IsA("Decal") or v:IsA("Texture") then v.Transparency = 1 end
+			if v:IsA("ParticleEmitter") or v:IsA("Smoke") or v:IsA("Fire") or v:IsA("Sparkles") then v.Enabled = false end
+			if v:IsA("BasePart") and v.Material ~= Enum.Material.Plastic then v.Material = Enum.Material.SmoothPlastic end
+		end
+	end)
+end
+
+-- ==================== 绑定事件 ====================
+btnHome.Activated:Connect(openHomeWindow)
+btnSettings.Activated:Connect(openSettingsWindow)
+btnTools.Activated:Connect(openToolsWindow)
+btnVisuals.Activated:Connect(openVisualsWindow)
+btnUtils.Activated:Connect(openUtilsWindow) 
+btnPlayers.Activated:Connect(openPlayerWindow)
+btnAntiCheat.Activated:Connect(openAntiCheatWindow)
+btnMusic.Activated:Connect(openMusicWindow)
+btnAssist.Activated:Connect(openAssistWindow)
