@@ -1,268 +1,310 @@
-TM-- Island for Roblox | v1.0.0
--- Place this LocalScript in StarterPlayer > StarterPlayerScripts.
--- Client-only UI for your own Roblox experience. No executor required.
--- Charging is a simulated state, not a reading of the device battery.
-
-local Config = {
-    Accent = Color3.fromRGB(184, 164, 255),
-    Scale = 0.80,
-    TopOffset = 8,
-    Animation = "spring",
-    AutoCollapse = true,
-    SafeArea = true,
-    StartMode = "music",
-    CollapseAfter = 8,
-    ToggleKey = Enum.KeyCode.I,
-}
+--[[
+    🍏 Roblox 真实苹果灵动岛脚本 (PC & 移动端通用)
+    功能: 时间显示, FPS/Ping监控, 玩家通知, 速度/跳跃修改, 夜视仪
+]]
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local Stats = game:GetService("Stats")
+local Lighting = game:GetService("Lighting")
 local UserInputService = game:GetService("UserInputService")
-local SoundService = game:GetService("SoundService")
-local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
 
-local previous = playerGui:FindFirstChild("RobloxDynamicIsland")
-if previous then previous:Destroy() end
-local previousApi = playerGui:FindFirstChild("IslandAPI")
-if previousApi then previousApi:Destroy() end
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
-local function make(className, properties, parent)
-    local object = Instance.new(className)
-    for key, value in pairs(properties) do object[key] = value end
-    object.Parent = parent
-    return object
+-- 防止重复运行
+if PlayerGui:FindFirstChild("AppleDynamicIsland") then
+    PlayerGui.AppleDynamicIsland:Destroy()
 end
 
-local function round(object, radius)
-    make("UICorner", { CornerRadius = UDim.new(0, radius) }, object)
-end
+-- 创建主 ScreenGui (忽略顶部安全区，完美贴合屏幕顶端)
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "AppleDynamicIsland"
+ScreenGui.IgnoreGuiInset = true
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent = PlayerGui
 
-local connections = {}
-local alive = true
-local function listen(signal, callback)
-    local connection = signal:Connect(callback)
-    table.insert(connections, connection)
-    return connection
-end
+-- 灵动岛主框架
+local Island = Instance.new("Frame")
+Island.Name = "Island"
+Island.AnchorPoint = Vector2.new(0.5, 0)
+Island.Position = UDim2.new(0.5, 0, 0, 12) -- 距离顶部12像素
+Island.Size = UDim2.new(0, 130, 0, 32) -- 初始大小 (胶囊状)
+Island.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+Island.BorderSizePixel = 0
+Island.ClipsDescendants = true
+Island.Active = true
+Island.Parent = ScreenGui
 
-local gui = make("ScreenGui", {
-    Name = "RobloxDynamicIsland",
-    ResetOnSpawn = false,
-    DisplayOrder = 50,
-    ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-    ScreenInsets = Config.SafeArea and Enum.ScreenInsets.CoreUISafeInsets
-        or Enum.ScreenInsets.DeviceSafeInsets,
-    ClipToDeviceSafeArea = true,
-}, playerGui)
+local IslandCorner = Instance.new("UICorner")
+IslandCorner.CornerRadius = UDim.new(0, 20)
+IslandCorner.Parent = Island
 
-local api = make("BindableEvent", { Name = "IslandAPI" }, playerGui)
-local sound = make("Sound", { Name = "IslandMusic", Volume = 0.5 }, SoundService)
-local root = make("Frame", {
-    Name = "Anchor",
-    AnchorPoint = Vector2.new(0.5, 0),
-    Position = UDim2.new(0.5, 0, 0, Config.TopOffset),
-    Size = UDim2.fromOffset(320, 152),
-    BackgroundTransparency = 1,
-}, gui)
-local uiScale = make("UIScale", { Scale = Config.Scale }, root)
-local pill = make("TextButton", {
-    Name = "Island",
-    AnchorPoint = Vector2.new(0.5, 0),
-    Position = UDim2.fromScale(0.5, 0),
-    Size = UDim2.fromOffset(192, 40),
-    BackgroundColor3 = Color3.fromRGB(7, 8, 9),
-    BorderSizePixel = 0,
-    Text = "",
-    AutoButtonColor = false,
-    ClipsDescendants = true,
-}, root)
-round(pill, 26)
-make("UIStroke", { Color = Color3.fromRGB(50, 51, 53), Thickness = 1, Transparency = 0.4 }, pill)
+local IslandStroke = Instance.new("UIStroke")
+IslandStroke.Color = Color3.fromRGB(45, 45, 45)
+IslandStroke.Thickness = 1
+IslandStroke.Parent = Island
 
-local white = Color3.fromRGB(246, 246, 248)
-local gray = Color3.fromRGB(145, 147, 154)
-local function text(parent, name, value, x, y, width, height, size, color)
-    return make("TextLabel", {
-        Name = name,
-        BackgroundTransparency = 1,
-        Position = UDim2.fromOffset(x, y),
-        Size = UDim2.fromOffset(width, height),
-        Font = Enum.Font.GothamMedium,
-        Text = value,
-        TextSize = size,
-        TextColor3 = color or white,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        TextTruncate = Enum.TextTruncate.AtEnd,
-        ZIndex = 2,
-    }, parent)
-end
+-- 动画配置 (模仿苹果的弹性动画)
+local ExpandTweenInfo = TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+local CollapseTweenInfo = TweenInfo.new(0.4, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
 
-local compact = make("Frame", {
-    Name = "Compact", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1),
-}, pill)
-local miniArt = make("Frame", {
-    Position = UDim2.fromOffset(9, 8), Size = UDim2.fromOffset(24, 24),
-    BackgroundColor3 = Color3.fromRGB(235, 163, 178), BorderSizePixel = 0,
-}, compact)
-round(miniArt, 7)
-make("UIGradient", {
-    Color = ColorSequence.new(Color3.fromRGB(250, 209, 179), Color3.fromRGB(152, 117, 162)),
-    Rotation = 45,
-}, miniArt)
-text(miniArt, "Note", "~", 5, 0, 20, 24, 23, Color3.fromRGB(91, 73, 89))
-local miniTitle = text(compact, "Title", "Sakura", 43, 8, 100, 24, 12)
-local bars = {}
-for i = 1, 5 do
-    local bar = make("Frame", {
-        Name = "Wave" .. i,
-        AnchorPoint = Vector2.new(0, 0.5),
-        Position = UDim2.new(1, -37 + (i - 1) * 5, 0.5, 0),
-        Size = UDim2.fromOffset(3, 8 + i * 2),
-        BackgroundColor3 = Config.Accent, BorderSizePixel = 0,
-    }, compact)
-    round(bar, 2)
-    table.insert(bars, bar)
-end
-
-local expanded = make("Frame", {
-    Name = "Expanded", BackgroundTransparency = 1,
-    Size = UDim2.fromOffset(320, 152), Visible = false,
-}, pill)
-local art = miniArt:Clone()
-art.Name = "Artwork"
-art.Position = UDim2.fromOffset(18, 18)
-art.Size = UDim2.fromOffset(44, 44)
-art.Parent = expanded
-local title = text(expanded, "Title", "Sakura", 75, 19, 205, 23, 15)
-local subtitle = text(expanded, "Subtitle", "Garden sessions", 75, 43, 220, 18, 11, gray)
-local body = text(expanded, "Body", "", 19, 76, 282, 24, 12, gray)
-local track = make("Frame", {
-    Position = UDim2.fromOffset(19, 82), Size = UDim2.fromOffset(282, 4),
-    BackgroundColor3 = Color3.fromRGB(53, 54, 57), BorderSizePixel = 0,
-}, expanded)
-round(track, 2)
-local fill = make("Frame", {
-    Size = UDim2.fromScale(0.17, 1), BackgroundColor3 = Config.Accent, BorderSizePixel = 0,
-}, track)
-round(fill, 2)
-local elapsedLabel = text(expanded, "Elapsed", "0:32", 19, 90, 55, 15, 9, gray)
-local remainingLabel = text(expanded, "Remaining", "-2:36", 246, 90, 55, 15, 9, gray)
-remainingLabel.TextXAlignment = Enum.TextXAlignment.Right
-local timerCount = text(expanded, "Countdown", "1:00", 19, 65, 164, 62, 42, Config.Accent)
-timerCount.Font = Enum.Font.Gotham
-timerCount.Visible = false
-
-local function button(name, value, x, width, color)
-    local object = make("TextButton", {
-        Name = name, Text = value, Font = Enum.Font.GothamBold,
-        TextSize = 20, TextColor3 = color or white,
-        Position = UDim2.fromOffset(x, 109), Size = UDim2.fromOffset(width, 31),
-        BackgroundColor3 = Color3.fromRGB(31, 32, 34), BackgroundTransparency = 1,
-        BorderSizePixel = 0, AutoButtonColor = false, ZIndex = 3,
-    }, expanded)
-    round(object, 14)
-    return object
-end
-local back = button("Previous", "<<", 78, 42)
-local play = button("PlayPause", "II", 138, 44)
-local forward = button("Next", ">>", 200, 42)
-local accept = button("Accept", "Accept", 169, 125, Config.Accent)
-local dismiss = button("Dismiss", "Dismiss", 25, 125, gray)
-accept.TextSize = 13
-dismiss.TextSize = 13
-accept.BackgroundTransparency = 0
-dismiss.BackgroundTransparency = 0
-
-local state = "music"
+-- 状态变量
 local isExpanded = false
-local playing = true
-local seconds = 32
-local length = 188
-local timerDeadline = 0
-local timerPaused = false
-local timerRemaining = 0
-local callStarted = nil
-local revision = 0
-local collapseRevision = 0
-local sizeTween = nil
-local setExpanded
-local setState
+local isNotifying = false
 
-local function clock(value)
-    value = math.max(0, math.floor(value))
-    return string.format("%d:%02d", math.floor(value / 60), value % 60)
+-- ================= 1. 待机界面元素 =================
+local CompactFrame = Instance.new("Frame")
+CompactFrame.Size = UDim2.new(1, 0, 1, 0)
+CompactFrame.BackgroundTransparency = 1
+CompactFrame.Parent = Island
+
+local TimeLabel = Instance.new("TextLabel")
+TimeLabel.Size = UDim2.new(0.6, 0, 1, 0)
+TimeLabel.Position = UDim2.new(0.1, 0, 0, 0)
+TimeLabel.BackgroundTransparency = 1
+TimeLabel.Text = "12:00"
+TimeLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+TimeLabel.Font = Enum.Font.GothamBold
+TimeLabel.TextSize = 14
+TimeLabel.TextXAlignment = Enum.TextXAlignment.Left
+TimeLabel.Parent = CompactFrame
+
+-- 绿色状态呼吸灯
+local StatusDot = Instance.new("Frame")
+StatusDot.Size = UDim2.new(0, 8, 0, 8)
+StatusDot.AnchorPoint = Vector2.new(1, 0.5)
+StatusDot.Position = UDim2.new(0.9, 0, 0.5, 0)
+StatusDot.BackgroundColor3 = Color3.fromRGB(48, 209, 88) -- 苹果绿
+StatusDot.Parent = CompactFrame
+Instance.new("UICorner", StatusDot).CornerRadius = UDim.new(1, 0)
+
+-- ================= 2. 通知界面元素 =================
+local NotifyFrame = Instance.new("Frame")
+NotifyFrame.Size = UDim2.new(1, 0, 1, 0)
+NotifyFrame.BackgroundTransparency = 1
+NotifyFrame.Visible = false
+NotifyFrame.Parent = Island
+
+local NotifyText = Instance.new("TextLabel")
+NotifyText.Size = UDim2.new(0.9, 0, 1, 0)
+NotifyText.Position = UDim2.new(0.05, 0, 0, 0)
+NotifyText.BackgroundTransparency = 1
+NotifyText.Text = "通知内容"
+NotifyText.TextColor3 = Color3.fromRGB(255, 255, 255)
+NotifyText.Font = Enum.Font.GothamMedium
+NotifyText.TextSize = 14
+NotifyText.Parent = NotifyFrame
+
+-- ================= 3. 展开菜单元素 (实用功能) =================
+local ExpandedFrame = Instance.new("Frame")
+ExpandedFrame.Size = UDim2.new(1, 0, 1, 0)
+ExpandedFrame.BackgroundTransparency = 1
+ExpandedFrame.Visible = false
+ExpandedFrame.Parent = Island
+
+-- 玩家头像
+local Avatar = Instance.new("ImageLabel")
+Avatar.Size = UDim2.new(0, 45, 0, 45)
+Avatar.Position = UDim2.new(0, 15, 0, 15)
+Avatar.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+Avatar.Image = Players:GetUserThumbnailAsync(LocalPlayer.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size420x420)
+Avatar.Parent = ExpandedFrame
+Instance.new("UICorner", Avatar).CornerRadius = UDim.new(1, 0)
+
+-- 玩家名字 & 性能监控
+local StatsLabel = Instance.new("TextLabel")
+StatsLabel.Size = UDim2.new(0, 200, 0, 45)
+StatsLabel.Position = UDim2.new(0, 70, 0, 15)
+StatsLabel.BackgroundTransparency = 1
+StatsLabel.Text = LocalPlayer.DisplayName .. "\nFPS: 60 | Ping: 50ms"
+StatsLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+StatsLabel.Font = Enum.Font.Gotham
+StatsLabel.TextSize = 13
+StatsLabel.TextXAlignment = Enum.TextXAlignment.Left
+StatsLabel.Parent = ExpandedFrame
+
+-- 按钮容器
+local ButtonContainer = Instance.new("Frame")
+ButtonContainer.Size = UDim2.new(1, -30, 0, 90)
+ButtonContainer.Position = UDim2.new(0, 15, 0, 75)
+ButtonContainer.BackgroundTransparency = 1
+ButtonContainer.Parent = ExpandedFrame
+
+local GridLayout = Instance.new("UIGridLayout")
+GridLayout.CellSize = UDim2.new(0.48, 0, 0, 40)
+GridLayout.CellPadding = UDim2.new(0.04, 0, 0, 10)
+GridLayout.Parent = ButtonContainer
+
+-- 创建功能按钮的辅助函数
+local function createButton(name, text, callback)
+    local btn = Instance.new("TextButton")
+    btn.Name = name
+    btn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    btn.Text = text
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.Font = Enum.Font.GothamMedium
+    btn.TextSize = 13
+    btn.AutoButtonColor = false
+    btn.Parent = ButtonContainer
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 12)
+    
+    local isToggled = false
+    btn.Activated:Connect(function()
+        isToggled = not isToggled
+        -- 按钮点击颜色反馈 (苹果蓝)
+        TweenService:Create(btn, TweenInfo.new(0.2), {
+            BackgroundColor3 = isToggled and Color3.fromRGB(10, 132, 255) or Color3.fromRGB(35, 35, 35)
+        }):Play()
+        callback(isToggled, btn)
+    end)
 end
 
-local function scheduleCollapse()
-    collapseRevision += 1
-    local version = collapseRevision
-    if Config.AutoCollapse then
-        task.delay(Config.CollapseAfter, function()
-            if alive and version == collapseRevision then setExpanded(false) end
-        end)
+-- === 添加实用功能 ===
+
+-- 1. 超级加速
+createButton("SpeedBtn", "⚡ 超级加速", function(toggled)
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+        LocalPlayer.Character.Humanoid.WalkSpeed = toggled and 50 or 16
+    end
+end)
+
+-- 2. 超级跳跃
+createButton("JumpBtn", "🚀 超级跳跃", function(toggled)
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+        LocalPlayer.Character.Humanoid.UseJumpPower = true
+        LocalPlayer.Character.Humanoid.JumpPower = toggled and 100 or 50
+    end
+end)
+
+-- 3. 夜视仪 (全图高亮)
+local defaultAmbient = Lighting.Ambient
+local defaultBrightness = Lighting.Brightness
+createButton("NVBtn", "👁️ 夜视模式", function(toggled)
+    if toggled then
+        Lighting.Ambient = Color3.fromRGB(255, 255, 255)
+        Lighting.Brightness = 2
+    else
+        Lighting.Ambient = defaultAmbient
+        Lighting.Brightness = defaultBrightness
+    end
+end)
+
+-- 4. 快速重置
+createButton("ResetBtn", "🔄 重置人物", function(_, btn)
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+        LocalPlayer.Character.Humanoid.Health = 0
+    end
+    task.wait(0.2)
+    TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(35, 35, 35)}):Play()
+end)
+
+-- ================= 4. 核心交互逻辑 =================
+
+-- 展开/收起灵动岛
+local function toggleIsland()
+    if isNotifying then return end -- 通知时禁止操作
+    isExpanded = not isExpanded
+    
+    if isExpanded then
+        CompactFrame.Visible = false
+        ExpandedFrame.Visible = true
+        TweenService:Create(Island, ExpandTweenInfo, {Size = UDim2.new(0, 320, 0, 180)}):Play()
+        TweenService:Create(IslandCorner, ExpandTweenInfo, {CornerRadius = UDim.new(0, 30)}):Play()
+    else
+        ExpandedFrame.Visible = false
+        CompactFrame.Visible = true
+        TweenService:Create(Island, CollapseTweenInfo, {Size = UDim2.new(0, 130, 0, 32)}):Play()
+        TweenService:Create(IslandCorner, CollapseTweenInfo, {CornerRadius = UDim.new(0, 20)}):Play()
     end
 end
 
-setExpanded = function(value)
-    isExpanded = value
-    compact.Visible = not value
-    expanded.Visible = value
-    if sizeTween then sizeTween:Cancel() end
-    local duration = Config.Animation == "snappy" and 0.2 or 0.45
-    local easing = Config.Animation == "spring" and Enum.EasingStyle.Back or Enum.EasingStyle.Quint
-    sizeTween = TweenService:Create(pill, TweenInfo.new(duration, easing, Enum.EasingDirection.Out), {
-        Size = UDim2.fromOffset(value and 320 or 192, value and 152 or 40),
-    })
-    sizeTween:Play()
-    if value then scheduleCollapse() else collapseRevision += 1 end
+-- 透明触发按钮 (覆盖在待机界面上，兼容PC点击和手机触摸)
+local TriggerButton = Instance.new("TextButton")
+TriggerButton.Size = UDim2.new(1, 0, 1, 0)
+TriggerButton.BackgroundTransparency = 1
+TriggerButton.Text = ""
+TriggerButton.Parent = CompactFrame
+
+TriggerButton.Activated:Connect(toggleIsland)
+
+-- 点击灵动岛外部自动收起 (提升手机和PC体验)
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if isExpanded and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
+        local mousePos = UserInputService:GetMouseLocation()
+        local islandPos = Island.AbsolutePosition
+        local islandSize = Island.AbsoluteSize
+        
+        -- 判断点击位置是否在灵动岛外部
+        if mousePos.X < islandPos.X or mousePos.X > islandPos.X + islandSize.X or
+           mousePos.Y < islandPos.Y or mousePos.Y > islandPos.Y + islandSize.Y then
+            toggleIsland()
+        end
+    end
+end)
+
+-- 灵动通知函数
+local function SendNotification(text)
+    if isExpanded then toggleIsland() task.wait(0.3) end
+    isNotifying = true
+    
+    CompactFrame.Visible = false
+    NotifyFrame.Visible = true
+    NotifyText.Text = text
+    
+    -- 弹出动画
+    TweenService:Create(Island, ExpandTweenInfo, {Size = UDim2.new(0, 280, 0, 45)}):Play()
+    task.wait(2.5)
+    
+    -- 收起动画
+    NotifyFrame.Visible = false
+    CompactFrame.Visible = true
+    TweenService:Create(Island, CollapseTweenInfo, {Size = UDim2.new(0, 130, 0, 32)}):Play()
+    
+    isNotifying = false
 end
 
-setState = function(mode, data)
-    if not alive then return end
-    data = typeof(data) == "table" and data or {}
-    if not table.find({ "music", "notification", "timer", "call", "charging" }, mode) then return end
-    revision += 1
-    local version = revision
-    state = mode
-    local musicMode = mode == "music"
-    track.Visible = musicMode or mode == "timer"
-    elapsedLabel.Visible = musicMode
-    remainingLabel.Visible = musicMode
-    timerCount.Visible = mode == "timer"
-    body.Visible = not musicMode and mode ~= "timer"
-    back.Visible = musicMode or mode == "timer"
-    play.Visible = musicMode or mode == "timer"
-    forward.Visible = musicMode
-    back.Position = UDim2.fromOffset(musicMode and 78 or 207, musicMode and 109 or 81)
-    play.Position = UDim2.fromOffset(musicMode and 138 or 257, musicMode and 109 or 81)
-    back.Text = musicMode and "<<" or "R"
-    play.Text = "II"
-    track.Position = UDim2.fromOffset(19, musicMode and 82 or 132)
-    accept.Visible = mode == "call"
-    dismiss.Visible = not musicMode and mode ~= "timer"
-    dismiss.Text = mode == "call" and "Decline" or "Dismiss"
-    accept.Text = "Accept"
-    art.BackgroundColor3 = musicMode and Color3.fromRGB(235, 163, 178) or Config.Accent
-    miniArt.BackgroundColor3 = art.BackgroundColor3
-    art:FindFirstChildOfClass("UIGradient").Enabled = musicMode
-    miniArt:FindFirstChildOfClass("UIGradient").Enabled = musicMode
-    art.Note.Text = musicMode and "~" or (mode == "timer" and ":" or "+")
-    miniArt.Note.Text = art.Note.Text
-    for _, bar in ipairs(bars) do bar.Visible = musicMode end
+-- ================= 5. 实时数据更新循环 =================
 
-    if musicMode then
-        title.Text = tostring(data.Title or "Sakura")
-        subtitle.Text = tostring(data.Artist or "Garden sessions")
-        miniTitle.Text = title.Text
-        if data.SoundId then
-            sound:Stop()
-            local id = tostring(data.SoundId):match("%d+")
-            sound.SoundId = id and ("rbxassetid://" .. id) or ""
-            if sound.SoundId ~= "" then sound:Play() end
-        elseif sound.SoundId ~= "" then
-            sound:Resume()
-        end
-        playing = true
-        play.Text = "II"
-    elseif mode == "notification" then
-        title.Text = tostring(data.T
+-- 更新时间和Ping
+task.spawn(function()
+    while task.wait(1) do
+        -- 更新时间
+        TimeLabel.Text = os.date("%H:%M")
+        
+        -- 呼吸灯闪烁效果
+        TweenService:Create(StatusDot, TweenInfo.new(0.5), {BackgroundTransparency = 0.5}):Play()
+        task.wait(0.5)
+        TweenService:Create(StatusDot, TweenInfo.new(0.5), {BackgroundTransparency = 0}):Play()
+    end
+end)
+
+-- 更新FPS和Ping
+local lastUpdate = tick()
+local frameCount = 0
+RunService.RenderStepped:Connect(function()
+    frameCount = frameCount + 1
+    if tick() - lastUpdate >= 0.5 then
+        local fps = math.floor(frameCount / (tick() - lastUpdate))
+        local ping = math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue())
+        StatsLabel.Text = string.format("%s\n🟢 FPS: %d  |  📶 Ping: %dms", LocalPlayer.DisplayName, fps, ping)
+        frameCount = 0
+        lastUpdate = tick()
+    end
+end)
+
+-- 玩家加入/离开通知
+Players.PlayerAdded:Connect(function(player)
+    SendNotification("👋 " .. player.DisplayName .. " 加入了游戏")
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+    SendNotification("🚪 " .. player.DisplayName .. " 离开了游戏")
+end)
+
+-- 启动欢迎通知
+task.delay(1, function()
+    SendNotification("🍏 灵动岛已激活 - 欢迎使用!")
+end)
