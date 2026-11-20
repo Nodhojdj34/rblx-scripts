@@ -1,0 +1,268 @@
+TM-- Island for Roblox | v1.0.0
+-- Place this LocalScript in StarterPlayer > StarterPlayerScripts.
+-- Client-only UI for your own Roblox experience. No executor required.
+-- Charging is a simulated state, not a reading of the device battery.
+
+local Config = {
+    Accent = Color3.fromRGB(184, 164, 255),
+    Scale = 0.80,
+    TopOffset = 8,
+    Animation = "spring",
+    AutoCollapse = true,
+    SafeArea = true,
+    StartMode = "music",
+    CollapseAfter = 8,
+    ToggleKey = Enum.KeyCode.I,
+}
+
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local SoundService = game:GetService("SoundService")
+local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+
+local previous = playerGui:FindFirstChild("RobloxDynamicIsland")
+if previous then previous:Destroy() end
+local previousApi = playerGui:FindFirstChild("IslandAPI")
+if previousApi then previousApi:Destroy() end
+
+local function make(className, properties, parent)
+    local object = Instance.new(className)
+    for key, value in pairs(properties) do object[key] = value end
+    object.Parent = parent
+    return object
+end
+
+local function round(object, radius)
+    make("UICorner", { CornerRadius = UDim.new(0, radius) }, object)
+end
+
+local connections = {}
+local alive = true
+local function listen(signal, callback)
+    local connection = signal:Connect(callback)
+    table.insert(connections, connection)
+    return connection
+end
+
+local gui = make("ScreenGui", {
+    Name = "RobloxDynamicIsland",
+    ResetOnSpawn = false,
+    DisplayOrder = 50,
+    ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+    ScreenInsets = Config.SafeArea and Enum.ScreenInsets.CoreUISafeInsets
+        or Enum.ScreenInsets.DeviceSafeInsets,
+    ClipToDeviceSafeArea = true,
+}, playerGui)
+
+local api = make("BindableEvent", { Name = "IslandAPI" }, playerGui)
+local sound = make("Sound", { Name = "IslandMusic", Volume = 0.5 }, SoundService)
+local root = make("Frame", {
+    Name = "Anchor",
+    AnchorPoint = Vector2.new(0.5, 0),
+    Position = UDim2.new(0.5, 0, 0, Config.TopOffset),
+    Size = UDim2.fromOffset(320, 152),
+    BackgroundTransparency = 1,
+}, gui)
+local uiScale = make("UIScale", { Scale = Config.Scale }, root)
+local pill = make("TextButton", {
+    Name = "Island",
+    AnchorPoint = Vector2.new(0.5, 0),
+    Position = UDim2.fromScale(0.5, 0),
+    Size = UDim2.fromOffset(192, 40),
+    BackgroundColor3 = Color3.fromRGB(7, 8, 9),
+    BorderSizePixel = 0,
+    Text = "",
+    AutoButtonColor = false,
+    ClipsDescendants = true,
+}, root)
+round(pill, 26)
+make("UIStroke", { Color = Color3.fromRGB(50, 51, 53), Thickness = 1, Transparency = 0.4 }, pill)
+
+local white = Color3.fromRGB(246, 246, 248)
+local gray = Color3.fromRGB(145, 147, 154)
+local function text(parent, name, value, x, y, width, height, size, color)
+    return make("TextLabel", {
+        Name = name,
+        BackgroundTransparency = 1,
+        Position = UDim2.fromOffset(x, y),
+        Size = UDim2.fromOffset(width, height),
+        Font = Enum.Font.GothamMedium,
+        Text = value,
+        TextSize = size,
+        TextColor3 = color or white,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextTruncate = Enum.TextTruncate.AtEnd,
+        ZIndex = 2,
+    }, parent)
+end
+
+local compact = make("Frame", {
+    Name = "Compact", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1),
+}, pill)
+local miniArt = make("Frame", {
+    Position = UDim2.fromOffset(9, 8), Size = UDim2.fromOffset(24, 24),
+    BackgroundColor3 = Color3.fromRGB(235, 163, 178), BorderSizePixel = 0,
+}, compact)
+round(miniArt, 7)
+make("UIGradient", {
+    Color = ColorSequence.new(Color3.fromRGB(250, 209, 179), Color3.fromRGB(152, 117, 162)),
+    Rotation = 45,
+}, miniArt)
+text(miniArt, "Note", "~", 5, 0, 20, 24, 23, Color3.fromRGB(91, 73, 89))
+local miniTitle = text(compact, "Title", "Sakura", 43, 8, 100, 24, 12)
+local bars = {}
+for i = 1, 5 do
+    local bar = make("Frame", {
+        Name = "Wave" .. i,
+        AnchorPoint = Vector2.new(0, 0.5),
+        Position = UDim2.new(1, -37 + (i - 1) * 5, 0.5, 0),
+        Size = UDim2.fromOffset(3, 8 + i * 2),
+        BackgroundColor3 = Config.Accent, BorderSizePixel = 0,
+    }, compact)
+    round(bar, 2)
+    table.insert(bars, bar)
+end
+
+local expanded = make("Frame", {
+    Name = "Expanded", BackgroundTransparency = 1,
+    Size = UDim2.fromOffset(320, 152), Visible = false,
+}, pill)
+local art = miniArt:Clone()
+art.Name = "Artwork"
+art.Position = UDim2.fromOffset(18, 18)
+art.Size = UDim2.fromOffset(44, 44)
+art.Parent = expanded
+local title = text(expanded, "Title", "Sakura", 75, 19, 205, 23, 15)
+local subtitle = text(expanded, "Subtitle", "Garden sessions", 75, 43, 220, 18, 11, gray)
+local body = text(expanded, "Body", "", 19, 76, 282, 24, 12, gray)
+local track = make("Frame", {
+    Position = UDim2.fromOffset(19, 82), Size = UDim2.fromOffset(282, 4),
+    BackgroundColor3 = Color3.fromRGB(53, 54, 57), BorderSizePixel = 0,
+}, expanded)
+round(track, 2)
+local fill = make("Frame", {
+    Size = UDim2.fromScale(0.17, 1), BackgroundColor3 = Config.Accent, BorderSizePixel = 0,
+}, track)
+round(fill, 2)
+local elapsedLabel = text(expanded, "Elapsed", "0:32", 19, 90, 55, 15, 9, gray)
+local remainingLabel = text(expanded, "Remaining", "-2:36", 246, 90, 55, 15, 9, gray)
+remainingLabel.TextXAlignment = Enum.TextXAlignment.Right
+local timerCount = text(expanded, "Countdown", "1:00", 19, 65, 164, 62, 42, Config.Accent)
+timerCount.Font = Enum.Font.Gotham
+timerCount.Visible = false
+
+local function button(name, value, x, width, color)
+    local object = make("TextButton", {
+        Name = name, Text = value, Font = Enum.Font.GothamBold,
+        TextSize = 20, TextColor3 = color or white,
+        Position = UDim2.fromOffset(x, 109), Size = UDim2.fromOffset(width, 31),
+        BackgroundColor3 = Color3.fromRGB(31, 32, 34), BackgroundTransparency = 1,
+        BorderSizePixel = 0, AutoButtonColor = false, ZIndex = 3,
+    }, expanded)
+    round(object, 14)
+    return object
+end
+local back = button("Previous", "<<", 78, 42)
+local play = button("PlayPause", "II", 138, 44)
+local forward = button("Next", ">>", 200, 42)
+local accept = button("Accept", "Accept", 169, 125, Config.Accent)
+local dismiss = button("Dismiss", "Dismiss", 25, 125, gray)
+accept.TextSize = 13
+dismiss.TextSize = 13
+accept.BackgroundTransparency = 0
+dismiss.BackgroundTransparency = 0
+
+local state = "music"
+local isExpanded = false
+local playing = true
+local seconds = 32
+local length = 188
+local timerDeadline = 0
+local timerPaused = false
+local timerRemaining = 0
+local callStarted = nil
+local revision = 0
+local collapseRevision = 0
+local sizeTween = nil
+local setExpanded
+local setState
+
+local function clock(value)
+    value = math.max(0, math.floor(value))
+    return string.format("%d:%02d", math.floor(value / 60), value % 60)
+end
+
+local function scheduleCollapse()
+    collapseRevision += 1
+    local version = collapseRevision
+    if Config.AutoCollapse then
+        task.delay(Config.CollapseAfter, function()
+            if alive and version == collapseRevision then setExpanded(false) end
+        end)
+    end
+end
+
+setExpanded = function(value)
+    isExpanded = value
+    compact.Visible = not value
+    expanded.Visible = value
+    if sizeTween then sizeTween:Cancel() end
+    local duration = Config.Animation == "snappy" and 0.2 or 0.45
+    local easing = Config.Animation == "spring" and Enum.EasingStyle.Back or Enum.EasingStyle.Quint
+    sizeTween = TweenService:Create(pill, TweenInfo.new(duration, easing, Enum.EasingDirection.Out), {
+        Size = UDim2.fromOffset(value and 320 or 192, value and 152 or 40),
+    })
+    sizeTween:Play()
+    if value then scheduleCollapse() else collapseRevision += 1 end
+end
+
+setState = function(mode, data)
+    if not alive then return end
+    data = typeof(data) == "table" and data or {}
+    if not table.find({ "music", "notification", "timer", "call", "charging" }, mode) then return end
+    revision += 1
+    local version = revision
+    state = mode
+    local musicMode = mode == "music"
+    track.Visible = musicMode or mode == "timer"
+    elapsedLabel.Visible = musicMode
+    remainingLabel.Visible = musicMode
+    timerCount.Visible = mode == "timer"
+    body.Visible = not musicMode and mode ~= "timer"
+    back.Visible = musicMode or mode == "timer"
+    play.Visible = musicMode or mode == "timer"
+    forward.Visible = musicMode
+    back.Position = UDim2.fromOffset(musicMode and 78 or 207, musicMode and 109 or 81)
+    play.Position = UDim2.fromOffset(musicMode and 138 or 257, musicMode and 109 or 81)
+    back.Text = musicMode and "<<" or "R"
+    play.Text = "II"
+    track.Position = UDim2.fromOffset(19, musicMode and 82 or 132)
+    accept.Visible = mode == "call"
+    dismiss.Visible = not musicMode and mode ~= "timer"
+    dismiss.Text = mode == "call" and "Decline" or "Dismiss"
+    accept.Text = "Accept"
+    art.BackgroundColor3 = musicMode and Color3.fromRGB(235, 163, 178) or Config.Accent
+    miniArt.BackgroundColor3 = art.BackgroundColor3
+    art:FindFirstChildOfClass("UIGradient").Enabled = musicMode
+    miniArt:FindFirstChildOfClass("UIGradient").Enabled = musicMode
+    art.Note.Text = musicMode and "~" or (mode == "timer" and ":" or "+")
+    miniArt.Note.Text = art.Note.Text
+    for _, bar in ipairs(bars) do bar.Visible = musicMode end
+
+    if musicMode then
+        title.Text = tostring(data.Title or "Sakura")
+        subtitle.Text = tostring(data.Artist or "Garden sessions")
+        miniTitle.Text = title.Text
+        if data.SoundId then
+            sound:Stop()
+            local id = tostring(data.SoundId):match("%d+")
+            sound.SoundId = id and ("rbxassetid://" .. id) or ""
+            if sound.SoundId ~= "" then sound:Play() end
+        elseif sound.SoundId ~= "" then
+            sound:Resume()
+        end
+        playing = true
+        play.Text = "II"
+    elseif mode == "notification" then
+        title.Text = tostring(data.T
