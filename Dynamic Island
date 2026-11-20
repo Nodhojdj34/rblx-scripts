@@ -1,7 +1,7 @@
 -- ==========================================================
--- 灵动岛 · 全能版
+-- 灵动岛 · 增强版
 -- 位置：StarterPlayer > StarterPlayerScripts > LocalScript
--- Tab：概览 / 音乐 / 服务器 / 通知 / 设置
+-- 更新：更全面的服务器信息 + 音乐最近播放列表
 -- ==========================================================
 
 local Players = game:GetService("Players")
@@ -9,6 +9,7 @@ local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 local Stats = game:GetService("Stats")
 local SoundService = game:GetService("SoundService")
+local UserInputService = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -26,14 +27,6 @@ end
 local function parseId(input)
 	input = tostring(input or ""):gsub("%s", "")
 	return input:match("rbxassetid://(%d+)") or input:match("(%d+)")
-end
-
-local function formatBytes(b)
-	if not b or b < 0 then return "—" end
-	local kb = b / 1024
-	if kb >= 1024 then return string.format("%.1f MB/s", kb / 1024) end
-	if kb >= 1 then return string.format("%.1f KB/s", kb) end
-	return string.format("%d B/s", math.floor(b))
 end
 
 -- ================= 主题 =================
@@ -63,12 +56,13 @@ local function applyTheme(key)
 end
 
 -- ================= 全局状态 =================
-local notifications = {}          -- {title, subtitle, timestamp}
+local notifications = {}
 local unreadNotifications = 0
 local currentTab = "home"
 local isExpanded = false
 local currentMusicId = nil
 local isPlaying = false
+local isMusicLoading = false
 local SESSION_START = os.time()
 local SERVER_PLACE_ID = game.PlaceId
 local SERVER_JOB_ID = (game.JobId ~= "" and game.JobId) or nil
@@ -84,16 +78,6 @@ pcall(function()
 	screenGui.ScreenInsets = Enum.ScreenInsets.DeviceSafeInsets
 end)
 screenGui.Parent = playerGui
-
--- 遮罩
-local scrim = Instance.new("TextButton")
-scrim.Text = ""
-scrim.AutoButtonColor = false
-scrim.BackgroundTransparency = 1
-scrim.Size = UDim2.fromScale(1, 1)
-scrim.Visible = false
-scrim.ZIndex = 1
-scrim.Parent = screenGui
 
 -- 主体
 local root = Instance.new("Frame")
@@ -174,14 +158,13 @@ clickButton.Parent = root
 local expandedFrame = Instance.new("CanvasGroup")
 expandedFrame.AnchorPoint = Vector2.new(0.5, 0)
 expandedFrame.Position = UDim2.new(0.5, 0, 0, 0)
-expandedFrame.Size = UDim2.fromOffset(300, 320)
+expandedFrame.Size = UDim2.fromOffset(300, 400)
 expandedFrame.BackgroundTransparency = 1
 expandedFrame.GroupTransparency = 1
 expandedFrame.Visible = false
 expandedFrame.ZIndex = 4
 expandedFrame.Parent = root
 
--- 大时间
 local bigTime = Instance.new("TextLabel")
 bigTime.Position = UDim2.new(0, 44, 0, 10)
 bigTime.Size = UDim2.new(1, -100, 0, 30)
@@ -194,7 +177,6 @@ bigTime.TextXAlignment = Enum.TextXAlignment.Left
 bigTime.ZIndex = 5
 bigTime.Parent = expandedFrame
 
--- 日期
 local dateLabel = Instance.new("TextLabel")
 dateLabel.Position = UDim2.new(0, 44, 0, 42)
 dateLabel.Size = UDim2.new(1, -100, 0, 16)
@@ -207,7 +189,6 @@ dateLabel.TextXAlignment = Enum.TextXAlignment.Left
 dateLabel.ZIndex = 5
 dateLabel.Parent = expandedFrame
 
--- 关闭
 local closeBtn = Instance.new("TextButton")
 closeBtn.AnchorPoint = Vector2.new(1, 0)
 closeBtn.Position = UDim2.new(1, -14, 0, 12)
@@ -284,7 +265,6 @@ local serverTabBtn = makeTabButton("服", 3)
 local notifTabBtn = makeTabButton("通", 4)
 local settingsTabBtn = makeTabButton("设", 5)
 
--- 未读角标
 local notifBadge = Instance.new("Frame")
 notifBadge.AnchorPoint = Vector2.new(1, 0)
 notifBadge.Position = UDim2.new(1, -2, 0, 2)
@@ -299,7 +279,7 @@ local notifBadgeCorner = Instance.new("UICorner")
 notifBadgeCorner.CornerRadius = UDim.new(1, 0)
 notifBadgeCorner.Parent = notifBadge
 
--- ================= 通用工厂 =================
+-- ================= 工厂 =================
 local function makeStatCell(title, order, parentFrame)
 	local cell = Instance.new("Frame")
 	cell.BackgroundColor3 = Color3.fromRGB(22, 22, 26)
@@ -315,7 +295,7 @@ local function makeStatCell(title, order, parentFrame)
 
 	local t = Instance.new("TextLabel")
 	t.Size = UDim2.new(1, 0, 0, 14)
-	t.Position = UDim2.new(0, 0, 0, 10)
+	t.Position = UDim2.new(0, 0, 0, 8)
 	t.BackgroundTransparency = 1
 	t.Text = title
 	t.TextColor3 = Color3.fromRGB(150, 150, 155)
@@ -326,7 +306,7 @@ local function makeStatCell(title, order, parentFrame)
 
 	local v = Instance.new("TextLabel")
 	v.Size = UDim2.new(1, 0, 0, 22)
-	v.Position = UDim2.new(0, 0, 0, 26)
+	v.Position = UDim2.new(0, 0, 0, 24)
 	v.BackgroundTransparency = 1
 	v.Text = "—"
 	v.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -368,11 +348,11 @@ local function makeActionBtn(text, order, parent)
 	return btn
 end
 
-local function makeTabPage(name)
+local function makeTabPage(name, height)
 	local page = Instance.new("Frame")
 	page.Name = name
 	page.Position = UDim2.new(0, 0, 0, 116)
-	page.Size = UDim2.new(1, 0, 0, 190)
+	page.Size = UDim2.new(1, 0, 0, height or 190)
 	page.BackgroundTransparency = 1
 	page.ZIndex = 5
 	page.Visible = false
@@ -381,7 +361,7 @@ local function makeTabPage(name)
 end
 
 -- ================= 概览页 =================
-local homePage = makeTabPage("Home")
+local homePage = makeTabPage("Home", 190)
 
 local homeStats = Instance.new("Frame")
 homeStats.Position = UDim2.new(0, 16, 0, 4)
@@ -420,7 +400,7 @@ local refreshBtn = makeActionBtn("刷新", 2, homeActions)
 local collapseBtn = makeActionBtn("收起", 3, homeActions)
 
 -- ================= 音乐页 =================
-local musicPage = makeTabPage("Music")
+local musicPage = makeTabPage("Music", 260)
 
 local musicInputRow = Instance.new("Frame")
 musicInputRow.Position = UDim2.new(0, 16, 0, 4)
@@ -474,7 +454,7 @@ loadBtnCorner.Parent = loadBtn
 
 local musicInfo = Instance.new("TextLabel")
 musicInfo.Position = UDim2.new(0, 16, 0, 44)
-musicInfo.Size = UDim2.new(1, -32, 0, 16)
+musicInfo.Size = UDim2.new(1, -32, 0, 14)
 musicInfo.BackgroundTransparency = 1
 musicInfo.Text = "未选择"
 musicInfo.TextColor3 = Color3.fromRGB(170, 170, 175)
@@ -486,7 +466,7 @@ musicInfo.ZIndex = 5
 musicInfo.Parent = musicPage
 
 local musicProgressBg = Instance.new("Frame")
-musicProgressBg.Position = UDim2.new(0, 16, 0, 68)
+musicProgressBg.Position = UDim2.new(0, 16, 0, 62)
 musicProgressBg.Size = UDim2.new(1, -32, 0, 6)
 musicProgressBg.BackgroundColor3 = Color3.fromRGB(40, 40, 44)
 musicProgressBg.BorderSizePixel = 0
@@ -510,8 +490,8 @@ musicProgressFillCorner.CornerRadius = UDim.new(1, 0)
 musicProgressFillCorner.Parent = musicProgressFill
 
 local musicProgressText = Instance.new("TextLabel")
-musicProgressText.Position = UDim2.new(0, 16, 0, 78)
-musicProgressText.Size = UDim2.new(1, -32, 0, 14)
+musicProgressText.Position = UDim2.new(0, 16, 0, 70)
+musicProgressText.Size = UDim2.new(1, -32, 0, 12)
 musicProgressText.BackgroundTransparency = 1
 musicProgressText.Text = "0:00 / 0:00"
 musicProgressText.TextColor3 = Color3.fromRGB(150, 150, 155)
@@ -522,8 +502,8 @@ musicProgressText.ZIndex = 5
 musicProgressText.Parent = musicPage
 
 local musicControls = Instance.new("Frame")
-musicControls.Position = UDim2.new(0, 16, 0, 100)
-musicControls.Size = UDim2.new(1, -32, 0, 40)
+musicControls.Position = UDim2.new(0, 16, 0, 88)
+musicControls.Size = UDim2.new(1, -32, 0, 36)
 musicControls.BackgroundTransparency = 1
 musicControls.ZIndex = 5
 musicControls.Parent = musicPage
@@ -540,12 +520,111 @@ local playPauseBtn = makeActionBtn("播放", 1, musicControls)
 local stopBtn = makeActionBtn("停止", 2, musicControls)
 local volumeBtn = makeActionBtn("音量", 3, musicControls)
 
+-- 【新】最近播放
+local recentTitle = Instance.new("TextLabel")
+recentTitle.Position = UDim2.new(0, 16, 0, 130)
+recentTitle.Size = UDim2.new(1, -32, 0, 12)
+recentTitle.BackgroundTransparency = 1
+recentTitle.Text = "最近播放"
+recentTitle.TextColor3 = Color3.fromRGB(150, 150, 155)
+recentTitle.TextSize = 11
+recentTitle.Font = Enum.Font.GothamMedium
+recentTitle.TextXAlignment = Enum.TextXAlignment.Left
+recentTitle.ZIndex = 5
+recentTitle.Parent = musicPage
+
+local recentScroll = Instance.new("ScrollingFrame")
+recentScroll.Position = UDim2.new(0, 16, 0, 146)
+recentScroll.Size = UDim2.new(1, -32, 0, 110)
+recentScroll.BackgroundTransparency = 1
+recentScroll.BorderSizePixel = 0
+recentScroll.ScrollBarThickness = 2
+recentScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+recentScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+recentScroll.ScrollBarImageColor3 = Color3.fromRGB(80, 80, 85)
+recentScroll.ScrollBarImageTransparency = 0.6
+recentScroll.ZIndex = 5
+recentScroll.Parent = musicPage
+
+local recentLayout = Instance.new("UIListLayout")
+recentLayout.SortOrder = Enum.SortOrder.LayoutOrder
+recentLayout.Padding = UDim.new(0, 3)
+recentLayout.Parent = recentScroll
+
+local recentIds = {}
+local loadAndPlay  -- 前向声明
+
+local function renderRecent()
+	for _, child in ipairs(recentScroll:GetChildren()) do
+		if child:IsA("TextButton") then child:Destroy() end
+	end
+
+	if #recentIds == 0 then
+		local empty = Instance.new("TextLabel")
+		empty.Name = "Empty"
+		empty.Size = UDim2.new(1, 0, 0, 30)
+		empty.BackgroundTransparency = 1
+		empty.Text = "暂无播放记录"
+		empty.TextColor3 = Color3.fromRGB(120, 120, 125)
+		empty.TextSize = 11
+		empty.Font = Enum.Font.Gotham
+		empty.ZIndex = 6
+		empty.Parent = recentScroll
+		return
+	end
+
+	for i, id in ipairs(recentIds) do
+		local btn = Instance.new("TextButton")
+		btn.Size = UDim2.new(1, 0, 0, 20)
+		btn.LayoutOrder = i
+		btn.BackgroundColor3 = Color3.fromRGB(22, 22, 26)
+		btn.BorderSizePixel = 0
+		btn.Text = "▶  ID " .. id
+		btn.TextColor3 = Color3.fromRGB(220, 220, 220)
+		btn.TextSize = 11
+		btn.Font = Enum.Font.Gotham
+		btn.TextXAlignment = Enum.TextXAlignment.Left
+		btn.AutoButtonColor = false
+		btn.ZIndex = 6
+		btn.Parent = recentScroll
+
+		local c = Instance.new("UICorner")
+		c.CornerRadius = UDim.new(0, 6)
+		c.Parent = btn
+
+		local padding = Instance.new("UIPadding")
+		padding.PaddingLeft = UDim.new(0, 8)
+		padding.Parent = btn
+
+		btn.MouseButton1Click:Connect(function()
+			loadAndPlay(id)
+		end)
+	end
+end
+
+local function addRecent(id)
+	id = tostring(id)
+	for i, v in ipairs(recentIds) do
+		if v == id then
+			table.remove(recentIds, i)
+			break
+		end
+	end
+	table.insert(recentIds, 1, id)
+	while #recentIds > 5 do
+		table.remove(recentIds)
+	end
+	renderRecent()
+end
+
+renderRecent()
+
 -- ================= 服务器页 =================
-local serverPage = makeTabPage("Server")
+local serverPage = makeTabPage("Server", 260)
 
 local serverStats = Instance.new("Frame")
 serverStats.Position = UDim2.new(0, 16, 0, 4)
-serverStats.Size = UDim2.new(1, -32, 0, 60)
+serverStats.Size = UDim2.new(1, -32, 0, 56)
 serverStats.BackgroundTransparency = 1
 serverStats.ZIndex = 5
 serverStats.Parent = serverPage
@@ -561,8 +640,8 @@ local serverPingCell = makeStatCell("延迟", 2, serverStats)
 local serverSessionCell = makeStatCell("会话", 3, serverStats)
 
 local serverInfoFrame = Instance.new("Frame")
-serverInfoFrame.Position = UDim2.new(0, 16, 0, 74)
-serverInfoFrame.Size = UDim2.new(1, -32, 0, 100)
+serverInfoFrame.Position = UDim2.new(0, 16, 0, 66)
+serverInfoFrame.Size = UDim2.new(1, -32, 0, 90)
 serverInfoFrame.BackgroundTransparency = 1
 serverInfoFrame.ZIndex = 5
 serverInfoFrame.Parent = serverPage
@@ -570,35 +649,35 @@ serverInfoFrame.Parent = serverPage
 local serverInfoLayout = Instance.new("UIListLayout")
 serverInfoLayout.FillDirection = Enum.FillDirection.Vertical
 serverInfoLayout.SortOrder = Enum.SortOrder.LayoutOrder
-serverInfoLayout.Padding = UDim.new(0, 4)
+serverInfoLayout.Padding = UDim.new(0, 2)
 serverInfoLayout.Parent = serverInfoFrame
 
 local function makeInfoRow(labelText, order)
 	local row = Instance.new("Frame")
-	row.Size = UDim2.new(1, 0, 0, 20)
+	row.Size = UDim2.new(1, 0, 0, 16)
 	row.BackgroundTransparency = 1
 	row.LayoutOrder = order
 	row.ZIndex = 5
 	row.Parent = serverInfoFrame
 
 	local lbl = Instance.new("TextLabel")
-	lbl.Size = UDim2.fromOffset(60, 20)
+	lbl.Size = UDim2.fromOffset(64, 16)
 	lbl.BackgroundTransparency = 1
 	lbl.Text = labelText
 	lbl.TextColor3 = Color3.fromRGB(150, 150, 155)
-	lbl.TextSize = 12
+	lbl.TextSize = 10
 	lbl.Font = Enum.Font.Gotham
 	lbl.TextXAlignment = Enum.TextXAlignment.Left
 	lbl.ZIndex = 6
 	lbl.Parent = row
 
 	local val = Instance.new("TextLabel")
-	val.Position = UDim2.new(0, 64, 0, 0)
-	val.Size = UDim2.new(1, -64, 0, 20)
+	val.Position = UDim2.new(0, 68, 0, 0)
+	val.Size = UDim2.new(1, -68, 0, 16)
 	val.BackgroundTransparency = 1
 	val.Text = "—"
 	val.TextColor3 = Color3.fromRGB(255, 255, 255)
-	val.TextSize = 12
+	val.TextSize = 11
 	val.Font = Enum.Font.GothamMedium
 	val.TextXAlignment = Enum.TextXAlignment.Left
 	val.TextTruncate = Enum.TextTruncate.AtEnd
@@ -608,12 +687,43 @@ local function makeInfoRow(labelText, order)
 end
 
 local serverTimeValue = makeInfoRow("服务器时间", 1)
-local jobIdValue = makeInfoRow("JobId", 2)
-local placeIdValue = makeInfoRow("PlaceId", 3)
-local trafficValue = makeInfoRow("流量", 4)
+local localTimeValue = makeInfoRow("本地时间", 2)
+local jobIdValue = makeInfoRow("JobId", 3)
+local placeIdValue = makeInfoRow("PlaceId", 4)
+local memoryValue = makeInfoRow("内存", 5)
+
+local playerListTitle = Instance.new("TextLabel")
+playerListTitle.Position = UDim2.new(0, 16, 0, 162)
+playerListTitle.Size = UDim2.new(1, -32, 0, 12)
+playerListTitle.BackgroundTransparency = 1
+playerListTitle.Text = "在线玩家"
+playerListTitle.TextColor3 = Color3.fromRGB(150, 150, 155)
+playerListTitle.TextSize = 11
+playerListTitle.Font = Enum.Font.GothamMedium
+playerListTitle.TextXAlignment = Enum.TextXAlignment.Left
+playerListTitle.ZIndex = 5
+playerListTitle.Parent = serverPage
+
+local playerListScroll = Instance.new("ScrollingFrame")
+playerListScroll.Position = UDim2.new(0, 16, 0, 178)
+playerListScroll.Size = UDim2.new(1, -32, 0, 78)
+playerListScroll.BackgroundTransparency = 1
+playerListScroll.BorderSizePixel = 0
+playerListScroll.ScrollBarThickness = 2
+playerListScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+playerListScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+playerListScroll.ScrollBarImageColor3 = Color3.fromRGB(80, 80, 85)
+playerListScroll.ScrollBarImageTransparency = 0.6
+playerListScroll.ZIndex = 5
+playerListScroll.Parent = serverPage
+
+local playerListLayout = Instance.new("UIListLayout")
+playerListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+playerListLayout.Padding = UDim.new(0, 2)
+playerListLayout.Parent = playerListScroll
 
 -- ================= 通知页 =================
-local notifPage = makeTabPage("Notif")
+local notifPage = makeTabPage("Notif", 190)
 
 local notifScroll = Instance.new("ScrollingFrame")
 notifScroll.Position = UDim2.new(0, 16, 0, 4)
@@ -648,13 +758,8 @@ local clearNotifBtn = makeActionBtn("清除全部", 1, notifPage)
 clearNotifBtn.Size = UDim2.new(1, -32, 0, 36)
 clearNotifBtn.Position = UDim2.new(0, 16, 0, 150)
 
--- 覆盖 makeActionBtn 的自动尺寸设定，需要重新定位
-clearNotifBtn.Size = UDim2.new(1, -32, 0, 36)
-clearNotifBtn.Position = UDim2.new(0, 16, 0, 150)
-clearNotifBtn.LayoutOrder = 1
-
 -- ================= 设置页 =================
-local settingsPage = makeTabPage("Settings")
+local settingsPage = makeTabPage("Settings", 190)
 
 local themeLabel = Instance.new("TextLabel")
 themeLabel.Position = UDim2.new(0, 16, 0, 4)
@@ -709,6 +814,9 @@ for i, t in ipairs(THEMES) do
 			item.stroke.Thickness = 0
 		end
 		stroke.Thickness = 3
+		if currentTab == "server" then
+			refreshServerTab()
+		end
 	end)
 
 	table.insert(themeButtons, {btn=btn, stroke=stroke, key=t.key})
@@ -718,7 +826,7 @@ local aboutLabel = Instance.new("TextLabel")
 aboutLabel.Position = UDim2.new(0, 16, 0, 90)
 aboutLabel.Size = UDim2.new(1, -32, 0, 60)
 aboutLabel.BackgroundTransparency = 1
-aboutLabel.Text = "灵动岛 · 全能版\nRoblox 游戏内 UI\n点击空白处收回"
+aboutLabel.Text = "灵动岛 · 增强版\nRoblox 游戏内 UI\n点击空白处收回"
 aboutLabel.TextColor3 = Color3.fromRGB(120, 120, 125)
 aboutLabel.TextSize = 11
 aboutLabel.Font = Enum.Font.Gotham
@@ -727,7 +835,6 @@ aboutLabel.TextYAlignment = Enum.TextYAlignment.Top
 aboutLabel.ZIndex = 5
 aboutLabel.Parent = settingsPage
 
--- Footer
 local footer = Instance.new("TextLabel")
 footer.Position = UDim2.new(0, 16, 1, -20)
 footer.Size = UDim2.new(1, -32, 0, 12)
@@ -767,14 +874,6 @@ local function getPing()
 		return Stats.Network.ServerStatsItem["Data Ping"]:GetValue()
 	end)
 	if ok and type(v) == "number" then return math.floor(v) end
-	return nil
-end
-
-local function getStatValue(name)
-	local ok, v = pcall(function()
-		return Stats.Network.ServerStatsItem[name]:GetValue()
-	end)
-	if ok and type(v) == "number" then return v end
 	return nil
 end
 
@@ -844,11 +943,11 @@ local function stopBreath()
 	iconGlow.Transparency = 0.5
 end
 
--- ================= 尺寸 / 展开动画 =================
+-- ================= 尺寸 / 动画 =================
 local COLLAPSED_SIZE = UDim2.fromOffset(136, 36)
 local COLLAPSED_RADIUS = 18
 local EXPANDED_RADIUS = 28
-local EXPANDED_HEIGHT = 320
+local EXPANDED_HEIGHT = 400
 
 local function getExpandedSize()
 	local camera = workspace.CurrentCamera
@@ -882,7 +981,6 @@ local function expandIsland(animate)
 	expandedFrame.GroupTransparency = 1
 	compactText.Visible = false
 	clickButton.Visible = false
-	scrim.Visible = true
 
 	setIconPosition(true, duration)
 
@@ -931,19 +1029,17 @@ local function collapseIsland(animate)
 		expandedFrame.Visible = false
 		compactText.Visible = true
 		clickButton.Visible = true
-		scrim.Visible = false
 		updateClock()
 	end)
 end
 
 -- ================= 通知系统 =================
-local renderNotifications  -- 前向声明
+local renderNotifications
 
 local function showNotification(title, subtitle, duration)
 	autoCollapseToken = autoCollapseToken + 1
 	local myToken = autoCollapseToken
 
-	-- 写入历史
 	table.insert(notifications, 1, {
 		title = title or "通知",
 		subtitle = subtitle or "",
@@ -956,7 +1052,6 @@ local function showNotification(title, subtitle, duration)
 		unreadNotifications = unreadNotifications + 1
 		notifBadge.Visible = true
 	end
-	-- 若当前是通知页，刷新
 	if currentTab == "notif" and renderNotifications then
 		renderNotifications()
 	end
@@ -998,73 +1093,147 @@ end
 
 local function setPlayingUI(playing)
 	isPlaying = playing
-	playPauseBtn.Text = playing and "暂停" or "播放"
 	if playing then
+		playPauseBtn.Text = "暂停"
 		startBreath()
 	else
+		playPauseBtn.Text = "播放"
 		stopBreath()
 	end
 end
 
-local function loadAndPlay(id)
-	id = parseId(id)
+local function showMusicError(msg)
+	musicInfo.Text = msg
+	musicInfo.TextColor3 = Color3.fromRGB(255, 100, 100)
+	task.delay(2, function()
+		if musicInfo then
+			musicInfo.TextColor3 = Color3.fromRGB(170, 170, 175)
+		end
+	end)
+end
+
+-- 【前向声明已存在：local loadAndPlay】
+function loadAndPlay(rawInput)
+	if isMusicLoading then return end
+
+	local id = parseId(rawInput)
 	if not id then
-		musicInfo.Text = "请输入有效音频 ID"
+		showMusicError("请输入有效音频 ID")
 		return
 	end
 
+	if musicInput:IsFocused() then
+		musicInput:ReleaseFocus()
+	end
+
+	if currentMusicId == id and musicSound.IsLoaded then
+		if musicSound.IsPaused then
+			musicSound:Resume()
+			setPlayingUI(true)
+			return
+		elseif musicSound.IsPlaying then
+			return
+		end
+	end
+
+	isMusicLoading = true
 	currentMusicId = id
+	setPlayingUI(false)
+	playPauseBtn.Text = "加载中"
+
 	musicSound:Stop()
+	musicSound.TimePosition = 0
 	musicSound.SoundId = "rbxassetid://" .. id
-	musicSound:Play()
-	setPlayingUI(true)
 	musicInfo.Text = "ID " .. id .. " · 加载中…"
 	musicProgressFill.Size = UDim2.fromScale(0, 1)
 	musicProgressText.Text = "0:00 / 0:00"
 
 	task.spawn(function()
 		local t = 0
-		while not musicSound.IsLoaded and t < 5 do
+		while not musicSound.IsLoaded and t < 10 do
 			task.wait(0.1)
 			t = t + 0.1
+			if currentMusicId ~= id then
+				isMusicLoading = false
+				return
+			end
 		end
+
+		if currentMusicId ~= id then
+			isMusicLoading = false
+			return
+		end
+
 		if musicSound.IsLoaded then
+			musicSound:Play()
+			isMusicLoading = false
+			setPlayingUI(true)
 			musicInfo.Text = "ID " .. id .. " · 时长 " .. formatTime(musicSound.TimeLength)
+			addRecent(id)
 			showNotification("正在播放", "ID " .. id, 2.5)
 		else
-			musicInfo.Text = "加载失败：音频未公开或 ID 无效"
+			isMusicLoading = false
+			currentMusicId = nil
 			setPlayingUI(false)
+			playPauseBtn.Text = "播放"
+			showMusicError("加载失败：音频未公开或 ID 无效")
 		end
 	end)
 end
 
-playPauseBtn.Activated:Connect(function()
+musicInput.FocusLost:Connect(function(enterPressed)
+	if enterPressed then
+		loadAndPlay(musicInput.Text)
+	end
+end)
+
+playPauseBtn.MouseButton1Click:Connect(function()
+	if isMusicLoading then return end
+
 	if not currentMusicId then
 		loadAndPlay(musicInput.Text)
 		return
 	end
+
 	if musicSound.IsPlaying then
 		musicSound:Pause()
 		setPlayingUI(false)
 	else
-		musicSound:Resume()
+		if musicSound.IsPaused then
+			musicSound:Resume()
+		else
+			musicSound:Play()
+		end
 		setPlayingUI(true)
 	end
 end)
 
-stopBtn.Activated:Connect(function()
+stopBtn.MouseButton1Click:Connect(function()
 	musicSound:Stop()
 	musicSound.TimePosition = 0
+	isMusicLoading = false
+	currentMusicId = nil
 	setPlayingUI(false)
+	playPauseBtn.Text = "播放"
 	musicProgressFill.Size = UDim2.fromScale(0, 1)
 	musicProgressText.Text = "0:00 / " .. formatTime(musicSound.TimeLength)
+	musicInfo.Text = "已停止"
 end)
 
-volumeBtn.Activated:Connect(cycleVolume)
-loadBtn.Activated:Connect(function() loadAndPlay(musicInput.Text) end)
+volumeBtn.MouseButton1Click:Connect(cycleVolume)
+
+loadBtn.MouseButton1Click:Connect(function()
+	if musicInput:IsFocused() then
+		musicInput:ReleaseFocus()
+		task.wait(0.05)
+	end
+	loadAndPlay(musicInput.Text)
+end)
 
 musicSound.Ended:Connect(function()
+	isMusicLoading = false
 	setPlayingUI(false)
+	playPauseBtn.Text = "播放"
 	musicProgressFill.Size = UDim2.fromScale(0, 1)
 	musicProgressText.Text = "0:00 / " .. formatTime(musicSound.TimeLength)
 end)
@@ -1072,9 +1241,10 @@ end)
 applyVolumeLabel()
 
 -- ================= 服务器刷新 =================
-local refreshServerTab  -- 前向声明
+local refreshServerTab
 
 function refreshServerTab()
+	-- 3 卡片
 	serverPlayersCell.Text = tostring(#Players:GetPlayers()) .. " / " .. tostring(Players.MaxPlayers)
 	serverPlayersCell.TextColor3 = Color3.fromRGB(255, 255, 255)
 
@@ -1085,6 +1255,7 @@ function refreshServerTab()
 	serverSessionCell.Text = formatTime(os.time() - SESSION_START)
 	serverSessionCell.TextColor3 = Color3.fromRGB(255, 255, 255)
 
+	-- 5 行信息
 	local serverTime
 	local ok = pcall(function()
 		serverTime = workspace:GetServerTimeNow()
@@ -1095,15 +1266,46 @@ function refreshServerTab()
 		serverTimeValue.Text = "—"
 	end
 
+	localTimeValue.Text = os.date("%H:%M:%S")
 	jobIdValue.Text = SERVER_JOB_ID or "— 客户端不可读"
 	placeIdValue.Text = tostring(SERVER_PLACE_ID)
 
-	local snd = getStatValue("Data SND")
-	local rcv = getStatValue("Data RCV")
-	if snd or rcv then
-		trafficValue.Text = "↑ " .. formatBytes(snd) .. "   ↓ " .. formatBytes(rcv)
+	local memOk, memMb = pcall(function()
+		return Stats:GetTotalMemoryUsageMb()
+	end)
+	if memOk and type(memMb) == "number" then
+		memoryValue.Text = string.format("%.0f MB", memMb)
 	else
-		trafficValue.Text = "—"
+		memoryValue.Text = "—"
+	end
+
+	-- 玩家列表
+	local players = Players:GetPlayers()
+	playerListTitle.Text = "在线玩家 (" .. #players .. ")"
+
+	for _, child in ipairs(playerListScroll:GetChildren()) do
+		if child:IsA("TextLabel") then child:Destroy() end
+	end
+
+	table.sort(players, function(a, b)
+		return a.Name:lower() < b.Name:lower()
+	end)
+
+	local accent = themeMap[currentTheme] and themeMap[currentTheme].accent or Color3.fromRGB(52, 199, 89)
+	for i, plr in ipairs(players) do
+		local row = Instance.new("TextLabel")
+		row.Size = UDim2.new(1, 0, 0, 16)
+		row.LayoutOrder = i
+		row.BackgroundTransparency = 1
+		local isMe = (plr == player)
+		row.Text = "• " .. plr.Name .. (isMe and "  (你)" or "")
+		row.TextColor3 = isMe and accent or Color3.fromRGB(220, 220, 220)
+		row.TextSize = 11
+		row.Font = isMe and Enum.Font.GothamBold or Enum.Font.Gotham
+		row.TextXAlignment = Enum.TextXAlignment.Left
+		row.TextTruncate = Enum.TextTruncate.AtEnd
+		row.ZIndex = 6
+		row.Parent = playerListScroll
 	end
 end
 
@@ -1170,7 +1372,6 @@ function renderNotifications()
 	end
 end
 
--- 初始渲染空状态
 renderNotifications()
 
 clearNotifBtn.Activated:Connect(function()
@@ -1215,7 +1416,6 @@ local function switchTab(name)
 	end
 end
 
--- 初始选中态
 do
 	for key, btn in pairs(tabBtnMap) do
 		local active = (key == currentTab)
@@ -1237,7 +1437,6 @@ local lastTapTime = 0
 
 clickButton.Activated:Connect(function()
 	local now = os.clock()
-	-- 双击且已有音乐时，直接打开音乐页
 	if now - lastTapTime < 0.35 and currentMusicId then
 		if not isExpanded then expandIsland(true) end
 		switchTab("music")
@@ -1258,8 +1457,24 @@ closeBtn.Activated:Connect(function()
 	collapseIsland(true)
 end)
 
-scrim.Activated:Connect(function()
-	if isExpanded then
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if not isExpanded then return end
+	if gameProcessed then return end
+
+	local t = input.UserInputType
+	if t ~= Enum.UserInputType.MouseButton1
+		and t ~= Enum.UserInputType.Touch then
+		return
+	end
+
+	local pos = input.Position
+	local abs = root.AbsolutePosition
+	local size = root.AbsoluteSize
+
+	local insideX = pos.X >= abs.X and pos.X <= abs.X + size.X
+	local insideY = pos.Y >= abs.Y and pos.Y <= abs.Y + size.Y
+
+	if not (insideX and insideY) then
 		autoCollapseToken = autoCollapseToken + 1
 		notificationActive = false
 		collapseIsland(true)
@@ -1295,7 +1510,7 @@ end)
 
 task.spawn(function()
 	while screenGui.Parent do
-		if currentMusicId then
+		if currentMusicId and not isMusicLoading then
 			local len = musicSound.TimeLength
 			local pos = musicSound.TimePosition
 			if len and len > 0 then
@@ -1310,7 +1525,6 @@ task.spawn(function()
 	end
 end)
 
--- 屏宽变化
 local cameraRef = workspace.CurrentCamera
 if cameraRef then
 	cameraRef:GetPropertyChangedSignal("ViewportSize"):Connect(function()
@@ -1344,14 +1558,16 @@ _G.DynamicIsland = {
 	stopMusic = function()
 		musicSound:Stop()
 		musicSound.TimePosition = 0
+		isMusicLoading = false
+		currentMusicId = nil
 		setPlayingUI(false)
 	end,
 	setTheme = function(key) applyTheme(key) end,
 	openTab = function(name) switchTab(name) end,
 	getNotifications = function() return notifications end,
+	getRecentPlaylist = function() return recentIds end,
 }
 
--- 首次测试通知
 task.delay(2, function()
 	showNotification("灵动岛已就绪", "点击胶囊查看功能", 3)
 end)
