@@ -1,0 +1,282 @@
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+-- 动画配置 (模仿苹果的丝滑弹性动画)
+local expandTweenInfo = TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+local shrinkTweenInfo = TweenInfo.new(0.4, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+local fadeTweenInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+
+-- 状态变量
+local isExpanded = false
+local isHovering = false
+local isNotifying = false
+
+-- 尺寸定义 (使用Offset保证在手机和电脑上大小一致)
+local SIZE_CLOSED = UDim2.new(0, 120, 0, 32)
+local SIZE_HOVER = UDim2.new(0, 135, 0, 34)
+local SIZE_EXPANDED = UDim2.new(0, 320, 0, 110)
+
+local CORNER_CLOSED = UDim.new(0, 16)
+local CORNER_EXPANDED = UDim.new(0, 30)
+
+-- 1. 创建基础 ScreenGui
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "DynamicIslandGui"
+screenGui.IgnoreGuiInset = true -- 忽略顶部栏，真正置顶
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent = playerGui
+
+-- 2. 创建灵动岛主体 (黑色胶囊)
+local island = Instance.new("Frame")
+island.Name = "Island"
+island.AnchorPoint = Vector2.new(0.5, 0)
+island.Position = UDim2.new(0.5, 0, 0, 10) -- 距离屏幕最上方 10 像素
+island.Size = SIZE_CLOSED
+island.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+island.ClipsDescendants = true -- 裁剪超出部分
+island.Parent = screenGui
+
+local uiCorner = Instance.new("UICorner")
+uiCorner.CornerRadius = CORNER_CLOSED
+uiCorner.Parent = island
+
+local uiStroke = Instance.new("UIStroke")
+uiStroke.Color = Color3.fromRGB(45, 45, 45)
+uiStroke.Thickness = 1
+uiStroke.Parent = island
+
+-- 3. 创建缩小状态的内容 (Compact View)
+local compactFrame = Instance.new("Frame")
+compactFrame.Name = "CompactContent"
+compactFrame.Size = UDim2.new(1, 0, 1, 0)
+compactFrame.BackgroundTransparency = 1
+compactFrame.Parent = island
+
+-- 小绿点 (模仿iOS隐私指示器/后台活动)
+local statusDot = Instance.new("Frame")
+statusDot.Size = UDim2.new(0, 8, 0, 8)
+statusDot.Position = UDim2.new(0, 14, 0.5, 0)
+statusDot.AnchorPoint = Vector2.new(0, 0.5)
+statusDot.BackgroundColor3 = Color3.fromRGB(48, 209, 88) -- 苹果绿
+statusDot.Parent = compactFrame
+local dotCorner = Instance.new("UICorner")
+dotCorner.CornerRadius = UDim.new(1, 0)
+dotCorner.Parent = statusDot
+
+-- 顶部时间显示
+local timeLabel = Instance.new("TextLabel")
+timeLabel.Size = UDim2.new(0, 60, 1, 0)
+timeLabel.Position = UDim2.new(1, -12, 0, 0)
+timeLabel.AnchorPoint = Vector2.new(1, 0)
+timeLabel.BackgroundTransparency = 1
+timeLabel.Text = "12:00"
+timeLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+timeLabel.Font = Enum.Font.GothamMedium
+timeLabel.TextSize = 12
+timeLabel.TextXAlignment = Enum.TextXAlignment.Right
+timeLabel.Parent = compactFrame
+
+-- 4. 创建展开状态的内容 (Expanded View)
+local expandedFrame = Instance.new("Frame")
+expandedFrame.Name = "ExpandedContent"
+expandedFrame.Size = UDim2.new(1, 0, 1, 0)
+expandedFrame.BackgroundTransparency = 1
+expandedFrame.Visible = false
+expandedFrame.Parent = island
+
+-- 玩家头像
+local avatar = Instance.new("ImageLabel")
+avatar.Size = UDim2.new(0, 50, 0, 50)
+avatar.Position = UDim2.new(0, 20, 0, 20)
+avatar.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+avatar.Parent = expandedFrame
+local avatarCorner = Instance.new("UICorner")
+avatarCorner.CornerRadius = UDim.new(1, 0)
+avatarCorner.Parent = avatar
+
+-- 异步获取玩家头像
+task.spawn(function()
+	local content, isReady = Players:GetUserThumbnailAsync(player.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size150x150)
+	if isReady then avatar.Image = content end
+end)
+
+-- 玩家名称
+local nameLabel = Instance.new("TextLabel")
+nameLabel.Size = UDim2.new(0, 150, 0, 25)
+nameLabel.Position = UDim2.new(0, 82, 0, 22)
+nameLabel.BackgroundTransparency = 1
+nameLabel.Text = player.DisplayName
+nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+nameLabel.Font = Enum.Font.GothamBold
+nameLabel.TextSize = 16
+nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+nameLabel.Parent = expandedFrame
+
+-- FPS 显示
+local fpsLabel = Instance.new("TextLabel")
+fpsLabel.Size = UDim2.new(0, 150, 0, 20)
+fpsLabel.Position = UDim2.new(0, 82, 0, 45)
+fpsLabel.BackgroundTransparency = 1
+fpsLabel.Text = "FPS: 60"
+fpsLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+fpsLabel.Font = Enum.Font.Gotham
+fpsLabel.TextSize = 13
+fpsLabel.TextXAlignment = Enum.TextXAlignment.Left
+fpsLabel.Parent = expandedFrame
+
+-- 底部装饰条 (模拟音乐进度条或系统状态)
+local barBg = Instance.new("Frame")
+barBg.Size = UDim2.new(1, -40, 0, 6)
+barBg.Position = UDim2.new(0, 20, 1, -20)
+barBg.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+barBg.Parent = expandedFrame
+Instance.new("UICorner", barBg).CornerRadius = UDim.new(1, 0)
+
+local barFill = Instance.new("Frame")
+barFill.Size = UDim2.new(0.6, 0, 1, 0)
+barFill.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+barFill.Parent = barBg
+Instance.new("UICorner", barFill).CornerRadius = UDim.new(1, 0)
+
+-- 5. 创建触发按钮 (兼容 PC 点击 和 手机触摸)
+local triggerBtn = Instance.new("TextButton")
+triggerBtn.Size = UDim2.new(1, 0, 1, 0)
+triggerBtn.BackgroundTransparency = 1
+triggerBtn.Text = ""
+triggerBtn.Parent = island
+
+-- 动画控制函数
+local function toggleIsland(expand)
+	if isNotifying then return end -- 如果正在通知，禁止手动切换
+	isExpanded = expand
+	
+	if isExpanded then
+		compactFrame.Visible = false
+		expandedFrame.Visible = true
+		
+		TweenService:Create(island, expandTweenInfo, {Size = SIZE_EXPANDED}):Play()
+		TweenService:Create(uiCorner, expandTweenInfo, {CornerRadius = CORNER_EXPANDED}):Play()
+	else
+		expandedFrame.Visible = false
+		compactFrame.Visible = true
+		
+		local targetSize = isHovering and SIZE_HOVER or SIZE_CLOSED
+		TweenService:Create(island, shrinkTweenInfo, {Size = targetSize}):Play()
+		TweenService:Create(uiCorner, shrinkTweenInfo, {CornerRadius = CORNER_CLOSED}):Play()
+	end
+end
+
+-- 交互事件绑定 (PC + 移动端通用)
+triggerBtn.Activated:Connect(function()
+	toggleIsland(not isExpanded)
+end)
+
+-- PC端特有的鼠标悬停效果
+triggerBtn.MouseEnter:Connect(function()
+	isHovering = true
+	if not isExpanded and not isNotifying then
+		TweenService:Create(island, fadeTweenInfo, {Size = SIZE_HOVER}):Play()
+	end
+end)
+
+triggerBtn.MouseLeave:Connect(function()
+	isHovering = false
+	if not isExpanded and not isNotifying then
+		TweenService:Create(island, fadeTweenInfo, {Size = SIZE_CLOSED}):Play()
+	end
+end)
+
+-- 点击灵动岛外部自动收起 (提升移动端和PC体验)
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if isExpanded and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
+		local pos = input.Position
+		local islandPos = island.AbsolutePosition
+		local islandSize = island.AbsoluteSize
+		
+		-- 检查点击位置是否在灵动岛外部
+		if pos.X < islandPos.X or pos.X > islandPos.X + islandSize.X or
+		   pos.Y < islandPos.Y or pos.Y > islandPos.Y + islandSize.Y then
+			toggleIsland(false)
+		end
+	end
+end)
+
+-- 实时更新时间和 FPS
+local lastUpdate = os.clock()
+local frames = 0
+
+RunService.RenderStepped:Connect(function()
+	frames += 1
+	local now = os.clock()
+	if now - lastUpdate >= 1 then
+		fpsLabel.Text = "正在运行 - FPS: " .. tostring(frames)
+		frames = 0
+		lastUpdate = now
+		
+		-- 更新时间
+		timeLabel.Text = os.date("%H:%M")
+	end
+end)
+
+-- ==========================================
+-- 附加功能：发送灵动岛通知 (你可以在其他地方调用)
+-- ==========================================
+local function sendNotification(title, text, duration)
+	if isExpanded then toggleIsland(false) task.wait(0.3) end
+	isNotifying = true
+	compactFrame.Visible = false
+	
+	-- 创建临时通知UI
+	local notifyFrame = Instance.new("Frame")
+	notifyFrame.Size = UDim2.new(1, 0, 1, 0)
+	notifyFrame.BackgroundTransparency = 1
+	notifyFrame.Parent = island
+	
+	local nTitle = Instance.new("TextLabel")
+	nTitle.Size = UDim2.new(1, -40, 0, 20)
+	nTitle.Position = UDim2.new(0, 20, 0, 12)
+	nTitle.BackgroundTransparency = 1
+	nTitle.Text = title
+	nTitle.Font = Enum.Font.GothamBold
+	nTitle.TextColor3 = Color3.fromRGB(48, 209, 88)
+	nTitle.TextSize = 14
+	nTitle.TextXAlignment = Enum.TextXAlignment.Left
+	nTitle.Parent = notifyFrame
+	
+	local nText = Instance.new("TextLabel")
+	nText.Size = UDim2.new(1, -40, 0, 20)
+	nText.Position = UDim2.new(0, 20, 0, 32)
+	nText.BackgroundTransparency = 1
+	nText.Text = text
+	nText.Font = Enum.Font.Gotham
+	nText.TextColor3 = Color3.fromRGB(255, 255, 255)
+	nText.TextSize = 13
+	nText.TextXAlignment = Enum.TextXAlignment.Left
+	nText.Parent = notifyFrame
+	
+	-- 展开到通知大小
+	TweenService:Create(island, expandTweenInfo, {Size = UDim2.new(0, 280, 0, 65)}):Play()
+	TweenService:Create(uiCorner, expandTweenInfo, {CornerRadius = UDim.new(0, 25)}):Play()
+	
+	task.wait(duration or 3)
+	
+	-- 恢复原状
+	notifyFrame:Destroy()
+	compactFrame.Visible = true
+	TweenService:Create(island, shrinkTweenInfo, {Size = SIZE_CLOSED}):Play()
+	TweenService:Create(uiCorner, shrinkTweenInfo, {CornerRadius = CORNER_CLOSED}):Play()
+	
+	task.wait(0.3)
+	isNotifying = false
+end
+
+-- 游戏启动3秒后测试一次弹窗通知
+task.delay(3, function()
+	sendNotification("灵动岛已激活", "欢迎来到游戏，" .. player.DisplayName .. "！", 4)
+end)
