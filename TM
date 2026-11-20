@@ -4,796 +4,798 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local Lighting = game:GetService("Lighting")
 local SoundService = game:GetService("SoundService")
-local MarketplaceService = game:GetService("MarketplaceService")
-local TeleportService = game:GetService("TeleportService")
-local ProximityPromptService = game:GetService("ProximityPromptService")
 local Stats = game:GetService("Stats")
-local VirtualUser = game:GetService("VirtualUser")
+local TeleportService = game:GetService("TeleportService")
+local MarketplaceService = game:GetService("MarketplaceService")
+local ProximityPromptService = game:GetService("ProximityPromptService")
+local HttpService = game:GetService("HttpService")
 
 local LocalPlayer = Players.LocalPlayer
-local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local Mouse = LocalPlayer:GetMouse()
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
--- 清理旧版本界面
-for _, oldName in ipairs({"AppleIslandV6", "AppleIslandV7", "AppleIslandV8"}) do
+-- 清理旧版本实例
+for _, oldName in ipairs({"AppleIslandV6", "AppleIslandV7", "AppleIslandV8", "AppleIslandV9"}) do
 	if PlayerGui:FindFirstChild(oldName) then
 		PlayerGui[oldName]:Destroy()
 	end
 end
 
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "AppleIslandV8"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.IgnoreGuiInset = true
-ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-ScreenGui.Parent = PlayerGui
-
--- 6款高定钛金属主题
-local Themes = {
-	{Name = "深空钛黑", Bg = Color3.fromRGB(10, 11, 15), Accent = Color3.fromRGB(0, 195, 255)},
-	{Name = "暗夜紫金", Bg = Color3.fromRGB(15, 11, 22), Accent = Color3.fromRGB(190, 105, 255)},
-	{Name = "赛博霓虹", Bg = Color3.fromRGB(9, 17, 21), Accent = Color3.fromRGB(0, 245, 180)},
-	{Name = "翡翠极光", Bg = Color3.fromRGB(10, 18, 14), Accent = Color3.fromRGB(48, 209, 88)},
-	{Name = "樱花流光", Bg = Color3.fromRGB(20, 12, 17), Accent = Color3.fromRGB(255, 105, 180)},
-	{Name = "沙漠钛金", Bg = Color3.fromRGB(19, 17, 15), Accent = Color3.fromRGB(255, 175, 55)}
-}
-local CurrentThemeIndex = 1
-
--- 全局状态与配置
+-- ==================== 1. 全局状态与实用功能配置 ====================
 local Config = {
-	Expanded = false,
-	GlassMode = false,
-	ScaleIndex = 2, -- 1: 85%, 2: 100%, 3: 112%
-	SpeedLock = false,
-	TargetSpeed = 65,
-	JumpLock = false,
-	TargetJump = 120,
-	InfJump = false,
+	IsExpanded = false,
+	GlassMode = true,
+	UIScaleIndex = 2, -- 1: 85%, 2: 100%, 3: 112%
+	ActiveCount = 0,
+	CurrentTheme = 1,
+
+	-- 角色属性
+	Speed = 16,
+	CustomSpeed = 65,
+	UseCustomSpeed = false,
+	Jump = 50,
+	CustomJump = 120,
+	UseCustomJump = false,
+	FOV = 70,
+
+	-- 强化功能开关
 	Fly = false,
-	FlySpeed = 75,
-	VerticalInput = 0, -- 手机端升降按钮状态 (-1, 0, 1)
+	FlySpeed = 65,
+	VerticalInput = 0, -- 移动端/PC端垂直升降输入 (-1, 0, 1)
 	Freecam = false,
-	FreecamCF = CFrame.new(),
-	AntiVoid = true,
-	LastSafeCFrame = nil,
-	AntiFling = false,
-	AutoCollect = false,
-	SpiderClimb = false,
-	SpinBot = false,
-	FreezeChar = false,
+	InfJump = false,
 	Noclip = false,
 	AirWalk = false,
 	AirWalkY = 0,
+	SpiderClimb = false,
+	AntiVoid = true,
+	AntiFling = false,
 	AutoInteract = false,
-	AntiAFK = true,
+	AutoCollect = false,
+	AutoClickTool = false, -- V9新增：手持工具自动连点
+	PanicEscape = false,   -- V9新增：濒死自动升空逃生
+	WalkOnWater = false,   -- V9新增：踏水而行
+	InfiniteZoom = false,  -- V9新增：无限视距缩放
+	SpinBot = false,
+	FreezeChar = false,
 	Flashlight = false,
 	LowGravity = false,
+	FPSBoosted = false,    -- V9新增：一键帧率暴增
+
+	-- 位置记录与回溯
+	LastSafeCFrame = nil,
+	LastDeathCFrame = nil,
+	HistoryCFrames = {},   -- V9新增：3秒时光倒流轨迹缓存
+	DeletedParts = {},     -- V9新增：穿门锤虚化的障碍物缓存
+	Waypoints = { nil, nil, nil },
+
+	-- 玩家互动
+	OrbitTarget = nil,
+	OrbitAngle = 0,
+	PiggybackTarget = nil, -- V9新增：头顶骑乘目标
+	PlayerSearchText = "", -- V9新增：玩家搜索关键词
+
+	-- 视觉功能开关
 	ESP = false,
 	NameESP = false,
 	TracerESP = false,
-	CharTrail = false,
+	Aura = false,
 	Crosshair = false,
-	Fullbright = false,
 	RTX = false,
-	FPSBoost = false,
-	Waypoints = {nil, nil, nil},
-	LastDeathCFrame = nil,
-	OrbitTarget = nil,
-	OrbitAngle = 0,
-	StopwatchRunning = false,
-	StopwatchTime = 0,
-	OrigBrightness = Lighting.Brightness,
-	OrigAmbient = Lighting.Ambient,
-	OrigOutdoor = Lighting.OutdoorAmbient,
-	OrigClock = Lighting.ClockTime,
-	OrigFog = Lighting.FogEnd,
-	OrigGravity = workspace.Gravity,
-	OrigZoom = LocalPlayer.CameraMaxZoomDistance
+	Fullbright = false,
+	NoFog = false,         -- V9新增：全图除雾
+	LockTime = false,      -- V9新增：锁定自定义时间
+	CustomClockTime = 14,
+
+	-- 音乐播放器
+	MusicPlaying = false,
+	MusicVol = 0.8,
+	MusicSpeed = 1.0,
+	BassBoost = false,
+	CurrentTrack = 1
 }
 
--- 精选歌单
+local OrigLighting = {
+	Brightness = Lighting.Brightness,
+	ClockTime = Lighting.ClockTime,
+	FogEnd = Lighting.FogEnd,
+	GlobalShadows = Lighting.GlobalShadows,
+	Ambient = Lighting.Ambient
+}
+local OrigMaxZoom = LocalPlayer.CameraMaxZoomDistance
+
+-- 6款果味高定主题
+local Themes = {
+	{ Name = "深空钛黑", Bg = Color3.fromRGB(10, 10, 14), Accent = Color3.fromRGB(10, 132, 255), Glow = Color3.fromRGB(0, 198, 255) },
+	{ Name = "暗夜紫金", Bg = Color3.fromRGB(15, 11, 24), Accent = Color3.fromRGB(191, 90, 242), Glow = Color3.fromRGB(255, 100, 220) },
+	{ Name = "赛博霓虹", Bg = Color3.fromRGB(8, 16, 22), Accent = Color3.fromRGB(0, 245, 212), Glow = Color3.fromRGB(123, 44, 191) },
+	{ Name = "翡翠极光", Bg = Color3.fromRGB(9, 18, 14), Accent = Color3.fromRGB(48, 209, 88), Glow = Color3.fromRGB(50, 215, 180) },
+	{ Name = "樱花流光", Bg = Color3.fromRGB(22, 11, 16), Accent = Color3.fromRGB(255, 55, 95), Glow = Color3.fromRGB(255, 159, 10) },
+	{ Name = "沙漠钛金", Bg = Color3.fromRGB(20, 17, 14), Accent = Color3.fromRGB(255, 159, 10), Glow = Color3.fromRGB(255, 214, 10) }
+}
+
+-- 内置精选音乐库
 local Playlist = {
-	{Name = "Cyberpunk Neon", Artist = "Synthwave Official", ID = "rbxassetid://9043887091", Color = Color3.fromRGB(0, 210, 255)},
-	{Name = "Chill Lo-Fi Beats", Artist = "Midnight Study", ID = "rbxassetid://1837879082", Color = Color3.fromRGB(185, 100, 255)},
-	{Name = "Phonk Drift Pro", Artist = "Tokyo Night", ID = "rbxassetid://14145620056", Color = Color3.fromRGB(255, 65, 110)},
-	{Name = "Space Ambient", Artist = "Interstellar", ID = "rbxassetid://1848354536", Color = Color3.fromRGB(60, 235, 165)},
-	{Name = "Tropical Summer", Artist = "Island Vibes", ID = "rbxassetid://1838457617", Color = Color3.fromRGB(255, 185, 45)},
-	{Name = "Ethereal Horizon", Artist = "VisionOS Audio", ID = "rbxassetid://9048375035", Color = Color3.fromRGB(110, 150, 255)}
+	{ Title = "Cyberpunk Phonk 2077", Artist = "Apple Music • Spatial Audio", ID = "9043887091", Color = Color3.fromRGB(255, 45, 85) },
+	{ Title = "Chill Lo-Fi Starlight", Artist = "Dolby Atmos • 深夜电台", ID = "1837879082", Color = Color3.fromRGB(94, 92, 230) },
+	{ Title = "Raining Tacos (经典嗨曲)", Artist = "Parry Gripp • Roblox Hit", ID = "14145620056", Color = Color3.fromRGB(48, 209, 88) },
+	{ Title = "Tokyo Drift Synthwave", Artist = "Midnight Runner • 车载低音", ID = "1848354536", Color = Color3.fromRGB(255, 159, 10) },
+	{ Title = "Electronic Eden VIP", Artist = "Club Mix • 超重低音", ID = "1838457617", Color = Color3.fromRGB(0, 199, 190) },
+	{ Title = "Space Cruise Odyssey", Artist = "Ambient • 星际漫游", ID = "9048375035", Color = Color3.fromRGB(175, 82, 222) }
 }
-local CurrentTrackIndex = 1
-local IsPlaying = false
-local CurrentVolume = 0.8
-local CurrentPitch = 1.0
-local BassBoostEnabled = false
 
-local AudioPlayer = SoundService:FindFirstChild("IslandMusicPlayer")
-if not AudioPlayer then
-	AudioPlayer = Instance.new("Sound")
-	AudioPlayer.Name = "IslandMusicPlayer"
-	AudioPlayer.Parent = SoundService
+-- 初始化全局音频与重低音均衡器
+local MusicSound = SoundService:FindFirstChild("IslandMusicPlayer")
+if not MusicSound then
+	MusicSound = Instance.new("Sound")
+	MusicSound.Name = "IslandMusicPlayer"
+	MusicSound.Looped = true
+	MusicSound.Volume = Config.MusicVol
+	MusicSound.SoundId = "rbxassetid://" .. Playlist[1].ID
+	MusicSound.Parent = SoundService
 end
-AudioPlayer.Looped = true
-AudioPlayer.Volume = CurrentVolume
-if not AudioPlayer.IsPlaying and AudioPlayer.SoundId == "" then
-	AudioPlayer.SoundId = Playlist[1].ID
-end
-
-local BassEffect = AudioPlayer:FindFirstChildOfClass("EqualizerSoundEffect")
+local BassEffect = MusicSound:FindFirstChildOfClass("EqualizerSoundEffect")
 if not BassEffect then
 	BassEffect = Instance.new("EqualizerSoundEffect")
 	BassEffect.HighGain = 0
 	BassEffect.MidGain = 0
 	BassEffect.LowGain = 0
 	BassEffect.Enabled = false
-	BassEffect.Parent = AudioPlayer
+	BassEffect.Parent = MusicSound
 end
 
-local function PlayClickSound(pitch)
-	local s = Instance.new("Sound")
-	s.SoundId = "rbxassetid://6895079853"
-	s.Volume = 0.35
-	s.PlaybackSpeed = pitch or 1.05
-	s.Parent = SoundService
-	s:Play()
-	game:GetService("Debris"):AddItem(s, 0.4)
-end
+-- ==================== 2. 构建 VisionOS 级灵动岛 UI ====================
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "AppleIslandV9"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.IgnoreGuiInset = true
+ScreenGui.Parent = PlayerGui
 
--- ==================== 屏幕准星 & 手机/PC通用飞行升降悬浮键 ====================
+-- 屏幕动态十字准星
 local CrosshairFrame = Instance.new("Frame")
-CrosshairFrame.Size = UDim2.new(0, 26, 0, 26)
-CrosshairFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+CrosshairFrame.Size = UDim2.new(0, 24, 0, 24)
 CrosshairFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+CrosshairFrame.AnchorPoint = Vector2.new(0.5, 0.5)
 CrosshairFrame.BackgroundTransparency = 1
 CrosshairFrame.Visible = false
-CrosshairFrame.ZIndex = 5
 CrosshairFrame.Parent = ScreenGui
 
-local CrossDot = Instance.new("Frame")
-CrossDot.Size = UDim2.new(0, 4, 0, 4)
-CrossDot.AnchorPoint = Vector2.new(0.5, 0.5)
-CrossDot.Position = UDim2.new(0.5, 0, 0.5, 0)
-CrossDot.BackgroundColor3 = Color3.fromRGB(0, 255, 170)
-Instance.new("UICorner", CrossDot).CornerRadius = UDim.new(1, 0)
-CrossDot.Parent = CrosshairFrame
+local CH_H = Instance.new("Frame", CrosshairFrame)
+CH_H.Size = UDim2.new(0, 14, 0, 2)
+CH_H.Position = UDim2.new(0.5, 0, 0.5, 0)
+CH_H.AnchorPoint = Vector2.new(0.5, 0.5)
+CH_H.BackgroundColor3 = Color3.fromRGB(48, 209, 88)
+CH_H.BorderSizePixel = 0
+Instance.new("UICorner", CH_H).CornerRadius = UDim.new(1, 0)
 
-local CrossRing = Instance.new("Frame")
-CrossRing.Size = UDim2.new(0, 18, 0, 18)
-CrossRing.AnchorPoint = Vector2.new(0.5, 0.5)
-CrossRing.Position = UDim2.new(0.5, 0, 0.5, 0)
-CrossRing.BackgroundTransparency = 1
-Instance.new("UICorner", CrossRing).CornerRadius = UDim.new(1, 0)
-local CrossStroke = Instance.new("UIStroke", CrossRing)
-CrossStroke.Color = Color3.fromRGB(0, 255, 170)
-CrossStroke.Thickness = 1.3
-CrossStroke.Transparency = 0.25
-CrossRing.Parent = CrosshairFrame
+local CH_V = Instance.new("Frame", CrosshairFrame)
+CH_V.Size = UDim2.new(0, 2, 0, 14)
+CH_V.Position = UDim2.new(0.5, 0, 0.5, 0)
+CH_V.AnchorPoint = Vector2.new(0.5, 0.5)
+CH_V.BackgroundColor3 = Color3.fromRGB(48, 209, 88)
+CH_V.BorderSizePixel = 0
+Instance.new("UICorner", CH_V).CornerRadius = UDim.new(1, 0)
 
--- 飞行/自由视角专属右侧升降控制组 (不挡摇杆)
+-- 移动端/PC通用：右侧悬浮飞行升降按键组（开启飞行/自由视角/踏空时自动浮现）
 local FlyControlPad = Instance.new("Frame")
 FlyControlPad.Size = UDim2.new(0, 52, 0, 114)
-FlyControlPad.AnchorPoint = Vector2.new(1, 0.5)
-FlyControlPad.Position = UDim2.new(1, -18, 0.52, 0)
-FlyControlPad.BackgroundColor3 = Color3.fromRGB(14, 14, 20)
-FlyControlPad.BackgroundTransparency = 0.2
+FlyControlPad.Position = UDim2.new(1, -72, 0.52, -57)
+FlyControlPad.BackgroundTransparency = 1
 FlyControlPad.Visible = false
-FlyControlPad.ZIndex = 8
 FlyControlPad.Parent = ScreenGui
-Instance.new("UICorner", FlyControlPad).CornerRadius = UDim.new(1, 0)
-local FlyPadStroke = Instance.new("UIStroke", FlyControlPad)
-FlyPadStroke.Color = Themes[1].Accent
-FlyPadStroke.Thickness = 1.2
-FlyPadStroke.Transparency = 0.3
 
-local FlyUpBtn = Instance.new("TextButton")
-FlyUpBtn.Size = UDim2.new(1, -8, 0.5, -6)
-FlyUpBtn.Position = UDim2.new(0, 4, 0, 4)
-FlyUpBtn.BackgroundColor3 = Color3.fromRGB(28, 28, 40)
-FlyUpBtn.Text = "⬆️\n升空"
-FlyUpBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-FlyUpBtn.Font = Enum.Font.GothamBold
-FlyUpBtn.TextSize = 11
-FlyUpBtn.ZIndex = 9
-FlyUpBtn.Parent = FlyControlPad
-Instance.new("UICorner", FlyUpBtn).CornerRadius = UDim.new(1, 0)
+local function CreateFlyPadBtn(text, posY, val)
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(1, 0, 0, 50)
+	btn.Position = UDim2.new(0, 0, 0, posY)
+	btn.BackgroundColor3 = Color3.fromRGB(16, 16, 24)
+	btn.BackgroundTransparency = 0.25
+	btn.Text = text
+	btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	btn.Font = Enum.Font.GothamBold
+	btn.TextSize = 13
+	btn.AutoButtonColor = false
+	btn.Parent = FlyControlPad
+	Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 16)
+	local st = Instance.new("UIStroke", btn)
+	st.Color = Themes[1].Accent
+	st.Thickness = 1.4
+	st.Transparency = 0.3
 
-local FlyDownBtn = Instance.new("TextButton")
-FlyDownBtn.Size = UDim2.new(1, -8, 0.5, -6)
-FlyDownBtn.Position = UDim2.new(0, 4, 0.5, 2)
-FlyDownBtn.BackgroundColor3 = Color3.fromRGB(28, 28, 40)
-FlyDownBtn.Text = "⬇️\n下降"
-FlyDownBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-FlyDownBtn.Font = Enum.Font.GothamBold
-FlyDownBtn.TextSize = 11
-FlyDownBtn.ZIndex = 9
-FlyDownBtn.Parent = FlyControlPad
-Instance.new("UICorner", FlyDownBtn).CornerRadius = UDim.new(1, 0)
+	btn.InputBegan:Connect(function(inp)
+		if inp.UserInputType == Enum.UserInputType.Touch or inp.UserInputType == Enum.UserInputType.MouseButton1 then
+			Config.VerticalInput = val
+			btn.BackgroundColor3 = Themes[Config.CurrentTheme].Accent
+		end
+	end)
+	btn.InputEnded:Connect(function(inp)
+		if inp.UserInputType == Enum.UserInputType.Touch or inp.UserInputType == Enum.UserInputType.MouseButton1 then
+			if Config.VerticalInput == val then
+				Config.VerticalInput = 0
+			end
+			btn.BackgroundColor3 = Color3.fromRGB(16, 16, 24)
+		end
+	end)
+	return btn
+end
+local FlyUpBtn = CreateFlyPadBtn("⬆️\n升空", 0, 1)
+local FlyDownBtn = CreateFlyPadBtn("⬇️\n下降", 62, -1)
 
-FlyUpBtn.InputBegan:Connect(function(inp)
-	if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
-		Config.VerticalInput = 1
-		FlyUpBtn.BackgroundColor3 = Themes[CurrentThemeIndex].Accent
-		FlyUpBtn.TextColor3 = Color3.fromRGB(10, 10, 14)
-	end
-end)
-FlyUpBtn.InputEnded:Connect(function(inp)
-	if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
-		Config.VerticalInput = 0
-		FlyUpBtn.BackgroundColor3 = Color3.fromRGB(28, 28, 40)
-		FlyUpBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-	end
-end)
-FlyDownBtn.InputBegan:Connect(function(inp)
-	if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
-		Config.VerticalInput = -1
-		FlyDownBtn.BackgroundColor3 = Themes[CurrentThemeIndex].Accent
-		FlyDownBtn.TextColor3 = Color3.fromRGB(10, 10, 14)
-	end
-end)
-FlyDownBtn.InputEnded:Connect(function(inp)
-	if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
-		Config.VerticalInput = 0
-		FlyDownBtn.BackgroundColor3 = Color3.fromRGB(28, 28, 40)
-		FlyDownBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-	end
-end)
+-- 灵动岛主容器
+local COMPACT_SIZE = UDim2.new(0, 208, 0, 36)
+local EXPANDED_SIZE = UDim2.new(0, 416, 0, 326)
 
--- ==================== 拟真灵动岛与双层光学玻璃主体 ====================
-local COMPACT_SIZE = UDim2.new(0, 206, 0, 36)
-local EXPANDED_SIZE = UDim2.new(0, 412, 0, 322)
-local START_POS = UDim2.new(0.5, 0, 0, 10)
-
--- 外层呼吸环境光晕
-local AmbientGlow = Instance.new("Frame")
-AmbientGlow.AnchorPoint = Vector2.new(0.5, 0)
-AmbientGlow.Position = START_POS
-AmbientGlow.Size = UDim2.new(0, 96, 0, 96)
-AmbientGlow.BackgroundColor3 = Themes[1].Accent
-AmbientGlow.BackgroundTransparency = 0.8
-AmbientGlow.BorderSizePixel = 0
-AmbientGlow.ZIndex = 9
-AmbientGlow.Parent = ScreenGui
-Instance.new("UICorner", AmbientGlow).CornerRadius = UDim.new(1, 0)
-local GlowUIScale = Instance.new("UIScale", AmbientGlow)
-
--- 灵动岛主窗口
 local Island = Instance.new("Frame")
 Island.Name = "DynamicIsland"
 Island.AnchorPoint = Vector2.new(0.5, 0)
-Island.Position = START_POS
-Island.Size = UDim2.new(0, 92, 0, 92)
+Island.Position = UDim2.new(0.5, 0, 0, 10)
+Island.Size = UDim2.new(0, 128, 0, 36)
 Island.BackgroundColor3 = Themes[1].Bg
-Island.BackgroundTransparency = 0.03
+Island.BackgroundTransparency = 0.36
 Island.BorderSizePixel = 0
 Island.ClipsDescendants = true
 Island.Active = true
-Island.ZIndex = 10
 Island.Parent = ScreenGui
 
-local IslandUIScale = Instance.new("UIScale", Island)
+local IslandScale = Instance.new("UIScale", Island)
+IslandScale.Scale = 1.0
 
-local IslandCorner = Instance.new("UICorner")
-IslandCorner.CornerRadius = UDim.new(0, 46)
-IslandCorner.Parent = Island
+local IslandCorner = Instance.new("UICorner", Island)
+IslandCorner.CornerRadius = UDim.new(0, 18)
 
--- 钛金属流光外边框
-local IslandStroke = Instance.new("UIStroke")
-IslandStroke.Color = Color3.fromRGB(255, 255, 255)
+-- 外层流光霓虹边框
+local IslandStroke = Instance.new("UIStroke", Island)
 IslandStroke.Thickness = 1.6
-IslandStroke.Transparency = 0.22
-IslandStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-IslandStroke.Parent = Island
+IslandStroke.Color = Color3.fromRGB(255, 255, 255)
+IslandStroke.Transparency = 0.25
 
-local StrokeGradient = Instance.new("UIGradient")
-StrokeGradient.Color = ColorSequence.new({
-	ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
-	ColorSequenceKeypoint.new(0.35, Themes[1].Accent),
-	ColorSequenceKeypoint.new(0.7, Color3.fromRGB(35, 35, 45)),
-	ColorSequenceKeypoint.new(1, Color3.fromRGB(220, 220, 255))
+local StrokeGrad = Instance.new("UIGradient", IslandStroke)
+StrokeGrad.Color = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, Themes[1].Accent),
+	ColorSequenceKeypoint.new(0.35, Color3.fromRGB(255, 255, 255)),
+	ColorSequenceKeypoint.new(0.65, Color3.fromRGB(45, 45, 55)),
+	ColorSequenceKeypoint.new(1, Themes[1].Glow)
 })
-StrokeGradient.Rotation = 45
-StrokeGradient.Parent = IslandStroke
 
--- 3D 曲面玻璃内衬高光折射框 (Inner Specular Rim)
-local InnerGlassRim = Instance.new("Frame")
+-- 内层高光倒角（双层真实玻璃折光）
+local InnerGlassRim = Instance.new("Frame", Island)
 InnerGlassRim.Size = UDim2.new(1, -4, 1, -4)
 InnerGlassRim.Position = UDim2.new(0, 2, 0, 2)
 InnerGlassRim.BackgroundTransparency = 1
-InnerGlassRim.ZIndex = 11
-InnerGlassRim.Parent = Island
+InnerGlassRim.ZIndex = 2
 local InnerRimCorner = Instance.new("UICorner", InnerGlassRim)
-InnerRimCorner.CornerRadius = UDim.new(1, 0)
-
+InnerRimCorner.CornerRadius = UDim.new(0, 16)
 local InnerRimStroke = Instance.new("UIStroke", InnerGlassRim)
+InnerRimStroke.Thickness = 0.8
 InnerRimStroke.Color = Color3.fromRGB(255, 255, 255)
-InnerRimStroke.Thickness = 1
-InnerRimStroke.Transparency = 0.86
+InnerRimStroke.Transparency = 0.82
 
--- 顶部曲面蓝宝石镜面光泽
-local GlassSheen = Instance.new("Frame")
-GlassSheen.Size = UDim2.new(1, 0, 0.38, 0)
+-- 顶部曲面镜面反光层
+local GlassSheen = Instance.new("Frame", Island)
+GlassSheen.Size = UDim2.new(1, 0, 0, 42)
 GlassSheen.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-GlassSheen.BackgroundTransparency = 0.94
+GlassSheen.BackgroundTransparency = 0.93
 GlassSheen.BorderSizePixel = 0
-GlassSheen.ZIndex = 11
-GlassSheen.Parent = Island
-Instance.new("UICorner", GlassSheen).CornerRadius = UDim.new(0, 26)
-
-local SheenGrad = Instance.new("UIGradient")
+GlassSheen.ZIndex = 1
+Instance.new("UICorner", GlassSheen).CornerRadius = UDim.new(0, 18)
+local SheenGrad = Instance.new("UIGradient", GlassSheen)
 SheenGrad.Rotation = 90
 SheenGrad.Transparency = NumberSequence.new({
-	NumberSequenceKeypoint.new(0, 0.15),
-	NumberSequenceKeypoint.new(0.7, 0.8),
+	NumberSequenceKeypoint.new(0, 0.2),
 	NumberSequenceKeypoint.new(1, 1)
 })
-SheenGrad.Parent = GlassSheen
 
--- 开机 Face ID 解锁动画
-local FaceIDLabel = Instance.new("TextLabel")
+-- 背面呼吸光晕层
+local AmbientGlow = Instance.new("Frame", Island)
+AmbientGlow.Size = UDim2.new(1, 30, 1, 30)
+AmbientGlow.Position = UDim2.new(0.5, 0, 0.5, 0)
+AmbientGlow.AnchorPoint = Vector2.new(0.5, 0.5)
+AmbientGlow.BackgroundColor3 = Themes[1].Accent
+AmbientGlow.BackgroundTransparency = 0.9
+AmbientGlow.ZIndex = 0
+Instance.new("UICorner", AmbientGlow).CornerRadius = UDim.new(1, 0)
+
+-- ==================== 3. 真实物理摄像头模组 & 隐私指示灯 ====================
+local SensorPill = Instance.new("Frame", Island)
+SensorPill.Size = UDim2.new(0, 56, 0, 18)
+SensorPill.Position = UDim2.new(0.5, 0, 0, 9)
+SensorPill.AnchorPoint = Vector2.new(0.5, 0)
+SensorPill.BackgroundColor3 = Color3.fromRGB(3, 3, 5)
+SensorPill.BorderSizePixel = 0
+SensorPill.ZIndex = 14
+Instance.new("UICorner", SensorPill).CornerRadius = UDim.new(1, 0)
+local SensorStroke = Instance.new("UIStroke", SensorPill)
+SensorStroke.Color = Color3.fromRGB(28, 28, 36)
+SensorStroke.Thickness = 0.8
+
+local CameraHole = Instance.new("Frame", SensorPill)
+CameraHole.Size = UDim2.new(0, 12, 0, 12)
+CameraHole.Position = UDim2.new(0, 5, 0.5, -6)
+CameraHole.BackgroundColor3 = Color3.fromRGB(8, 12, 24)
+CameraHole.BorderSizePixel = 0
+CameraHole.ZIndex = 15
+Instance.new("UICorner", CameraHole).CornerRadius = UDim.new(1, 0)
+local LensRing = Instance.new("UIStroke", CameraHole)
+LensRing.Color = Color3.fromRGB(35, 55, 95)
+LensRing.Thickness = 1.2
+
+local LensGlint = Instance.new("Frame", CameraHole)
+LensGlint.Size = UDim2.new(0, 4, 0, 4)
+LensGlint.Position = UDim2.new(0, 2, 0, 2)
+LensGlint.BackgroundColor3 = Color3.fromRGB(90, 175, 255)
+LensGlint.BackgroundTransparency = 0.25
+LensGlint.BorderSizePixel = 0
+LensGlint.ZIndex = 16
+Instance.new("UICorner", LensGlint).CornerRadius = UDim.new(1, 0)
+
+local IRDot = Instance.new("Frame", SensorPill)
+IRDot.Size = UDim2.new(0, 7, 0, 7)
+IRDot.Position = UDim2.new(0, 23, 0.5, -3.5)
+IRDot.BackgroundColor3 = Color3.fromRGB(28, 12, 18)
+IRDot.BorderSizePixel = 0
+IRDot.ZIndex = 15
+Instance.new("UICorner", IRDot).CornerRadius = UDim.new(1, 0)
+
+local PrivacyDot = Instance.new("Frame", SensorPill)
+PrivacyDot.Size = UDim2.new(0, 5, 0, 5)
+PrivacyDot.Position = UDim2.new(1, -10, 0.5, -2.5)
+PrivacyDot.BackgroundColor3 = Color3.fromRGB(48, 209, 88)
+PrivacyDot.BorderSizePixel = 0
+PrivacyDot.ZIndex = 15
+Instance.new("UICorner", PrivacyDot).CornerRadius = UDim.new(1, 0)
+
+-- 开机 Face ID 验证动画遮罩
+local FaceIDLabel = Instance.new("TextLabel", Island)
 FaceIDLabel.Size = UDim2.new(1, 0, 1, 0)
 FaceIDLabel.BackgroundTransparency = 1
 FaceIDLabel.Text = "🔓\nFace ID 已验证"
 FaceIDLabel.TextColor3 = Color3.fromRGB(48, 209, 88)
 FaceIDLabel.Font = Enum.Font.GothamBold
-FaceIDLabel.TextSize = 12
-FaceIDLabel.ZIndex = 25
-FaceIDLabel.Parent = Island
+FaceIDLabel.TextSize = 13
+FaceIDLabel.Visible = false
+FaceIDLabel.ZIndex = 20
 
--- 灵动岛内嵌通知胶囊 (Toast)
-local ToastBanner = Instance.new("Frame")
-ToastBanner.Size = UDim2.new(1, -24, 0, 28)
-ToastBanner.AnchorPoint = Vector2.new(0.5, 0)
-ToastBanner.Position = UDim2.new(0.5, 0, 0, -42)
-ToastBanner.BackgroundColor3 = Color3.fromRGB(22, 22, 30)
-ToastBanner.ZIndex = 24
-ToastBanner.Parent = Island
-Instance.new("UICorner", ToastBanner).CornerRadius = UDim.new(1, 0)
-
-local ToastStroke = Instance.new("UIStroke", ToastBanner)
-ToastStroke.Color = Themes[1].Accent
-ToastStroke.Thickness = 1.2
-ToastStroke.Transparency = 0.15
-
-local ToastText = Instance.new("TextLabel")
-ToastText.Size = UDim2.new(1, -16, 1, 0)
-ToastText.Position = UDim2.new(0, 8, 0, 0)
-ToastText.BackgroundTransparency = 1
-ToastText.Text = "🔔 灵动岛已就绪"
-ToastText.TextColor3 = Color3.fromRGB(255, 255, 255)
-ToastText.Font = Enum.Font.GothamBold
-ToastText.TextSize = 11
-ToastText.ZIndex = 25
-ToastText.Parent = ToastBanner
-
-local function ShowToast(msg)
-	ToastText.Text = msg
-	ToastStroke.Color = Themes[CurrentThemeIndex].Accent
-	TweenService:Create(ToastBanner, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-		Position = UDim2.new(0.5, 0, 0, 7)
-	}):Play()
-	task.delay(1.85, function()
-		if ToastText.Text == msg then
-			TweenService:Create(ToastBanner, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-				Position = UDim2.new(0.5, 0, 0, -42)
-			}):Play()
-		end
-	end)
-end
-
--- ==================== 收缩态灵动岛 (真机镜头组 + 隐私灯 + 频谱) ====================
-local CompactView = Instance.new("TextButton")
-CompactView.Name = "CompactView"
+-- ==================== 4. 灵动岛微缩态 (Compact Pill View) ====================
+local CompactView = Instance.new("TextButton", Island)
 CompactView.Size = UDim2.new(1, 0, 1, 0)
 CompactView.BackgroundTransparency = 1
 CompactView.Text = ""
-CompactView.Visible = false
-CompactView.ZIndex = 12
-CompactView.Parent = Island
+CompactView.AutoButtonColor = false
+CompactView.ZIndex = 10
 
-local MiniDisk = Instance.new("Frame")
+local MiniDisk = Instance.new("Frame", CompactView)
 MiniDisk.Size = UDim2.new(0, 22, 0, 22)
-MiniDisk.AnchorPoint = Vector2.new(0, 0.5)
-MiniDisk.Position = UDim2.new(0, 8, 0.5, 0)
+MiniDisk.Position = UDim2.new(0, 8, 0.5, -11)
 MiniDisk.BackgroundColor3 = Playlist[1].Color
-MiniDisk.ZIndex = 13
-MiniDisk.Parent = CompactView
+MiniDisk.BorderSizePixel = 0
 Instance.new("UICorner", MiniDisk).CornerRadius = UDim.new(1, 0)
 
-local MiniDiskInner = Instance.new("Frame")
-MiniDiskInner.Size = UDim2.new(0, 7, 0, 7)
-MiniDiskInner.AnchorPoint = Vector2.new(0.5, 0.5)
-MiniDiskInner.Position = UDim2.new(0.5, 0, 0.5, 0)
-MiniDiskInner.BackgroundColor3 = Color3.fromRGB(10, 10, 14)
-MiniDiskInner.ZIndex = 14
-MiniDiskInner.Parent = MiniDisk
-Instance.new("UICorner", MiniDiskInner).CornerRadius = UDim.new(1, 0)
+local MiniDiskCore = Instance.new("Frame", MiniDisk)
+MiniDiskCore.Size = UDim2.new(0, 7, 0, 7)
+MiniDiskCore.Position = UDim2.new(0.5, -3.5, 0.5, -3.5)
+MiniDiskCore.BackgroundColor3 = Color3.fromRGB(12, 12, 16)
+MiniDiskCore.BorderSizePixel = 0
+Instance.new("UICorner", MiniDiskCore).CornerRadius = UDim.new(1, 0)
 
--- iPhone 16 Pro 真实药丸打孔传感器 + 隐私指示灯
-local SensorPill = Instance.new("Frame")
-SensorPill.Size = UDim2.new(0, 36, 0, 14)
-SensorPill.AnchorPoint = Vector2.new(0, 0.5)
-SensorPill.Position = UDim2.new(0, 34, 0.5, 0)
-SensorPill.BackgroundColor3 = Color3.fromRGB(4, 4, 6)
-SensorPill.ZIndex = 13
-SensorPill.Parent = CompactView
-Instance.new("UICorner", SensorPill).CornerRadius = UDim.new(1, 0)
+local MiniFPSLabel = Instance.new("TextLabel", CompactView)
+MiniFPSLabel.Size = UDim2.new(0, 44, 1, 0)
+MiniFPSLabel.Position = UDim2.new(0, 34, 0, 0)
+MiniFPSLabel.BackgroundTransparency = 1
+MiniFPSLabel.Text = "60Hz"
+MiniFPSLabel.TextColor3 = Color3.fromRGB(235, 235, 245)
+MiniFPSLabel.Font = Enum.Font.GothamBold
+MiniFPSLabel.TextSize = 11
+MiniFPSLabel.TextXAlignment = Enum.TextXAlignment.Left
 
-local CameraHole = Instance.new("Frame")
-CameraHole.Size = UDim2.new(0, 11, 0, 11)
-CameraHole.AnchorPoint = Vector2.new(1, 0.5)
-CameraHole.Position = UDim2.new(1, -9, 0.5, 0)
-CameraHole.BackgroundColor3 = Color3.fromRGB(12, 16, 28)
-CameraHole.ZIndex = 14
-CameraHole.Parent = SensorPill
-Instance.new("UICorner", CameraHole).CornerRadius = UDim.new(1, 0)
-
-local LensGlint = Instance.new("Frame")
-LensGlint.Size = UDim2.new(0, 3, 0, 3)
-LensGlint.Position = UDim2.new(0, 2, 0, 2)
-LensGlint.BackgroundColor3 = Color3.fromRGB(90, 185, 255)
-LensGlint.BackgroundTransparency = 0.15
-LensGlint.ZIndex = 15
-LensGlint.Parent = CameraHole
-Instance.new("UICorner", LensGlint).CornerRadius = UDim.new(1, 0)
-
-local IRDot = Instance.new("Frame")
-IRDot.Size = UDim2.new(0, 6, 0, 6)
-IRDot.AnchorPoint = Vector2.new(0, 0.5)
-IRDot.Position = UDim2.new(0, 4, 0.5, 0)
-IRDot.BackgroundColor3 = Color3.fromRGB(28, 12, 18)
-IRDot.ZIndex = 14
-IRDot.Parent = SensorPill
-Instance.new("UICorner", IRDot).CornerRadius = UDim.new(1, 0)
-
--- iOS 真机隐私指示小圆点 (翠绿/琥珀橙)
-local PrivacyDot = Instance.new("Frame")
-PrivacyDot.Size = UDim2.new(0, 4, 0, 4)
-PrivacyDot.AnchorPoint = Vector2.new(1, 0.5)
-PrivacyDot.Position = UDim2.new(1, -2, 0.5, 0)
-PrivacyDot.BackgroundColor3 = Color3.fromRGB(48, 209, 88)
-PrivacyDot.ZIndex = 15
-PrivacyDot.Parent = SensorPill
-Instance.new("UICorner", PrivacyDot).CornerRadius = UDim.new(1, 0)
-
-local CompactTitle = Instance.new("TextLabel")
-CompactTitle.Size = UDim2.new(1, -112, 1, 0)
-CompactTitle.Position = UDim2.new(0, 74, 0, 0)
-CompactTitle.BackgroundTransparency = 1
-CompactTitle.Text = "60 FPS"
-CompactTitle.TextColor3 = Color3.fromRGB(240, 240, 245)
-CompactTitle.Font = Enum.Font.GothamBold
-CompactTitle.TextSize = 11
-CompactTitle.TextXAlignment = Enum.TextXAlignment.Center
-CompactTitle.ZIndex = 13
-CompactTitle.Parent = CompactView
-
-local MiniWaveFrame = Instance.new("Frame")
-MiniWaveFrame.Size = UDim2.new(0, 24, 0, 16)
-MiniWaveFrame.AnchorPoint = Vector2.new(1, 0.5)
-MiniWaveFrame.Position = UDim2.new(1, -10, 0.5, 0)
-MiniWaveFrame.BackgroundTransparency = 1
-MiniWaveFrame.ZIndex = 13
-MiniWaveFrame.Parent = CompactView
-
-local MiniWaveLayout = Instance.new("UIListLayout", MiniWaveFrame)
-MiniWaveLayout.FillDirection = Enum.FillDirection.Horizontal
-MiniWaveLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-MiniWaveLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-MiniWaveLayout.Padding = UDim.new(0, 2)
+local MiniWaveContainer = Instance.new("Frame", CompactView)
+MiniWaveContainer.Size = UDim2.new(0, 20, 0, 14)
+MiniWaveContainer.Position = UDim2.new(1, -28, 0.5, -7)
+MiniWaveContainer.BackgroundTransparency = 1
 
 local MiniBars = {}
 for i = 1, 4 do
-	local mb = Instance.new("Frame")
-	mb.Size = UDim2.new(0, 3, 0, 5)
-	mb.BackgroundColor3 = Themes[1].Accent
-	mb.ZIndex = 14
-	Instance.new("UICorner", mb).CornerRadius = UDim.new(1, 0)
-	mb.Parent = MiniWaveFrame
-	table.insert(MiniBars, mb)
+	local bar = Instance.new("Frame", MiniWaveContainer)
+	bar.Size = UDim2.new(0, 3, 0, 4)
+	bar.Position = UDim2.new(0, (i - 1) * 5, 0.5, 0)
+	bar.AnchorPoint = Vector2.new(0, 0.5)
+	bar.BackgroundColor3 = Themes[1].Accent
+	bar.BorderSizePixel = 0
+	Instance.new("UICorner", bar).CornerRadius = UDim.new(1, 0)
+	table.insert(MiniBars, bar)
 end
 
--- ==================== 展开态 iOS 18 悬浮窗界面 ====================
-local ExpandedView = Instance.new("Frame")
-ExpandedView.Name = "ExpandedView"
+local MiniTimeLabel = Instance.new("TextLabel", CompactView)
+MiniTimeLabel.Size = UDim2.new(0, 42, 1, 0)
+MiniTimeLabel.Position = UDim2.new(1, -72, 0, 0)
+MiniTimeLabel.BackgroundTransparency = 1
+MiniTimeLabel.Text = os.date("%H:%M")
+MiniTimeLabel.TextColor3 = Color3.fromRGB(175, 175, 190)
+MiniTimeLabel.Font = Enum.Font.GothamMedium
+MiniTimeLabel.TextSize = 11
+MiniTimeLabel.TextXAlignment = Enum.TextXAlignment.Right
+
+-- ==================== 5. 灵动岛展开态 (Expanded Window View) ====================
+local ExpandedView = Instance.new("Frame", Island)
 ExpandedView.Size = UDim2.new(1, 0, 1, 0)
 ExpandedView.BackgroundTransparency = 1
 ExpandedView.Visible = false
-ExpandedView.ZIndex = 12
-ExpandedView.Parent = Island
+ExpandedView.ZIndex = 5
 
-local HeaderBar = Instance.new("Frame")
+local HeaderBar = Instance.new("Frame", ExpandedView)
 HeaderBar.Size = UDim2.new(1, -24, 0, 30)
-HeaderBar.Position = UDim2.new(0, 12, 0, 7)
+HeaderBar.Position = UDim2.new(0, 12, 0, 6)
 HeaderBar.BackgroundTransparency = 1
-HeaderBar.ZIndex = 13
-HeaderBar.Parent = ExpandedView
 
-local HeaderTitle = Instance.new("TextLabel")
-HeaderTitle.Size = UDim2.new(0, 96, 1, 0)
+local HeaderTitle = Instance.new("TextLabel", HeaderBar)
+HeaderTitle.Size = UDim2.new(0, 140, 1, 0)
 HeaderTitle.BackgroundTransparency = 1
-HeaderTitle.Text = " iOS 18 Pro"
+HeaderTitle.Text = " Island OS 9.0"
 HeaderTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
 HeaderTitle.Font = Enum.Font.GothamBold
 HeaderTitle.TextSize = 13
 HeaderTitle.TextXAlignment = Enum.TextXAlignment.Left
-HeaderTitle.ZIndex = 13
-HeaderTitle.Parent = HeaderBar
 
-local StatusInfoLabel = Instance.new("TextLabel")
-StatusInfoLabel.Size = UDim2.new(0, 85, 1, 0)
-StatusInfoLabel.Position = UDim2.new(0, 90, 0, 0)
-StatusInfoLabel.BackgroundTransparency = 1
-StatusInfoLabel.Text = "5G 12:00 🔋100%"
-StatusInfoLabel.TextColor3 = Color3.fromRGB(165, 165, 175)
-StatusInfoLabel.Font = Enum.Font.GothamMedium
-StatusInfoLabel.TextSize = 10
-StatusInfoLabel.TextXAlignment = Enum.TextXAlignment.Left
-StatusInfoLabel.ZIndex = 13
-StatusInfoLabel.Parent = HeaderBar
+local ScaleBtn = Instance.new("TextButton", HeaderBar)
+ScaleBtn.Size = UDim2.new(0, 48, 0, 22)
+ScaleBtn.Position = UDim2.new(1, -214, 0.5, -11)
+ScaleBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 46)
+ScaleBtn.BackgroundTransparency = 0.2
+ScaleBtn.Text = "🔍100%"
+ScaleBtn.TextColor3 = Color3.fromRGB(220, 220, 235)
+ScaleBtn.Font = Enum.Font.GothamBold
+ScaleBtn.TextSize = 10
+Instance.new("UICorner", ScaleBtn).CornerRadius = UDim.new(1, 0)
 
-local function CreateHeaderBtn(text, posOffset, width, bgColor, textColor)
-	local btn = Instance.new("TextButton")
-	btn.Size = UDim2.new(0, width, 0, 22)
-	btn.AnchorPoint = Vector2.new(1, 0.5)
-	btn.Position = UDim2.new(1, posOffset, 0.5, 0)
-	btn.BackgroundColor3 = bgColor
-	btn.Text = text
-	btn.TextColor3 = textColor
-	btn.Font = Enum.Font.GothamBold
-	btn.TextSize = 10
-	btn.AutoButtonColor = false
-	btn.ZIndex = 14
-	btn.Parent = HeaderBar
-	Instance.new("UICorner", btn).CornerRadius = UDim.new(1, 0)
-	return btn
+local CenterPosBtn = Instance.new("TextButton", HeaderBar)
+CenterPosBtn.Size = UDim2.new(0, 46, 0, 22)
+CenterPosBtn.Position = UDim2.new(1, -162, 0.5, -11)
+CenterPosBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 46)
+CenterPosBtn.BackgroundTransparency = 0.2
+CenterPosBtn.Text = "🎯归位"
+CenterPosBtn.TextColor3 = Color3.fromRGB(220, 220, 235)
+CenterPosBtn.Font = Enum.Font.GothamBold
+CenterPosBtn.TextSize = 10
+Instance.new("UICorner", CenterPosBtn).CornerRadius = UDim.new(1, 0)
+
+local GlassBtn = Instance.new("TextButton", HeaderBar)
+GlassBtn.Size = UDim2.new(0, 52, 0, 22)
+GlassBtn.Position = UDim2.new(1, -112, 0.5, -11)
+GlassBtn.BackgroundColor3 = Themes[1].Accent
+GlassBtn.BackgroundTransparency = 0.25
+GlassBtn.Text = "💧琉璃"
+GlassBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+GlassBtn.Font = Enum.Font.GothamBold
+GlassBtn.TextSize = 10
+Instance.new("UICorner", GlassBtn).CornerRadius = UDim.new(1, 0)
+
+local CollapseTopBtn = Instance.new("TextButton", HeaderBar)
+CollapseTopBtn.Size = UDim2.new(0, 54, 0, 22)
+CollapseTopBtn.Position = UDim2.new(1, -54, 0.5, -11)
+CollapseTopBtn.BackgroundColor3 = Color3.fromRGB(255, 69, 58)
+CollapseTopBtn.BackgroundTransparency = 0.2
+CollapseTopBtn.Text = "🔼 收起"
+CollapseTopBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+CollapseTopBtn.Font = Enum.Font.GothamBold
+CollapseTopBtn.TextSize = 10
+Instance.new("UICorner", CollapseTopBtn).CornerRadius = UDim.new(1, 0)
+
+-- 吐司通知提示横幅
+local ToastBanner = Instance.new("TextLabel", ExpandedView)
+ToastBanner.Size = UDim2.new(1, -24, 0, 22)
+ToastBanner.Position = UDim2.new(0, 12, 0, -28)
+ToastBanner.BackgroundColor3 = Color3.fromRGB(30, 30, 42)
+ToastBanner.BackgroundTransparency = 0.1
+ToastBanner.Text = "🔔 灵动岛就绪"
+ToastBanner.TextColor3 = Color3.fromRGB(48, 209, 88)
+ToastBanner.Font = Enum.Font.GothamBold
+ToastBanner.TextSize = 11
+ToastBanner.ZIndex = 20
+Instance.new("UICorner", ToastBanner).CornerRadius = UDim.new(0, 8)
+local ToastStroke = Instance.new("UIStroke", ToastBanner)
+ToastStroke.Color = Color3.fromRGB(48, 209, 88)
+ToastStroke.Thickness = 1
+
+local function Notify(msg, color)
+	ToastBanner.Text = "🔔 " .. msg
+	ToastBanner.TextColor3 = color or Color3.fromRGB(48, 209, 88)
+	ToastStroke.Color = color or Color3.fromRGB(48, 209, 88)
+	TweenService:Create(ToastBanner, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+		Position = UDim2.new(0, 12, 0, 8)
+	}):Play()
+	task.delay(1.8, function()
+		TweenService:Create(ToastBanner, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+			Position = UDim2.new(0, 12, 0, -28)
+		}):Play()
+	end)
 end
 
-local ScaleBtn = CreateHeaderBtn("🔍 100%", -162, 50, Color3.fromRGB(32, 32, 42), Color3.fromRGB(205, 205, 215))
-local CenterPosBtn = CreateHeaderBtn("🎯 归位", -108, 50, Color3.fromRGB(32, 32, 42), Color3.fromRGB(205, 205, 215))
-local GlassBtn = CreateHeaderBtn("💧 琉璃", -54, 50, Color3.fromRGB(32, 32, 42), Color3.fromRGB(0, 210, 255))
-local CollapseTopBtn = CreateHeaderBtn("🔼 收起", 0, 50, Color3.fromRGB(48, 48, 60), Color3.fromRGB(255, 255, 255))
-
--- 分类导航栏 + 丝滑弹性胶囊指示器
-local NavBar = Instance.new("Frame")
-NavBar.Size = UDim2.new(1, -24, 0, 29)
-NavBar.Position = UDim2.new(0, 12, 0, 39)
-NavBar.BackgroundColor3 = Color3.fromRGB(20, 20, 28)
-NavBar.BackgroundTransparency = 0.15
-NavBar.ZIndex = 13
-NavBar.Parent = ExpandedView
+-- ==================== 6. 7大分类导航栏 ====================
+local NavBar = Instance.new("Frame", ExpandedView)
+NavBar.Size = UDim2.new(1, -24, 0, 30)
+NavBar.Position = UDim2.new(0, 12, 0, 40)
+NavBar.BackgroundColor3 = Color3.fromRGB(22, 22, 30)
+NavBar.BackgroundTransparency = 0.35
 Instance.new("UICorner", NavBar).CornerRadius = UDim.new(0, 10)
 
-local TabIndicator = Instance.new("Frame")
-TabIndicator.Size = UDim2.new(1/7, -4, 1, -6)
-TabIndicator.Position = UDim2.new(0, 3, 0, 3)
+local TabIndicator = Instance.new("Frame", NavBar)
+TabIndicator.Size = UDim2.new(1 / 7, -4, 1, -6)
+TabIndicator.Position = UDim2.new(0, 2, 0, 3)
 TabIndicator.BackgroundColor3 = Themes[1].Accent
-TabIndicator.ZIndex = 13
-TabIndicator.Parent = NavBar
+TabIndicator.BorderSizePixel = 0
 Instance.new("UICorner", TabIndicator).CornerRadius = UDim.new(0, 8)
 
-local TabContainer = Instance.new("Frame")
-TabContainer.Size = UDim2.new(1, -6, 1, -6)
-TabContainer.Position = UDim2.new(0, 3, 0, 3)
-TabContainer.BackgroundTransparency = 1
-TabContainer.ZIndex = 14
-TabContainer.Parent = NavBar
+local PageWrapper = Instance.new("Frame", ExpandedView)
+PageWrapper.Size = UDim2.new(1, -24, 1, -98)
+PageWrapper.Position = UDim2.new(0, 12, 0, 76)
+PageWrapper.BackgroundTransparency = 1
 
-local NavLayout = Instance.new("UIListLayout", TabContainer)
-NavLayout.FillDirection = Enum.FillDirection.Horizontal
-NavLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-NavLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+local HomeBarBtn = Instance.new("TextButton", ExpandedView)
+HomeBarBtn.Size = UDim2.new(0, 130, 0, 16)
+HomeBarBtn.Position = UDim2.new(0.5, 0, 1, -18)
+HomeBarBtn.AnchorPoint = Vector2.new(0.5, 0)
+HomeBarBtn.BackgroundTransparency = 1
+HomeBarBtn.Text = ""
 
-local PageContainer = Instance.new("Frame")
-PageContainer.Size = UDim2.new(1, -24, 1, -92)
-PageContainer.Position = UDim2.new(0, 12, 0, 74)
-PageContainer.BackgroundTransparency = 1
-PageContainer.ZIndex = 13
-PageContainer.Parent = ExpandedView
+local HomeBarVisual = Instance.new("Frame", HomeBarBtn)
+HomeBarVisual.Size = UDim2.new(0, 105, 0, 4)
+HomeBarVisual.Position = UDim2.new(0.5, 0, 0.5, 0)
+HomeBarVisual.AnchorPoint = Vector2.new(0.5, 0.5)
+HomeBarVisual.BackgroundColor3 = Color3.fromRGB(220, 220, 235)
+HomeBarVisual.BackgroundTransparency = 0.35
+Instance.new("UICorner", HomeBarVisual).CornerRadius = UDim.new(1, 0)
 
-local Pages = {}
-local TabButtons = {}
 local Tabs = {
-	{Id = "Control", Title = "🏠控制"},
-	{Id = "Music", Title = "🎵音乐"},
-	{Id = "Player", Title = "⚡强化"},
-	{Id = "Waypoint", Title = "📍坐标"},
-	{Id = "PlayersList", Title = "👥玩家"},
-	{Id = "Visual", Title = "🎨视觉"},
-	{Id = "Server", Title = "📊本服"}
+	{ ID = "Control", Title = "🏠控制" },
+	{ ID = "Music",   Title = "🎵音乐" },
+	{ ID = "Player",  Title = "⚡强化" },
+	{ ID = "Waypoint",Title = "📍工具" },
+	{ ID = "Players", Title = "👥玩家" },
+	{ ID = "Visual",  Title = "🎨视觉" },
+	{ ID = "Server",  Title = "📊本服" }
 }
 
-local function SwitchTab(tabId)
-	PlayClickSound(1.15)
-	for id, page in pairs(Pages) do
-		page.Visible = (id == tabId)
-	end
-	for idx, tabInfo in ipairs(Tabs) do
-		local btn = TabButtons[tabInfo.Id]
-		local isSelected = (tabInfo.Id == tabId)
-		if isSelected then
-			TweenService:Create(TabIndicator, TweenInfo.new(0.32, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-				Position = UDim2.new((idx - 1) / #Tabs, 2, 0, 3),
-				BackgroundColor3 = Themes[CurrentThemeIndex].Accent
-			}):Play()
-		end
-		TweenService:Create(btn, TweenInfo.new(0.2), {
-			TextColor3 = isSelected and Color3.fromRGB(10, 10, 14) or Color3.fromRGB(185, 185, 195)
-		}):Play()
-	end
-end
+local Pages = {}
+local TabBtns = {}
 
-for _, tab in ipairs(Tabs) do
-	local btn = Instance.new("TextButton")
+for idx, tab in ipairs(Tabs) do
+	local btn = Instance.new("TextButton", NavBar)
 	btn.Size = UDim2.new(1 / #Tabs, 0, 1, 0)
+	btn.Position = UDim2.new((idx - 1) / #Tabs, 0, 0, 0)
 	btn.BackgroundTransparency = 1
 	btn.Text = tab.Title
+	btn.TextColor3 = idx == 1 and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(150, 150, 165)
 	btn.Font = Enum.Font.GothamBold
 	btn.TextSize = 11
-	btn.AutoButtonColor = false
-	btn.ZIndex = 15
-	btn.Parent = TabContainer
-	btn.MouseButton1Click:Connect(function() SwitchTab(tab.Id) end)
-	TabButtons[tab.Id] = btn
+	btn.ZIndex = 3
+	TabBtns[tab.ID] = btn
 
-	local page = Instance.new("ScrollingFrame")
-	page.Name = tab.Id .. "Page"
+	local page = Instance.new("ScrollingFrame", PageWrapper)
 	page.Size = UDim2.new(1, 0, 1, 0)
 	page.BackgroundTransparency = 1
 	page.BorderSizePixel = 0
 	page.ScrollBarThickness = 3
 	page.ScrollBarImageColor3 = Themes[1].Accent
-	page.CanvasSize = UDim2.new(0, 0, 0, 0)
 	page.AutomaticCanvasSize = Enum.AutomaticSize.Y
-	page.Visible = false
-	page.ZIndex = 13
-	page.Parent = PageContainer
-	Pages[tab.Id] = page
+	page.CanvasSize = UDim2.new(0, 0, 0, 0)
+	page.Visible = (idx == 1)
+	Pages[tab.ID] = page
+
+	if tab.ID ~= "Music" and tab.ID ~= "Server" and tab.ID ~= "Control" then
+		local layout = Instance.new("UIListLayout", page)
+		layout.Padding = UDim.new(0, 6)
+		layout.SortOrder = Enum.SortOrder.LayoutOrder
+		local pad = Instance.new("UIPadding", page)
+		pad.PaddingRight = UDim.new(0, 5)
+		pad.PaddingBottom = UDim.new(0, 6)
+	end
+
+	btn.MouseButton1Click:Connect(function()
+		for id, p in pairs(Pages) do
+			p.Visible = (id == tab.ID)
+			TabBtns[id].TextColor3 = (id == tab.ID) and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(150, 150, 165)
+		end
+		TweenService:Create(TabIndicator, TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+			Position = UDim2.new((idx - 1) / #Tabs, 2, 0, 3)
+		}):Play()
+	end)
 end
 
--- ==================== 1. 🏠 iOS 18 磁贴控制中心 & 无级滑块 ====================
-local ControlPage = Pages["Control"]
-local ControlLayout = Instance.new("UIListLayout", ControlPage)
-ControlLayout.Padding = UDim.new(0, 6)
+-- 通用触摸/鼠标滑块构建函数
+local ActiveSliderUpdater = nil
+local function CreateiOSSlider(parent, posY, titleText, minVal, maxVal, defaultVal, unitText, onValueChange)
+	local card = Instance.new("Frame", parent)
+	card.Size = UDim2.new(1, -4, 0, 42)
+	if posY then card.Position = UDim2.new(0, 0, 0, posY) end
+	card.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
+	card.BackgroundTransparency = 0.25
+	Instance.new("UICorner", card).CornerRadius = UDim.new(0, 11)
 
--- 顶部双磁贴行
-local BentoRow = Instance.new("Frame")
-BentoRow.Size = UDim2.new(1, -4, 0, 68)
-BentoRow.BackgroundTransparency = 1
-BentoRow.ZIndex = 14
-BentoRow.Parent = ControlPage
+	local lbl = Instance.new("TextLabel", card)
+	lbl.Size = UDim2.new(0.65, 0, 0, 18)
+	lbl.Position = UDim2.new(0, 10, 0, 3)
+	lbl.BackgroundTransparency = 1
+	lbl.Text = titleText
+	lbl.TextColor3 = Color3.fromRGB(235, 235, 245)
+	lbl.Font = Enum.Font.GothamBold
+	lbl.TextSize = 11
+	lbl.TextXAlignment = Enum.TextXAlignment.Left
 
-local NetTile = Instance.new("Frame")
-NetTile.Size = UDim2.new(0.48, 0, 1, 0)
-NetTile.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
-NetTile.BackgroundTransparency = 0.15
-NetTile.ZIndex = 14
-NetTile.Parent = BentoRow
-Instance.new("UICorner", NetTile).CornerRadius = UDim.new(0, 13)
+	local valLbl = Instance.new("TextLabel", card)
+	valLbl.Size = UDim2.new(0.32, -10, 0, 18)
+	valLbl.Position = UDim2.new(0.68, 0, 0, 3)
+	valLbl.BackgroundTransparency = 1
+	valLbl.Text = tostring(defaultVal) .. unitText
+	valLbl.TextColor3 = Themes[1].Accent
+	valLbl.Font = Enum.Font.GothamBold
+	valLbl.TextSize = 11
+	valLbl.TextXAlignment = Enum.TextXAlignment.Right
 
-local NetTitle = Instance.new("TextLabel")
-NetTitle.Size = UDim2.new(1, -16, 0, 18)
-NetTitle.Position = UDim2.new(0, 10, 0, 6)
-NetTitle.BackgroundTransparency = 1
-NetTitle.Text = "📡 灵动实时监测"
-NetTitle.TextColor3 = Themes[1].Accent
-NetTitle.Font = Enum.Font.GothamBold
-NetTitle.TextSize = 11
-NetTitle.TextXAlignment = Enum.TextXAlignment.Left
-NetTitle.ZIndex = 15
-NetTitle.Parent = NetTile
+	local trackBtn = Instance.new("TextButton", card)
+	trackBtn.Size = UDim2.new(1, -20, 0, 12)
+	trackBtn.Position = UDim2.new(0, 10, 0, 24)
+	trackBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 58)
+	trackBtn.Text = ""
+	trackBtn.AutoButtonColor = false
+	Instance.new("UICorner", trackBtn).CornerRadius = UDim.new(1, 0)
 
-local NetDetail = Instance.new("TextLabel")
-NetDetail.Size = UDim2.new(1, -16, 0, 36)
-NetDetail.Position = UDim2.new(0, 10, 0, 24)
-NetDetail.BackgroundTransparency = 1
-NetDetail.Text = "延迟: -- ms | 60 FPS\n防坠虚空保护: 运行中"
-NetDetail.TextColor3 = Color3.fromRGB(220, 220, 230)
-NetDetail.Font = Enum.Font.GothamMedium
-NetDetail.TextSize = 10
-NetDetail.TextXAlignment = Enum.TextXAlignment.Left
-NetDetail.ZIndex = 15
-NetDetail.Parent = NetTile
+	local initRatio = math.clamp((defaultVal - minVal) / (maxVal - minVal), 0, 1)
+	local fill = Instance.new("Frame", trackBtn)
+	fill.Size = UDim2.new(initRatio, 0, 1, 0)
+	fill.BackgroundColor3 = Themes[1].Accent
+	fill.BorderSizePixel = 0
+	Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
 
-local QuickMusicTile = Instance.new("Frame")
-QuickMusicTile.Size = UDim2.new(0.5, 0, 1, 0)
-QuickMusicTile.Position = UDim2.new(0.5, 0, 0, 0)
-QuickMusicTile.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
-QuickMusicTile.BackgroundTransparency = 0.15
-QuickMusicTile.ZIndex = 14
-QuickMusicTile.Parent = BentoRow
-Instance.new("UICorner", QuickMusicTile).CornerRadius = UDim.new(0, 13)
+	local knob = Instance.new("Frame", fill)
+	knob.Size = UDim2.new(0, 14, 0, 14)
+	knob.Position = UDim2.new(1, -7, 0.5, -7)
+	knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	knob.BorderSizePixel = 0
+	Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
 
-local QMTitle = Instance.new("TextLabel")
-QMTitle.Size = UDim2.new(1, -16, 0, 18)
-QMTitle.Position = UDim2.new(0, 10, 0, 6)
-QMTitle.BackgroundTransparency = 1
-QMTitle.Text = "🎵 " .. Playlist[1].Name
-QMTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
-QMTitle.Font = Enum.Font.GothamBold
-QMTitle.TextSize = 11
-QMTitle.TextXAlignment = Enum.TextXAlignment.Left
-QMTitle.TextTruncate = Enum.TextTruncate.AtEnd
-QMTitle.ZIndex = 15
-QMTitle.Parent = QuickMusicTile
+	local function UpdateFromX(xPos)
+		local rel = math.clamp((xPos - trackBtn.AbsolutePosition.X) / math.max(trackBtn.AbsoluteSize.X, 1), 0, 1)
+		fill.Size = UDim2.new(rel, 0, 1, 0)
+		local currentVal = math.floor(minVal + (maxVal - minVal) * rel)
+		valLbl.Text = tostring(currentVal) .. unitText
+		onValueChange(currentVal)
+	end
 
-local QMPlayBtn = Instance.new("TextButton")
-QMPlayBtn.Size = UDim2.new(0, 76, 0, 26)
-QMPlayBtn.Position = UDim2.new(0, 10, 0, 32)
-QMPlayBtn.BackgroundColor3 = Themes[1].Accent
-QMPlayBtn.Text = "▶ 播放"
-QMPlayBtn.TextColor3 = Color3.fromRGB(10, 10, 14)
-QMPlayBtn.Font = Enum.Font.GothamBold
-QMPlayBtn.TextSize = 11
-QMPlayBtn.ZIndex = 15
-QMPlayBtn.Parent = QuickMusicTile
-Instance.new("UICorner", QMPlayBtn).CornerRadius = UDim.new(1, 0)
-
-local QMNextBtn = Instance.new("TextButton")
-QMNextBtn.Size = UDim2.new(0, 68, 0, 26)
-QMNextBtn.Position = UDim2.new(0, 92, 0, 32)
-QMNextBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 54)
-QMNextBtn.Text = "⏭ 切歌"
-QMNextBtn.TextColor3 = Color3.fromRGB(240, 240, 245)
-QMNextBtn.Font = Enum.Font.GothamBold
-QMNextBtn.TextSize = 11
-QMNextBtn.ZIndex = 15
-QMNextBtn.Parent = QuickMusicTile
-Instance.new("UICorner", QMNextBtn).CornerRadius = UDim.new(1, 0)
-
--- 四联实用快捷操作磁贴 (原地刷新复活 / 解除僵直 / 随身手电 / 太空失重)
-local QuickGridRow = Instance.new("Frame")
-QuickGridRow.Size = UDim2.new(1, -4, 0, 50)
-QuickGridRow.BackgroundTransparency = 1
-QuickGridRow.ZIndex = 14
-QuickGridRow.Parent = ControlPage
-
-local QuickGridLayout = Instance.new("UIListLayout", QuickGridRow)
-QuickGridLayout.FillDirection = Enum.FillDirection.Horizontal
-QuickGridLayout.Padding = UDim.new(0, 6)
-
-local function CreateQuickTile(icon, title, isToggle, callback)
-	local tile = Instance.new("TextButton")
-	tile.Size = UDim2.new(0.25, -5, 1, 0)
-	tile.BackgroundColor3 = Color3.fromRGB(26, 26, 36)
-	tile.Text = icon .. "\n" .. title
-	tile.TextColor3 = Color3.fromRGB(225, 225, 235)
-	tile.Font = Enum.Font.GothamBold
-	tile.TextSize = 10
-	tile.AutoButtonColor = false
-	tile.ZIndex = 15
-	tile.Parent = QuickGridRow
-	Instance.new("UICorner", tile).CornerRadius = UDim.new(0, 11)
-
-	local active = false
-	tile.MouseButton1Click:Connect(function()
-		if isToggle then
-			active = not active
-			PlayClickSound(active and 1.2 or 0.9)
-			TweenService:Create(tile, TweenInfo.new(0.2), {
-				BackgroundColor3 = active and Themes[CurrentThemeIndex].Accent or Color3.fromRGB(26, 26, 36),
-				TextColor3 = active and Color3.fromRGB(10, 10, 14) or Color3.fromRGB(225, 225, 235)
-			}):Play()
-			callback(active, tile)
-		else
-			PlayClickSound(1.2)
-			TweenService:Create(tile, TweenInfo.new(0.12), {BackgroundColor3 = Themes[CurrentThemeIndex].Accent, TextColor3 = Color3.fromRGB(10, 10, 14)}):Play()
-			task.delay(0.2, function()
-				TweenService:Create(tile, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(26, 26, 36), TextColor3 = Color3.fromRGB(225, 225, 235)}):Play()
-			end)
-			callback(true, tile)
+	trackBtn.InputBegan:Connect(function(inp)
+		if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+			UpdateFromX(inp.Position.X)
+			ActiveSliderUpdater = UpdateFromX
 		end
 	end)
-	return tile
+	return card, fill, valLbl
 end
 
--- 实用功能1：原地刷新复活 (Refresh Character in Place)
-CreateQuickTile("🔄", "原地刷新", false, function()
+UserInputService.InputChanged:Connect(function(inp)
+	if ActiveSliderUpdater and (inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch) then
+		ActiveSliderUpdater(inp.Position.X)
+	end
+end)
+UserInputService.InputEnded:Connect(function(inp)
+	if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+		ActiveSliderUpdater = nil
+	end
+end)
+
+-- ==================== 7. 【🏠控制】iOS 18 Bento 控制中心 (含时光倒流与帧率暴增) ====================
+local ControlPage = Pages["Control"]
+
+local NetTile = Instance.new("Frame", ControlPage)
+NetTile.Size = UDim2.new(0.48, -2, 0, 50)
+NetTile.Position = UDim2.new(0, 0, 0, 0)
+NetTile.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
+NetTile.BackgroundTransparency = 0.25
+Instance.new("UICorner", NetTile).CornerRadius = UDim.new(0, 12)
+
+local NetTileTitle = Instance.new("TextLabel", NetTile)
+NetTileTitle.Size = UDim2.new(1, -16, 0, 18)
+NetTileTitle.Position = UDim2.new(0, 10, 0, 6)
+NetTileTitle.BackgroundTransparency = 1
+NetTileTitle.Text = "📡 实时性能监控"
+NetTileTitle.TextColor3 = Color3.fromRGB(160, 160, 180)
+NetTileTitle.Font = Enum.Font.GothamBold
+NetTileTitle.TextSize = 10
+NetTileTitle.TextXAlignment = Enum.TextXAlignment.Left
+
+local NetTileValue = Instance.new("TextLabel", NetTile)
+NetTileValue.Size = UDim2.new(1, -16, 0, 22)
+NetTileValue.Position = UDim2.new(0, 10, 0, 24)
+NetTileValue.BackgroundTransparency = 1
+NetTileValue.Text = "Ping: --ms | 60 FPS"
+NetTileValue.TextColor3 = Color3.fromRGB(48, 209, 88)
+NetTileValue.Font = Enum.Font.GothamBold
+NetTileValue.TextSize = 12
+NetTileValue.TextXAlignment = Enum.TextXAlignment.Left
+
+local QuickMusicTile = Instance.new("Frame", ControlPage)
+QuickMusicTile.Size = UDim2.new(0.52, -4, 0, 50)
+QuickMusicTile.Position = UDim2.new(0.48, 2, 0, 0)
+QuickMusicTile.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
+QuickMusicTile.BackgroundTransparency = 0.25
+Instance.new("UICorner", QuickMusicTile).CornerRadius = UDim.new(0, 12)
+
+local QMusicTitle = Instance.new("TextLabel", QuickMusicTile)
+QMusicTitle.Size = UDim2.new(1, -74, 0, 20)
+QMusicTitle.Position = UDim2.new(0, 10, 0, 6)
+QMusicTitle.BackgroundTransparency = 1
+QMusicTitle.Text = "🎵 " .. Playlist[1].Title
+QMusicTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+QMusicTitle.Font = Enum.Font.GothamBold
+QMusicTitle.TextSize = 11
+QMusicTitle.TextXAlignment = Enum.TextXAlignment.Left
+QMusicTitle.TextTruncate = Enum.TextTruncate.AtEnd
+
+local QMusicSub = Instance.new("TextLabel", QuickMusicTile)
+QMusicSub.Size = UDim2.new(1, -74, 0, 16)
+QMusicSub.Position = UDim2.new(0, 10, 0, 26)
+QMusicSub.BackgroundTransparency = 1
+QMusicSub.Text = "点击右侧快捷播放"
+QMusicSub.TextColor3 = Color3.fromRGB(160, 160, 175)
+QMusicSub.Font = Enum.Font.Gotham
+QMusicSub.TextSize = 10
+QMusicSub.TextXAlignment = Enum.TextXAlignment.Left
+
+local QPlayBtn = Instance.new("TextButton", QuickMusicTile)
+QPlayBtn.Size = UDim2.new(0, 28, 0, 28)
+QPlayBtn.Position = UDim2.new(1, -64, 0.5, -14)
+QPlayBtn.BackgroundColor3 = Themes[1].Accent
+QPlayBtn.Text = "▶"
+QPlayBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+QPlayBtn.Font = Enum.Font.GothamBold
+QPlayBtn.TextSize = 12
+Instance.new("UICorner", QPlayBtn).CornerRadius = UDim.new(1, 0)
+
+local QNextBtn = Instance.new("TextButton", QuickMusicTile)
+QNextBtn.Size = UDim2.new(0, 28, 0, 28)
+QNextBtn.Position = UDim2.new(1, -32, 0.5, -14)
+QNextBtn.BackgroundColor3 = Color3.fromRGB(42, 42, 54)
+QNextBtn.Text = "⏭"
+QNextBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+QNextBtn.Font = Enum.Font.GothamBold
+QNextBtn.TextSize = 12
+Instance.new("UICorner", QNextBtn).CornerRadius = UDim.new(1, 0)
+
+-- 6大实用磁贴按钮 (2行 x 3列)
+local function CreateQuickTile(colIdx, rowIdx, title, activeMode, callback)
+	local btn = Instance.new("TextButton", ControlPage)
+	btn.Size = UDim2.new(1/3, -5, 0, 32)
+	btn.Position = UDim2.new((colIdx - 1) / 3, (colIdx - 1) * 2, 0, 56 + (rowIdx - 1) * 36)
+	btn.BackgroundColor3 = Color3.fromRGB(28, 28, 38)
+	btn.BackgroundTransparency = 0.2
+	btn.Text = title
+	btn.TextColor3 = Color3.fromRGB(240, 240, 250)
+	btn.Font = Enum.Font.GothamBold
+	btn.TextSize = 11
+	btn.AutoButtonColor = false
+	Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 9)
+
+	local isOn = false
+	btn.MouseButton1Click:Connect(function()
+		if activeMode then
+			isOn = not isOn
+			btn.BackgroundColor3 = isOn and Themes[Config.CurrentTheme].Accent or Color3.fromRGB(28, 28, 38)
+			callback(isOn)
+		else
+			btn.BackgroundColor3 = Themes[Config.CurrentTheme].Accent
+			task.delay(0.2, function() btn.BackgroundColor3 = Color3.fromRGB(28, 28, 38) end)
+			callback()
+		end
+	end)
+end
+
+-- 1. 原地刷新角色
+CreateQuickTile(1, 1, "🔄 原地刷新", false, function()
 	local char = LocalPlayer.Character
 	local hrp = char and char:FindFirstChild("HumanoidRootPart")
 	local hum = char and char:FindFirstChildOfClass("Humanoid")
 	if hrp and hum then
 		local savedCF = hrp.CFrame
-		ShowToast("🔄 正在原地刷新角色...")
+		Notify("正在原地刷新角色...", Color3.fromRGB(10, 132, 255))
+		hum.Health = 0
 		local conn
 		conn = LocalPlayer.CharacterAdded:Connect(function(newChar)
 			conn:Disconnect()
@@ -801,30 +803,65 @@ CreateQuickTile("🔄", "原地刷新", false, function()
 			if newHrp then
 				task.wait(0.15)
 				newHrp.CFrame = savedCF
-				ShowToast("✅ 已在原位置完成刷新复活！")
+				Notify("已满血回到原位置！", Color3.fromRGB(48, 209, 88))
 			end
 		end)
-		hum.Health = 0
 	end
 end)
 
--- 实用功能2：一键解除眩晕/倒地僵直
-CreateQuickTile("🧘", "解除僵直", false, function()
+-- 2. V9新增：3秒时光倒流回溯
+CreateQuickTile(2, 1, "⏪ 时光倒流", false, function()
+	local char = LocalPlayer.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	if hrp and #Config.HistoryCFrames > 0 then
+		local targetCF = Config.HistoryCFrames[1]
+		hrp.Velocity = Vector3.zero
+		hrp.CFrame = targetCF
+		Notify("⏪ 已倒流回 3 秒前的位置！", Color3.fromRGB(191, 90, 242))
+	else
+		Notify("暂无足够轨迹记录", Color3.fromRGB(255, 159, 10))
+	end
+end)
+
+-- 3. V9新增：一键帧率暴增 (低配流畅优化)
+CreateQuickTile(3, 1, "🚀 帧率暴增", true, function(state)
+	Config.FPSBoosted = state
+	if state then
+		Lighting.GlobalShadows = false
+		for _, v in ipairs(workspace:GetDescendants()) do
+			if v:IsA("BasePart") then
+				v.Material = Enum.Material.SmoothPlastic
+				v.Reflectance = 0
+			elseif v:IsA("Decal") or v:IsA("Texture") then
+				v.Transparency = 1
+			elseif v:IsA("ParticleEmitter") or v:IsA("Trail") then
+				v.Enabled = false
+			end
+		end
+		Notify("🚀 帧率暴增已开启：材质与特效已精简", Color3.fromRGB(48, 209, 88))
+	else
+		Lighting.GlobalShadows = OrigLighting.GlobalShadows
+		Notify("已恢复默认光影设置", Color3.fromRGB(160, 160, 175))
+	end
+end)
+
+-- 4. 解除僵直/卡死
+CreateQuickTile(1, 2, "🧘 解除僵直", false, function()
 	local char = LocalPlayer.Character
 	local hum = char and char:FindFirstChildOfClass("Humanoid")
 	local hrp = char and char:FindFirstChild("HumanoidRootPart")
 	if hum and hrp then
 		hum.PlatformStand = false
 		hum.Sit = false
-		hum:ChangeState(Enum.HumanoidStateType.GettingUp)
 		hrp.Anchored = false
-		hrp.AssemblyAngularVelocity = Vector3.zero
-		ShowToast("🧘 已解除角色倒地/眩晕/僵直状态")
+		hrp.RotVelocity = Vector3.zero
+		hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+		Notify("已解除眩晕与倒地状态")
 	end
 end)
 
--- 实用功能3：随身强光手电
-CreateQuickTile("🔦", "强光手电", true, function(state)
+-- 5. 强光手电筒
+CreateQuickTile(2, 2, "🔦 强光手电", true, function(state)
 	Config.Flashlight = state
 	local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
 	if hrp then
@@ -835,1486 +872,1226 @@ CreateQuickTile("🔦", "强光手电", true, function(state)
 				light.Name = "IslandFlashlight"
 				light.Range = 60
 				light.Brightness = 3.5
-				light.Color = Color3.fromRGB(255, 250, 235)
 				light.Parent = hrp
 			end
-			ShowToast("🔦 360° 强光手电已开启")
-		else
-			if light then light:Destroy() end
-			ShowToast("🔦 手电筒已关闭")
+			Notify("随身强光手电已开启")
+		elseif light then
+			light:Destroy()
 		end
 	end
 end)
 
--- 实用功能4：太空失重模式
-CreateQuickTile("🪐", "太空失重", true, function(state)
+-- 6. 太空失重模式
+CreateQuickTile(3, 2, "🪐 太空失重", true, function(state)
 	Config.LowGravity = state
-	workspace.Gravity = state and 42 or Config.OrigGravity
-	ShowToast(state and "🪐 已开启月球低重力环境" or "🪐 已恢复默认地球重力")
+	workspace.Gravity = state and 42 or 196.2
+	Notify(state and "已进入太空失重环境" or "已恢复标准地球重力")
 end)
 
--- iOS 18 无级触控滑块生成器 (支持PC鼠标与手机触屏拖动)
-local SliderFills = {}
-local function CreateiOSSlider(title, minVal, maxVal, defaultVal, unit, onChange)
-	local card = Instance.new("Frame")
-	card.Size = UDim2.new(1, -4, 0, 42)
-	card.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
-	card.BackgroundTransparency = 0.15
-	card.ZIndex = 14
-	card.Parent = ControlPage
-	Instance.new("UICorner", card).CornerRadius = UDim.new(0, 10)
-
-	local lbl = Instance.new("TextLabel")
-	lbl.Size = UDim2.new(1, -20, 0, 16)
-	lbl.Position = UDim2.new(0, 10, 0, 4)
-	lbl.BackgroundTransparency = 1
-	lbl.Text = title .. ": " .. tostring(defaultVal) .. unit
-	lbl.TextColor3 = Color3.fromRGB(235, 235, 245)
-	lbl.Font = Enum.Font.GothamBold
-	lbl.TextSize = 11
-	lbl.TextXAlignment = Enum.TextXAlignment.Left
-	lbl.ZIndex = 15
-	lbl.Parent = card
-
-	local track = Instance.new("TextButton")
-	track.Size = UDim2.new(1, -20, 0, 12)
-	track.Position = UDim2.new(0, 10, 0, 24)
-	track.BackgroundColor3 = Color3.fromRGB(42, 42, 56)
-	track.Text = ""
-	track.AutoButtonColor = false
-	track.ZIndex = 15
-	track.Parent = card
-	Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
-
-	local initRatio = math.clamp((defaultVal - minVal) / (maxVal - minVal), 0, 1)
-	local fill = Instance.new("Frame")
-	fill.Size = UDim2.new(initRatio, 0, 1, 0)
-	fill.BackgroundColor3 = Themes[1].Accent
-	fill.BorderSizePixel = 0
-	fill.ZIndex = 16
-	fill.Parent = track
-	Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
-	table.insert(SliderFills, fill)
-
-	local draggingSlider = false
-	local function UpdateSlider(posX)
-		local rel = math.clamp((posX - track.AbsolutePosition.X) / math.max(track.AbsoluteSize.X, 1), 0, 1)
-		fill.Size = UDim2.new(rel, 0, 1, 0)
-		local val = math.floor(minVal + (maxVal - minVal) * rel)
-		lbl.Text = title .. ": " .. tostring(val) .. unit
-		onChange(val)
-	end
-
-	track.InputBegan:Connect(function(inp)
-		if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
-			draggingSlider = true
-			UpdateSlider(inp.Position.X)
-		end
-	end)
-	UserInputService.InputChanged:Connect(function(inp)
-		if draggingSlider and (inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch) then
-			UpdateSlider(inp.Position.X)
-		end
-	end)
-	UserInputService.InputEnded:Connect(function(inp)
-		if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
-			draggingSlider = false
-		end
-	end)
-end
-
-CreateiOSSlider("⚡ 移动速度无级调节", 16, 250, 65, " 移速", function(val)
-	Config.TargetSpeed = val
-	Config.SpeedLock = (val > 16)
-	local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-	if hum then hum.WalkSpeed = val end
+-- 3条无级触控滑块
+CreateiOSSlider(ControlPage, 132, "⚡ 移动速度无级调节", 16, 250, 16, " Studs/s", function(val)
+	Config.CustomSpeed = val
+	Config.Speed = val
+	Config.UseCustomSpeed = (val > 16)
 end)
 
-CreateiOSSlider("🚀 跳跃高度无级调节", 50, 300, 120, " 弹跳", function(val)
-	Config.TargetJump = val
-	Config.JumpLock = (val > 50)
-	local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-	if hum then
-		hum.UseJumpPower = true
-		hum.JumpPower = val
-	end
+CreateiOSSlider(ControlPage, 178, "🚀 跳跃高度无级调节", 50, 300, 50, " Power", function(val)
+	Config.CustomJump = val
+	Config.Jump = val
+	Config.UseCustomJump = (val > 50)
 end)
 
-CreateiOSSlider("🔭 相机广角视野 (FOV)", 70, 120, 70, "°", function(val)
+CreateiOSSlider(ControlPage, 224, "🔭 相机广角视野 (FOV)", 70, 120, 70, "°", function(val)
+	Config.FOV = val
 	Camera.FieldOfView = val
 end)
 
--- ==================== 2. 🎵 Apple Music 旗舰播放器页面 ====================
+-- ==================== 8. 【🎵音乐】Apple Music 旗舰播放器 ====================
 local MusicPage = Pages["Music"]
 
-local MusicCard = Instance.new("Frame")
-MusicCard.Size = UDim2.new(1, -4, 0, 82)
-MusicCard.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
-MusicCard.BackgroundTransparency = 0.15
-MusicCard.ZIndex = 14
-MusicCard.Parent = MusicPage
-Instance.new("UICorner", MusicCard).CornerRadius = UDim.new(0, 14)
-
-local AlbumArt = Instance.new("Frame")
-AlbumArt.Size = UDim2.new(0, 56, 0, 56)
-AlbumArt.Position = UDim2.new(0, 12, 0, 13)
+local AlbumArt = Instance.new("Frame", MusicPage)
+AlbumArt.Size = UDim2.new(0, 68, 0, 68)
+AlbumArt.Position = UDim2.new(0, 6, 0, 4)
 AlbumArt.BackgroundColor3 = Playlist[1].Color
-AlbumArt.ZIndex = 15
-AlbumArt.Parent = MusicCard
 Instance.new("UICorner", AlbumArt).CornerRadius = UDim.new(1, 0)
+local AlbumStroke = Instance.new("UIStroke", AlbumArt)
+AlbumStroke.Color = Color3.fromRGB(255, 255, 255)
+AlbumStroke.Thickness = 1.5
+AlbumStroke.Transparency = 0.5
 
-local AlbumCenter = Instance.new("Frame")
-AlbumCenter.Size = UDim2.new(0, 18, 0, 18)
-AlbumCenter.AnchorPoint = Vector2.new(0.5, 0.5)
-AlbumCenter.Position = UDim2.new(0.5, 0, 0.5, 0)
-AlbumCenter.BackgroundColor3 = Color3.fromRGB(14, 14, 18)
-AlbumCenter.ZIndex = 16
-AlbumCenter.Parent = AlbumArt
-Instance.new("UICorner", AlbumCenter).CornerRadius = UDim.new(1, 0)
+local VinylHole = Instance.new("Frame", AlbumArt)
+VinylHole.Size = UDim2.new(0, 20, 0, 20)
+VinylHole.Position = UDim2.new(0.5, -10, 0.5, -10)
+VinylHole.BackgroundColor3 = Themes[1].Bg
+Instance.new("UICorner", VinylHole).CornerRadius = UDim.new(1, 0)
 
-local SongTitle = Instance.new("TextLabel")
-SongTitle.Size = UDim2.new(1, -155, 0, 20)
-SongTitle.Position = UDim2.new(0, 80, 0, 12)
+local SongTitle = Instance.new("TextLabel", MusicPage)
+SongTitle.Size = UDim2.new(1, -155, 0, 22)
+SongTitle.Position = UDim2.new(0, 86, 0, 6)
 SongTitle.BackgroundTransparency = 1
-SongTitle.Text = Playlist[1].Name
+SongTitle.Text = Playlist[1].Title
 SongTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
 SongTitle.Font = Enum.Font.GothamBold
-SongTitle.TextSize = 13
+SongTitle.TextSize = 14
 SongTitle.TextXAlignment = Enum.TextXAlignment.Left
 SongTitle.TextTruncate = Enum.TextTruncate.AtEnd
-SongTitle.ZIndex = 15
-SongTitle.Parent = MusicCard
 
-local SongArtist = Instance.new("TextLabel")
-SongArtist.Size = UDim2.new(1, -155, 0, 15)
-SongArtist.Position = UDim2.new(0, 80, 0, 31)
+local SongArtist = Instance.new("TextLabel", MusicPage)
+SongArtist.Size = UDim2.new(1, -155, 0, 16)
+SongArtist.Position = UDim2.new(0, 86, 0, 28)
 SongArtist.BackgroundTransparency = 1
 SongArtist.Text = Playlist[1].Artist
-SongArtist.TextColor3 = Color3.fromRGB(160, 160, 175)
+SongArtist.TextColor3 = Color3.fromRGB(165, 165, 180)
 SongArtist.Font = Enum.Font.Gotham
 SongArtist.TextSize = 11
 SongArtist.TextXAlignment = Enum.TextXAlignment.Left
-SongArtist.ZIndex = 15
-SongArtist.Parent = MusicCard
 
-local WaveContainer = Instance.new("Frame")
-WaveContainer.Size = UDim2.new(0, 48, 0, 26)
-WaveContainer.AnchorPoint = Vector2.new(1, 0)
-WaveContainer.Position = UDim2.new(1, -12, 0, 13)
-WaveContainer.BackgroundTransparency = 1
-WaveContainer.ZIndex = 15
-WaveContainer.Parent = MusicCard
-
-local WaveLayout = Instance.new("UIListLayout", WaveContainer)
-WaveLayout.FillDirection = Enum.FillDirection.Horizontal
-WaveLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
-WaveLayout.VerticalAlignment = Enum.VerticalAlignment.Bottom
-WaveLayout.Padding = UDim.new(0, 3)
+local WaveHolder = Instance.new("Frame", MusicPage)
+WaveHolder.Size = UDim2.new(0, 54, 0, 32)
+WaveHolder.Position = UDim2.new(1, -60, 0, 12)
+WaveHolder.BackgroundTransparency = 1
 
 local WaveBars = {}
 for i = 1, 5 do
-	local bar = Instance.new("Frame")
-	bar.Size = UDim2.new(0, 4, 0, 6)
-	bar.BackgroundColor3 = Playlist[1].Color
-	bar.ZIndex = 16
-	Instance.new("UICorner", bar).CornerRadius = UDim.new(1, 0)
-	bar.Parent = WaveContainer
-	table.insert(WaveBars, bar)
+	local w = Instance.new("Frame", WaveHolder)
+	w.Size = UDim2.new(0, 5, 0, 8)
+	w.Position = UDim2.new(0, (i - 1) * 9, 1, 0)
+	w.AnchorPoint = Vector2.new(0, 1)
+	w.BackgroundColor3 = Themes[1].Accent
+	w.BorderSizePixel = 0
+	Instance.new("UICorner", w).CornerRadius = UDim.new(1, 0)
+	table.insert(WaveBars, w)
 end
 
-local ProgressBg = Instance.new("Frame")
-ProgressBg.Size = UDim2.new(1, -94, 0, 6)
-ProgressBg.Position = UDim2.new(0, 80, 0, 56)
-ProgressBg.BackgroundColor3 = Color3.fromRGB(45, 45, 58)
-ProgressBg.ZIndex = 15
-ProgressBg.Parent = MusicCard
-Instance.new("UICorner", ProgressBg).CornerRadius = UDim.new(1, 0)
+local ProgressBtn = Instance.new("TextButton", MusicPage)
+ProgressBtn.Size = UDim2.new(1, -92, 0, 8)
+ProgressBtn.Position = UDim2.new(0, 86, 0, 50)
+ProgressBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 58)
+ProgressBtn.Text = ""
+ProgressBtn.AutoButtonColor = false
+Instance.new("UICorner", ProgressBtn).CornerRadius = UDim.new(1, 0)
 
-local ProgressFill = Instance.new("Frame")
+local ProgressFill = Instance.new("Frame", ProgressBtn)
 ProgressFill.Size = UDim2.new(0, 0, 1, 0)
-ProgressFill.BackgroundColor3 = Playlist[1].Color
-ProgressFill.ZIndex = 16
-ProgressFill.Parent = ProgressBg
+ProgressFill.BackgroundColor3 = Themes[1].Accent
+ProgressFill.BorderSizePixel = 0
 Instance.new("UICorner", ProgressFill).CornerRadius = UDim.new(1, 0)
 
-local ProgressBtn = Instance.new("TextButton")
-ProgressBtn.Size = UDim2.new(1, 0, 1, 10)
-ProgressBtn.Position = UDim2.new(0, 0, 0, -5)
-ProgressBtn.BackgroundTransparency = 1
-ProgressBtn.Text = ""
-ProgressBtn.ZIndex = 17
-ProgressBtn.Parent = ProgressBg
+local TimeLeftLbl = Instance.new("TextLabel", MusicPage)
+TimeLeftLbl.Size = UDim2.new(0, 90, 0, 14)
+TimeLeftLbl.Position = UDim2.new(0, 86, 0, 60)
+TimeLeftLbl.BackgroundTransparency = 1
+TimeLeftLbl.Text = "00:00 / 00:00"
+TimeLeftLbl.TextColor3 = Color3.fromRGB(145, 145, 160)
+TimeLeftLbl.Font = Enum.Font.GothamMedium
+TimeLeftLbl.TextSize = 10
+TimeLeftLbl.TextXAlignment = Enum.TextXAlignment.Left
 
-ProgressBtn.MouseButton1Down:Connect(function()
-	if AudioPlayer.TimeLength > 0 then
-		local mousePos = UserInputService:GetMouseLocation().X
-		local relPos = math.clamp((mousePos - ProgressBg.AbsolutePosition.X) / math.max(ProgressBg.AbsoluteSize.X, 1), 0, 1)
-		AudioPlayer.TimePosition = relPos * AudioPlayer.TimeLength
+ProgressBtn.MouseButton1Down:Connect(function(x)
+	if MusicSound.TimeLength > 0 then
+		local rel = math.clamp((x - ProgressBtn.AbsolutePosition.X) / ProgressBtn.AbsoluteSize.X, 0, 1)
+		MusicSound.TimePosition = MusicSound.TimeLength * rel
 	end
 end)
 
-local TimeLabel = Instance.new("TextLabel")
-TimeLabel.Size = UDim2.new(1, -94, 0, 12)
-TimeLabel.Position = UDim2.new(0, 80, 0, 65)
-TimeLabel.BackgroundTransparency = 1
-TimeLabel.Text = "00:00 / 00:00"
-TimeLabel.TextColor3 = Color3.fromRGB(145, 145, 160)
-TimeLabel.Font = Enum.Font.Gotham
-TimeLabel.TextSize = 9
-TimeLabel.TextXAlignment = Enum.TextXAlignment.Right
-TimeLabel.ZIndex = 15
-TimeLabel.Parent = MusicCard
+local CtrlRow = Instance.new("Frame", MusicPage)
+CtrlRow.Size = UDim2.new(1, -12, 0, 32)
+CtrlRow.Position = UDim2.new(0, 6, 0, 80)
+CtrlRow.BackgroundTransparency = 1
 
-local ControlsRow = Instance.new("Frame")
-ControlsRow.Size = UDim2.new(1, -4, 0, 34)
-ControlsRow.Position = UDim2.new(0, 0, 0, 88)
-ControlsRow.BackgroundTransparency = 1
-ControlsRow.ZIndex = 14
-ControlsRow.Parent = MusicPage
-
-local ControlsLayout = Instance.new("UIListLayout", ControlsRow)
-ControlsLayout.FillDirection = Enum.FillDirection.Horizontal
-ControlsLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-ControlsLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-ControlsLayout.Padding = UDim.new(0, 6)
-
-local function CreateMusicBtn(txt, w)
-	local b = Instance.new("TextButton")
-	b.Size = UDim2.new(0, w, 0, 30)
+local function CreateMusicCtrlBtn(txt, posScale, width)
+	local b = Instance.new("TextButton", CtrlRow)
+	b.Size = UDim2.new(width, -6, 1, 0)
+	b.Position = UDim2.new(posScale, 3, 0, 0)
 	b.BackgroundColor3 = Color3.fromRGB(30, 30, 42)
 	b.Text = txt
 	b.TextColor3 = Color3.fromRGB(255, 255, 255)
 	b.Font = Enum.Font.GothamBold
 	b.TextSize = 11
-	b.ZIndex = 15
-	b.Parent = ControlsRow
-	Instance.new("UICorner", b).CornerRadius = UDim.new(0, 9)
+	Instance.new("UICorner", b).CornerRadius = UDim.new(0, 8)
 	return b
 end
 
-local PrevBtn = CreateMusicBtn("⏮", 36)
-local PlayPauseBtn = CreateMusicBtn("▶ 播放", 72)
-PlayPauseBtn.BackgroundColor3 = Themes[1].Accent
-PlayPauseBtn.TextColor3 = Color3.fromRGB(10, 10, 14)
-local NextBtn = CreateMusicBtn("⏭", 36)
-local SpeedBtn = CreateMusicBtn("1.0x", 48)
-local BassBtn = CreateMusicBtn("🔊 重低音", 68)
-local VolBtn = CreateMusicBtn("80%", 48)
+local PrevBtn  = CreateMusicCtrlBtn("⏮ 上曲", 0.00, 0.20)
+local PlayBtn  = CreateMusicCtrlBtn("▶ 播放", 0.20, 0.20)
+PlayBtn.BackgroundColor3 = Themes[1].Accent
+local NextBtn  = CreateMusicCtrlBtn("⏭ 下曲", 0.40, 0.20)
+local PitchBtn = CreateMusicCtrlBtn("⚡ 1.0x", 0.60, 0.20)
+local BassBtn  = CreateMusicCtrlBtn("🔊 低音", 0.80, 0.20)
 
-local CustomIDRow = Instance.new("Frame")
-CustomIDRow.Size = UDim2.new(1, -4, 0, 32)
-CustomIDRow.Position = UDim2.new(0, 0, 0, 128)
-CustomIDRow.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
-CustomIDRow.ZIndex = 14
-CustomIDRow.Parent = MusicPage
-Instance.new("UICorner", CustomIDRow).CornerRadius = UDim.new(0, 10)
+local CustomRow = Instance.new("Frame", MusicPage)
+CustomRow.Size = UDim2.new(1, -12, 0, 28)
+CustomRow.Position = UDim2.new(0, 6, 0, 118)
+CustomRow.BackgroundTransparency = 1
 
-local IDInput = Instance.new("TextBox")
-IDInput.Size = UDim2.new(1, -92, 1, 0)
-IDInput.Position = UDim2.new(0, 10, 0, 0)
-IDInput.BackgroundTransparency = 1
-IDInput.PlaceholderText = "输入 Roblox 音乐 ID 播放..."
-IDInput.PlaceholderColor3 = Color3.fromRGB(115, 115, 130)
+local IDInput = Instance.new("TextBox", CustomRow)
+IDInput.Size = UDim2.new(0.55, -4, 1, 0)
+IDInput.BackgroundColor3 = Color3.fromRGB(22, 22, 32)
+IDInput.PlaceholderText = "输入 Roblox 音乐ID..."
 IDInput.Text = ""
 IDInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+IDInput.PlaceholderColor3 = Color3.fromRGB(120, 120, 135)
 IDInput.Font = Enum.Font.Gotham
 IDInput.TextSize = 11
-IDInput.TextXAlignment = Enum.TextXAlignment.Left
-IDInput.ZIndex = 15
-IDInput.Parent = CustomIDRow
+Instance.new("UICorner", IDInput).CornerRadius = UDim.new(0, 8)
 
-local PlayIDBtn = Instance.new("TextButton")
-PlayIDBtn.Size = UDim2.new(0, 74, 0, 24)
-PlayIDBtn.AnchorPoint = Vector2.new(1, 0.5)
-PlayIDBtn.Position = UDim2.new(1, -4, 0.5, 0)
-PlayIDBtn.BackgroundColor3 = Themes[1].Accent
-PlayIDBtn.Text = "播放 ID"
-PlayIDBtn.TextColor3 = Color3.fromRGB(10, 10, 14)
-PlayIDBtn.Font = Enum.Font.GothamBold
-PlayIDBtn.TextSize = 11
-PlayIDBtn.ZIndex = 15
-PlayIDBtn.Parent = CustomIDRow
-Instance.new("UICorner", PlayIDBtn).CornerRadius = UDim.new(0, 7)
+local PlayCustomBtn = Instance.new("TextButton", CustomRow)
+PlayCustomBtn.Size = UDim2.new(0.23, -4, 1, 0)
+PlayCustomBtn.Position = UDim2.new(0.55, 2, 0, 0)
+PlayCustomBtn.BackgroundColor3 = Color3.fromRGB(48, 209, 88)
+PlayCustomBtn.Text = "播放ID"
+PlayCustomBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+PlayCustomBtn.Font = Enum.Font.GothamBold
+PlayCustomBtn.TextSize = 11
+Instance.new("UICorner", PlayCustomBtn).CornerRadius = UDim.new(0, 8)
+
+local VolBtn = Instance.new("TextButton", CustomRow)
+VolBtn.Size = UDim2.new(0.22, -2, 1, 0)
+VolBtn.Position = UDim2.new(0.78, 4, 0, 0)
+VolBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 48)
+VolBtn.Text = "🔉 80%"
+VolBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+VolBtn.Font = Enum.Font.GothamBold
+VolBtn.TextSize = 11
+Instance.new("UICorner", VolBtn).CornerRadius = UDim.new(0, 8)
+
+local TrackGrid = Instance.new("Frame", MusicPage)
+TrackGrid.Size = UDim2.new(1, -12, 0, 48)
+TrackGrid.Position = UDim2.new(0, 6, 0, 152)
+TrackGrid.BackgroundTransparency = 1
+local GridLayout = Instance.new("UIGridLayout", TrackGrid)
+GridLayout.CellSize = UDim2.new(0.32, 0, 0, 22)
+GridLayout.CellPadding = UDim2.new(0.02, 0, 0, 4)
 
 local function LoadTrack(idx)
-	CurrentTrackIndex = idx
-	local t = Playlist[idx]
-	SongTitle.Text = t.Name
-	SongArtist.Text = t.Artist
-	QMTitle.Text = "🎵 " .. t.Name
-	AlbumArt.BackgroundColor3 = t.Color
-	MiniDisk.BackgroundColor3 = t.Color
-	ProgressFill.BackgroundColor3 = t.Color
-	for _, b in ipairs(WaveBars) do b.BackgroundColor3 = t.Color end
-	AudioPlayer.SoundId = t.ID
-	AudioPlayer.PlaybackSpeed = CurrentPitch
-	if IsPlaying then
-		AudioPlayer:Play()
-		ShowToast("🎵 正在播放: " .. t.Name)
-	end
+	Config.CurrentTrack = idx
+	local data = Playlist[idx]
+	MusicSound.SoundId = "rbxassetid://" .. data.ID
+	SongTitle.Text = data.Title
+	SongArtist.Text = data.Artist
+	QMusicTitle.Text = "🎵 " .. data.Title
+	AlbumArt.BackgroundColor3 = data.Color
+	MiniDisk.BackgroundColor3 = data.Color
+	MusicSound.PlaybackSpeed = Config.MusicSpeed
+	MusicSound:Play()
+	Config.MusicPlaying = true
+	PlayBtn.Text = "⏸ 暂停"
+	QPlayBtn.Text = "⏸"
+	QMusicSub.Text = "正在播放 • 空间音频"
 end
 
-local function TogglePlay()
-	PlayClickSound(1.1)
-	if IsPlaying then
-		AudioPlayer:Pause()
-		IsPlaying = false
-		PlayPauseBtn.Text = "▶ 播放"
-		QMPlayBtn.Text = "▶ 播放"
-		ShowToast("⏸ 音乐已暂停")
+for idx, track in ipairs(Playlist) do
+	local tb = Instance.new("TextButton", TrackGrid)
+	tb.BackgroundColor3 = Color3.fromRGB(26, 26, 36)
+	tb.Text = "🎵 " .. string.sub(track.Title, 1, 10)
+	tb.TextColor3 = Color3.fromRGB(220, 220, 235)
+	tb.Font = Enum.Font.GothamMedium
+	tb.TextSize = 10
+	Instance.new("UICorner", tb).CornerRadius = UDim.new(0, 6)
+	tb.MouseButton1Click:Connect(function() LoadTrack(idx) end)
+end
+
+local function ToggleMusicPlay()
+	if Config.MusicPlaying then
+		MusicSound:Pause()
+		Config.MusicPlaying = false
+		PlayBtn.Text = "▶ 播放"
+		QPlayBtn.Text = "▶"
+		QMusicSub.Text = "已暂停"
 	else
-		if AudioPlayer.SoundId == "" then
-			AudioPlayer.SoundId = Playlist[CurrentTrackIndex].ID
-		end
-		AudioPlayer:Play()
-		IsPlaying = true
-		PlayPauseBtn.Text = "⏸ 暂停"
-		QMPlayBtn.Text = "⏸ 暂停"
-		ShowToast("🎵 正在播放: " .. SongTitle.Text)
+		MusicSound:Play()
+		Config.MusicPlaying = true
+		PlayBtn.Text = "⏸ 暂停"
+		QPlayBtn.Text = "⏸"
+		QMusicSub.Text = "正在播放 • 空间音频"
 	end
 end
 
-PlayPauseBtn.MouseButton1Click:Connect(TogglePlay)
-QMPlayBtn.MouseButton1Click:Connect(TogglePlay)
-
+PlayBtn.MouseButton1Click:Connect(ToggleMusicPlay)
+QPlayBtn.MouseButton1Click:Connect(ToggleMusicPlay)
 PrevBtn.MouseButton1Click:Connect(function()
-	PlayClickSound(1.0)
-	local n = CurrentTrackIndex - 1
-	if n < 1 then n = #Playlist end
-	IsPlaying = true
-	PlayPauseBtn.Text = "⏸ 暂停"
-	QMPlayBtn.Text = "⏸ 暂停"
-	LoadTrack(n)
+	LoadTrack(Config.CurrentTrack - 1 < 1 and #Playlist or Config.CurrentTrack - 1)
+end)
+NextBtn.MouseButton1Click:Connect(function()
+	LoadTrack(Config.CurrentTrack + 1 > #Playlist and 1 or Config.CurrentTrack + 1)
+end)
+QNextBtn.MouseButton1Click:Connect(function()
+	LoadTrack(Config.CurrentTrack + 1 > #Playlist and 1 or Config.CurrentTrack + 1)
 end)
 
-local function NextTrack()
-	PlayClickSound(1.0)
-	local n = CurrentTrackIndex + 1
-	if n > #Playlist then n = 1 end
-	IsPlaying = true
-	PlayPauseBtn.Text = "⏸ 暂停"
-	QMPlayBtn.Text = "⏸ 暂停"
-	LoadTrack(n)
-end
-NextBtn.MouseButton1Click:Connect(NextTrack)
-QMNextBtn.MouseButton1Click:Connect(NextTrack)
-
-SpeedBtn.MouseButton1Click:Connect(function()
-	PlayClickSound(1.15)
-	if CurrentPitch == 1.0 then
-		CurrentPitch = 1.25
-		SpeedBtn.Text = "1.25x"
-		ShowToast("⚡ 倍速播放: 1.25x (Nightcore)")
-	elseif CurrentPitch == 1.25 then
-		CurrentPitch = 0.8
-		SpeedBtn.Text = "0.8x"
-		ShowToast("🌊 慢速播放: 0.8x (Slowed)")
+PitchBtn.MouseButton1Click:Connect(function()
+	if Config.MusicSpeed == 1.0 then
+		Config.MusicSpeed = 1.25
+		PitchBtn.Text = "⚡ 1.25x"
+		Notify("倍速音效：Nightcore 1.25x")
+	elseif Config.MusicSpeed == 1.25 then
+		Config.MusicSpeed = 0.8
+		PitchBtn.Text = "🌊 0.8x"
+		Notify("倍速音效：Slowed+Reverb 0.8x")
 	else
-		CurrentPitch = 1.0
-		SpeedBtn.Text = "1.0x"
-		ShowToast("🎵 恢复原速: 1.0x")
+		Config.MusicSpeed = 1.0
+		PitchBtn.Text = "⚡ 1.0x"
+		Notify("倍速音效：原速 1.0x")
 	end
-	AudioPlayer.PlaybackSpeed = CurrentPitch
+	MusicSound.PlaybackSpeed = Config.MusicSpeed
 end)
 
 BassBtn.MouseButton1Click:Connect(function()
-	PlayClickSound(1.1)
-	BassBoostEnabled = not BassBoostEnabled
-	BassEffect.Enabled = BassBoostEnabled
-	BassEffect.LowGain = BassBoostEnabled and 10 or 0
-	BassBtn.BackgroundColor3 = BassBoostEnabled and Themes[CurrentThemeIndex].Accent or Color3.fromRGB(30, 30, 42)
-	BassBtn.TextColor3 = BassBoostEnabled and Color3.fromRGB(10, 10, 14) or Color3.fromRGB(255, 255, 255)
-	ShowToast(BassBoostEnabled and "🔊 3D 超重低音已开启" or "🔊 超重低音已关闭")
+	Config.BassBoost = not Config.BassBoost
+	BassEffect.Enabled = Config.BassBoost
+	BassEffect.LowGain = Config.BassBoost and 10 or 0
+	BassBtn.BackgroundColor3 = Config.BassBoost and Themes[Config.CurrentTheme].Accent or Color3.fromRGB(30, 30, 42)
+	Notify(Config.BassBoost and "🔊 3D 超重低音已开启" or "已关闭重低音增强")
+end)
+
+PlayCustomBtn.MouseButton1Click:Connect(function()
+	local id = string.match(IDInput.Text, "%d+")
+	if id then
+		MusicSound.SoundId = "rbxassetid://" .. id
+		SongTitle.Text = "自定义电台 #" .. id
+		SongArtist.Text = "Custom Audio Stream"
+		QMusicTitle.Text = "🎵 自定义 #" .. id
+		MusicSound:Play()
+		Config.MusicPlaying = true
+		PlayBtn.Text = "⏸ 暂停"
+		QPlayBtn.Text = "⏸"
+		Notify("正在播放自定义音乐 ID: " .. id)
+	end
 end)
 
 VolBtn.MouseButton1Click:Connect(function()
-	PlayClickSound(1.1)
-	if CurrentVolume >= 0.8 then
-		CurrentVolume = 0.3
-		VolBtn.Text = "30%"
-	elseif CurrentVolume >= 0.3 then
-		CurrentVolume = 0
-		VolBtn.Text = "静音"
-	else
-		CurrentVolume = 1.0
-		VolBtn.Text = "100%"
-	end
-	AudioPlayer.Volume = CurrentVolume
+	if Config.MusicVol >= 0.8 then Config.MusicVol = 0.3 VolBtn.Text = "🔈 30%"
+	elseif Config.MusicVol >= 0.3 then Config.MusicVol = 0 VolBtn.Text = "🔇 0%"
+	else Config.MusicVol = 0.8 VolBtn.Text = "🔉 80%" end
+	MusicSound.Volume = Config.MusicVol
 end)
 
-PlayIDBtn.MouseButton1Click:Connect(function()
-	local id = string.match(IDInput.Text, "%d+")
-	if id then
-		AudioPlayer.SoundId = "rbxassetid://" .. id
-		SongTitle.Text = "自定义音乐 (" .. id .. ")"
-		SongArtist.Text = "Custom Audio"
-		QMTitle.Text = "🎵 ID:" .. id
-		AudioPlayer:Play()
-		IsPlaying = true
-		PlayPauseBtn.Text = "⏸ 暂停"
-		QMPlayBtn.Text = "⏸ 暂停"
-		ShowToast("🎶 正在播放自定义 ID: " .. id)
-	end
-end)
-
--- ==================== 通用 iOS 拨杆组件生成器 ====================
-local function SetupGridPage(page)
-	local grid = Instance.new("UIGridLayout")
-	grid.CellSize = UDim2.new(0.5, -5, 0, 42)
-	grid.CellPadding = UDim2.new(0, 6, 0, 6)
-	grid.Parent = page
+-- ==================== 9. 通用 iOS 开关组件 ====================
+local ActiveTrackFills = {}
+local function RefreshActivePrivacyDot()
+	TweenService:Create(PrivacyDot, TweenInfo.new(0.25), {
+		BackgroundColor3 = Config.ActiveCount > 0 and Color3.fromRGB(255, 159, 10) or Color3.fromRGB(48, 209, 88)
+	}):Play()
+	FlyControlPad.Visible = (Config.Fly or Config.Freecam or Config.AirWalk)
 end
 
-local ActiveSwitchStylers = {}
-
-local function CreateiOSToggle(parent, title, subtitle, defaultOn, callback)
-	local card = Instance.new("TextButton")
+local function AddSwitch(pageID, title, desc, defaultVal, callback)
+	local parent = Pages[pageID]
+	local card = Instance.new("Frame", parent)
+	card.Size = UDim2.new(1, 0, 0, 44)
 	card.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
-	card.BackgroundTransparency = 0.15
-	card.Text = ""
-	card.AutoButtonColor = false
-	card.ZIndex = 14
-	card.Parent = parent
+	card.BackgroundTransparency = 0.25
 	Instance.new("UICorner", card).CornerRadius = UDim.new(0, 11)
 
-	local cardStroke = Instance.new("UIStroke")
-	cardStroke.Color = Color3.fromRGB(55, 55, 70)
-	cardStroke.Thickness = 1
-	cardStroke.Transparency = 0.55
-	cardStroke.Parent = card
+	local tLbl = Instance.new("TextLabel", card)
+	tLbl.Size = UDim2.new(1, -74, 0, 20)
+	tLbl.Position = UDim2.new(0, 12, 0, 4)
+	tLbl.BackgroundTransparency = 1
+	tLbl.Text = title
+	tLbl.TextColor3 = Color3.fromRGB(242, 242, 248)
+	tLbl.Font = Enum.Font.GothamBold
+	tLbl.TextSize = 12
+	tLbl.TextXAlignment = Enum.TextXAlignment.Left
 
-	local titleLbl = Instance.new("TextLabel")
-	titleLbl.Size = UDim2.new(1, -54, 0, 18)
-	titleLbl.Position = UDim2.new(0, 10, 0, 5)
-	titleLbl.BackgroundTransparency = 1
-	titleLbl.Text = title
-	titleLbl.TextColor3 = Color3.fromRGB(240, 240, 245)
-	titleLbl.Font = Enum.Font.GothamBold
-	titleLbl.TextSize = 11
-	titleLbl.TextXAlignment = Enum.TextXAlignment.Left
-	titleLbl.ZIndex = 15
-	titleLbl.Parent = card
+	local dLbl = Instance.new("TextLabel", card)
+	dLbl.Size = UDim2.new(1, -74, 0, 16)
+	dLbl.Position = UDim2.new(0, 12, 0, 23)
+	dLbl.BackgroundTransparency = 1
+	dLbl.Text = desc
+	dLbl.TextColor3 = Color3.fromRGB(145, 145, 162)
+	dLbl.Font = Enum.Font.Gotham
+	dLbl.TextSize = 10
+	dLbl.TextXAlignment = Enum.TextXAlignment.Left
 
-	local subLbl = Instance.new("TextLabel")
-	subLbl.Size = UDim2.new(1, -54, 0, 14)
-	subLbl.Position = UDim2.new(0, 10, 0, 22)
-	subLbl.BackgroundTransparency = 1
-	subLbl.Text = subtitle
-	subLbl.TextColor3 = Color3.fromRGB(145, 145, 160)
-	subLbl.Font = Enum.Font.Gotham
-	subLbl.TextSize = 9
-	subLbl.TextXAlignment = Enum.TextXAlignment.Left
-	subLbl.ZIndex = 15
-	subLbl.Parent = card
+	local swBtn = Instance.new("TextButton", card)
+	swBtn.Size = UDim2.new(0, 44, 0, 24)
+	swBtn.Position = UDim2.new(1, -54, 0.5, -12)
+	swBtn.BackgroundColor3 = defaultVal and Themes[Config.CurrentTheme].Accent or Color3.fromRGB(52, 52, 64)
+	swBtn.Text = ""
+	swBtn.AutoButtonColor = false
+	Instance.new("UICorner", swBtn).CornerRadius = UDim.new(1, 0)
 
-	local switchBg = Instance.new("Frame")
-	switchBg.Size = UDim2.new(0, 36, 0, 20)
-	switchBg.AnchorPoint = Vector2.new(1, 0.5)
-	switchBg.Position = UDim2.new(1, -8, 0.5, 0)
-	switchBg.BackgroundColor3 = Color3.fromRGB(52, 52, 64)
-	switchBg.ZIndex = 15
-	switchBg.Parent = card
-	Instance.new("UICorner", switchBg).CornerRadius = UDim.new(1, 0)
-
-	local knob = Instance.new("Frame")
-	knob.Size = UDim2.new(0, 16, 0, 16)
-	knob.AnchorPoint = Vector2.new(0, 0.5)
-	knob.Position = UDim2.new(0, 2, 0.5, 0)
+	local knob = Instance.new("Frame", swBtn)
+	knob.Size = UDim2.new(0, 20, 0, 20)
+	knob.Position = defaultVal and UDim2.new(1, -22, 0.5, -10) or UDim2.new(0, 2, 0.5, -10)
 	knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-	knob.ZIndex = 16
-	knob.Parent = switchBg
+	knob.BorderSizePixel = 0
 	Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
 
-	local isOn = defaultOn and true or false
-	local function UpdateStyle()
-		local accent = Themes[CurrentThemeIndex].Accent
-		TweenService:Create(switchBg, TweenInfo.new(0.22, Enum.EasingStyle.Quart), {
-			BackgroundColor3 = isOn and accent or Color3.fromRGB(52, 52, 64)
-		}):Play()
-		TweenService:Create(knob, TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-			Position = isOn and UDim2.new(1, -18, 0.5, 0) or UDim2.new(0, 2, 0.5, 0)
-		}):Play()
-		TweenService:Create(cardStroke, TweenInfo.new(0.22), {
-			Color = isOn and accent or Color3.fromRGB(55, 55, 70),
-			Transparency = isOn and 0.15 or 0.55
-		}):Play()
+	local state = defaultVal or false
+	if state then
+		Config.ActiveCount = Config.ActiveCount + 1
+		ActiveTrackFills[swBtn] = true
+		RefreshActivePrivacyDot()
 	end
 
-	UpdateStyle()
-	table.insert(ActiveSwitchStylers, UpdateStyle)
-
-	card.MouseButton1Click:Connect(function()
-		isOn = not isOn
-		PlayClickSound(isOn and 1.2 or 0.9)
-		UpdateStyle()
-		callback(isOn, subLbl)
+	swBtn.MouseButton1Click:Connect(function()
+		state = not state
+		if state then
+			Config.ActiveCount = Config.ActiveCount + 1
+			ActiveTrackFills[swBtn] = true
+		else
+			Config.ActiveCount = math.max(0, Config.ActiveCount - 1)
+			ActiveTrackFills[swBtn] = nil
+		end
+		RefreshActivePrivacyDot()
+		TweenService:Create(swBtn, TweenInfo.new(0.2), {
+			BackgroundColor3 = state and Themes[Config.CurrentTheme].Accent or Color3.fromRGB(52, 52, 64)
+		}):Play()
+		TweenService:Create(knob, TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+			Position = state and UDim2.new(1, -22, 0.5, -10) or UDim2.new(0, 2, 0.5, -10)
+		}):Play()
+		Notify(title .. (state and " 已开启" or " 已关闭"), state and Color3.fromRGB(48, 209, 88) or Color3.fromRGB(255, 159, 10))
+		callback(state)
 	end)
 end
 
--- ==================== 3. ⚡ 强化页面 (新增防虚空/防撞飞/灵魂视角/吸取掉落物) ====================
-SetupGridPage(Pages["Player"])
-
-CreateiOSToggle(Pages["Player"], "🦅 摇杆自由飞行", "附带右侧专属升降控制键", false, function(state)
-	Config.Fly = state
-	FlyControlPad.Visible = (Config.Fly or Config.Freecam)
-	ShowToast(state and "🦅 自由飞行已开启 (右侧可升降)" or "🦅 自由飞行已关闭")
+-- ==================== 10. 【⚡强化】15项硬核实用功能 ====================
+AddSwitch("Player", "🗡️ 手持工具自动连点", "自动高频挥舞/点击手中装备，解放手指刷图", false, function(v)
+	Config.AutoClickTool = v
 end)
-
-CreateiOSToggle(Pages["Player"], "🛟 自动防掉虚空", "坠入虚空自动拉回安全地面", true, function(state)
-	Config.AntiVoid = state
-	ShowToast(state and "🛟 虚空救生网已开启" or "🛟 虚空救生网已关闭")
+AddSwitch("Player", "🚑 濒死自动升空逃生", "血量低于28%时自动瞬移至百米高空安全舱保命", false, function(v)
+	Config.PanicEscape = v
 end)
-
-CreateiOSToggle(Pages["Player"], "🛡️ 防撞飞/防击退", "免疫他人陀螺撞飞与推挤", false, function(state)
-	Config.AntiFling = state
-	ShowToast(state and "🛡️ 泰山防撞飞护盾已开启" or "🛡️ 防撞飞已关闭")
-end)
-
-CreateiOSToggle(Pages["Player"], "🎥 灵魂自由视角", "本体不动，相机穿墙侦察全图", false, function(state)
-	Config.Freecam = state
-	FlyControlPad.Visible = (Config.Fly or Config.Freecam)
-	local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-	if state then
-		Config.FreecamCF = Camera.CFrame
-		Camera.CameraType = Enum.CameraType.Scriptable
-		if hrp then hrp.Anchored = true end
-		ShowToast("🎥 灵魂自由视角已开启")
-	else
-		Camera.CameraType = Enum.CameraType.Custom
-		if hrp and not Config.FreezeChar then hrp.Anchored = false end
-		ShowToast("🎥 已返回角色本体视角")
+AddSwitch("Player", "🌊 踏水而行模式", "落水或靠近水面时自动在脚下凝结透明水盾行走", false, function(v)
+	Config.WalkOnWater = v
+	if not v and workspace:FindFirstChild("IslandWaterPad") then
+		workspace.IslandWaterPad:Destroy()
 	end
 end)
-
-CreateiOSToggle(Pages["Player"], "☁️ 无限空中连跳", "半空中可无限次踏空升空", false, function(state)
-	Config.InfJump = state
-	ShowToast(state and "☁️ 无限连跳已开启" or "☁️ 无限连跳已关闭")
+AddSwitch("Player", "🔭 解锁无限视距缩放", "打破镜头最大拉远距离限制，可俯瞰全图", false, function(v)
+	Config.InfiniteZoom = v
+	LocalPlayer.CameraMaxZoomDistance = v and 50000 or OrigMaxZoom
 end)
-
-CreateiOSToggle(Pages["Player"], "👻 幽灵穿墙模式", "无视墙壁门禁障碍物碰撞", false, function(state)
-	Config.Noclip = state
-	ShowToast(state and "👻 幽灵穿墙已开启" or "👻 幽灵穿墙已关闭")
+AddSwitch("Player", "🦅 摇杆自由飞行", "支持手机摇杆+右侧升降键与PC端全向飞行", false, function(v)
+	Config.Fly = v
+	RefreshActivePrivacyDot()
 end)
-
-CreateiOSToggle(Pages["Player"], "👟 虚空踏空漫步", "脚下生成霓虹悬浮安全板", false, function(state)
-	Config.AirWalk = state
+AddSwitch("Player", "🛟 自动防掉虚空", "跌落地图底部时自动拉回最后安全陆地", true, function(v)
+	Config.AntiVoid = v
+end)
+AddSwitch("Player", "🛡️ 防撞飞/防击退", "免疫其他玩家的恶意旋转撞飞与物理推挤", false, function(v)
+	Config.AntiFling = v
+end)
+AddSwitch("Player", "🎥 灵魂自由视角", "冻结本体，相机灵魂出窍自由穿墙侦察全图", false, function(v)
+	Config.Freecam = v
+	RefreshActivePrivacyDot()
 	local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-	if state and hrp then
+	if hrp then hrp.Anchored = v end
+	Camera.CameraType = v and Enum.CameraType.Scriptable or Enum.CameraType.Custom
+end)
+AddSwitch("Player", "☁️ 无限空中连跳", "无视地面限制，在半空中无限次连续踏空跳跃", false, function(v)
+	Config.InfJump = v
+end)
+AddSwitch("Player", "👻 幽灵穿墙模式", "忽略全身碰撞体积，自由穿过墙壁与障碍物", false, function(v)
+	Config.Noclip = v
+end)
+AddSwitch("Player", "👟 虚空踏空漫步", "在脚下生成霓虹玻璃踏板，可用右侧按键调节高度", false, function(v)
+	Config.AirWalk = v
+	RefreshActivePrivacyDot()
+	local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+	if v and hrp then
 		Config.AirWalkY = hrp.Position.Y - 3.3
-		ShowToast("👟 踏空漫步已开启 (右侧可调高度)")
-	else
-		if workspace:FindFirstChild("IslandAirPart") then
-			workspace.IslandAirPart:Destroy()
-		end
-		ShowToast("👟 踏空漫步已关闭")
+	elseif workspace:FindFirstChild("IslandAirPart") then
+		workspace.IslandAirPart:Destroy()
 	end
 end)
-
-CreateiOSToggle(Pages["Player"], "🕷️ 蜘蛛自动爬墙", "贴近墙壁自动向上攀爬", false, function(state)
-	Config.SpiderClimb = state
-	ShowToast(state and "🕷️ 蜘蛛爬墙已开启" or "🕷️ 蜘蛛爬墙已关闭")
+AddSwitch("Player", "🕷️ 蜘蛛自动爬墙", "靠近任何垂直墙壁或高台时自动向上攀爬", false, function(v)
+	Config.SpiderClimb = v
+end)
+AddSwitch("Player", "🧲 自动吸取掉落", "自动触发周围35米内的金币、道具与拾取点", false, function(v)
+	Config.AutoCollect = v
+end)
+AddSwitch("Player", "⚡ 自动秒交互", "消除全图所有长按E键的等待读条，瞬间完成", false, function(v)
+	Config.AutoInteract = v
+end)
+AddSwitch("Player", "🌀 炫酷陀螺旋转", "角色高速360度幻影旋转，自带防瞄准效果", false, function(v)
+	Config.SpinBot = v
 end)
 
-CreateiOSToggle(Pages["Player"], "🧲 自动吸取掉落", "自动拾取周围金币道具工具", false, function(state)
-	Config.AutoCollect = state
-	ShowToast(state and "🧲 自动拾取周围掉落物已开启" or "🧲 自动拾取已关闭")
-end)
-
-CreateiOSToggle(Pages["Player"], "⚡ 自动秒交互", "靠近宝箱按钮0秒瞬间触发", false, function(state)
-	Config.AutoInteract = state
-	ShowToast(state and "⚡ 自动秒交互已开启" or "⚡ 自动秒交互已关闭")
-end)
-
-CreateiOSToggle(Pages["Player"], "🌀 炫酷陀螺旋转", "角色360度高速炫酷旋转", false, function(state)
-	Config.SpinBot = state
-	ShowToast(state and "🌀 炫酷陀螺已开启" or "🌀 陀螺已关闭")
-end)
-
-CreateiOSToggle(Pages["Player"], "🥶 空中定格冻结", "将角色固定在当前空中位置", false, function(state)
-	Config.FreezeChar = state
-	local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-	if hrp then hrp.Anchored = state end
-	ShowToast(state and "🥶 角色已定格冻结" or "🥶 角色已解冻")
-end)
-
--- ==================== 4. 📍 坐标与实用工具页面 ====================
+-- ==================== 11. 【📍工具】神器工坊（瞬移棒/穿门锤/寻宝/秒表/坐标） ====================
 local WaypointPage = Pages["Waypoint"]
-local WPLayout = Instance.new("UIListLayout", WaypointPage)
-WPLayout.Padding = UDim.new(0, 6)
 
-local ToolRow = Instance.new("Frame")
-ToolRow.Size = UDim2.new(1, -4, 0, 38)
-ToolRow.BackgroundTransparency = 1
-ToolRow.ZIndex = 14
-ToolRow.Parent = WaypointPage
+local ToolGridFrame = Instance.new("Frame", WaypointPage)
+ToolGridFrame.Size = UDim2.new(1, 0, 0, 68)
+ToolGridFrame.BackgroundTransparency = 1
+ToolGridFrame.LayoutOrder = 1
 
-local GiveTPToolBtn = Instance.new("TextButton")
-GiveTPToolBtn.Size = UDim2.new(0.32, 0, 1, 0)
-GiveTPToolBtn.BackgroundColor3 = Color3.fromRGB(28, 28, 40)
-GiveTPToolBtn.Text = "🪄 领取瞬移棒"
-GiveTPToolBtn.TextColor3 = Themes[1].Accent
-GiveTPToolBtn.Font = Enum.Font.GothamBold
-GiveTPToolBtn.TextSize = 11
-GiveTPToolBtn.ZIndex = 15
-GiveTPToolBtn.Parent = ToolRow
-Instance.new("UICorner", GiveTPToolBtn).CornerRadius = UDim.new(0, 9)
+local function CreateToolActionBtn(col, row, title, color, callback)
+	local btn = Instance.new("TextButton", ToolGridFrame)
+	btn.Size = UDim2.new(1/3, -4, 0, 30)
+	btn.Position = UDim2.new((col - 1) / 3, (col - 1) * 2, 0, (row - 1) * 35)
+	btn.BackgroundColor3 = color
+	btn.BackgroundTransparency = 0.15
+	btn.Text = title
+	btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	btn.Font = Enum.Font.GothamBold
+	btn.TextSize = 11
+	Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+	btn.MouseButton1Click:Connect(callback)
+end
 
-GiveTPToolBtn.MouseButton1Click:Connect(function()
-	PlayClickSound(1.2)
+-- 1. 领取点击瞬移棒
+CreateToolActionBtn(1, 1, "🪄 领取瞬移棒", Color3.fromRGB(10, 132, 255), function()
 	local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
 	if backpack then
-		if backpack:FindFirstChild("⚡灵动瞬移棒") or (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("⚡灵动瞬移棒")) then
-			ShowToast("🪄 背包里已有【⚡灵动瞬移棒】")
-			return
-		end
+		if backpack:FindFirstChild("⚡灵动瞬移棒") then backpack["⚡灵动瞬移棒"]:Destroy() end
 		local tool = Instance.new("Tool")
 		tool.Name = "⚡灵动瞬移棒"
 		tool.RequiresHandle = false
 		tool.Activated:Connect(function()
+			local mouse = LocalPlayer:GetMouse()
 			local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-			if hrp and Mouse.Hit then
-				PlayClickSound(1.3)
-				hrp.CFrame = CFrame.new(Mouse.Hit.Position + Vector3.new(0, 3.2, 0))
-				ShowToast("⚡ 已瞬移至点击位置")
+			if hrp and mouse and mouse.Hit then
+				hrp.CFrame = CFrame.new(mouse.Hit.Position + Vector3.new(0, 3.2, 0))
+				Notify("⚡ 已瞬移至点击位置！")
 			end
 		end)
 		tool.Parent = backpack
-		ShowToast("🪄 已发放【⚡灵动瞬移棒】至背包！")
+		Notify("已发放【⚡灵动瞬移棒】至背包！")
 	end
 end)
 
-local SpawnPlatBtn = Instance.new("TextButton")
-SpawnPlatBtn.Size = UDim2.new(0.32, 0, 1, 0)
-SpawnPlatBtn.Position = UDim2.new(0.34, 0, 0, 0)
-SpawnPlatBtn.BackgroundColor3 = Color3.fromRGB(28, 28, 40)
-SpawnPlatBtn.Text = "🧱 脚下建平台"
-SpawnPlatBtn.TextColor3 = Color3.fromRGB(100, 220, 255)
-SpawnPlatBtn.Font = Enum.Font.GothamBold
-SpawnPlatBtn.TextSize = 11
-SpawnPlatBtn.ZIndex = 15
-SpawnPlatBtn.Parent = ToolRow
-Instance.new("UICorner", SpawnPlatBtn).CornerRadius = UDim.new(0, 9)
+-- 2. V9新增：领取穿门拆除锤
+CreateToolActionBtn(2, 1, "🔨 领取穿门锤", Color3.fromRGB(255, 55, 95), function()
+	local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
+	if backpack then
+		if backpack:FindFirstChild("🔨灵动穿门锤") then backpack["🔨灵动穿门锤"]:Destroy() end
+		local tool = Instance.new("Tool")
+		tool.Name = "🔨灵动穿门锤"
+		tool.RequiresHandle = false
+		tool.Activated:Connect(function()
+			local mouse = LocalPlayer:GetMouse()
+			local target = mouse and mouse.Target
+			if target and target:IsA("BasePart") and not target:IsDescendantOf(LocalPlayer.Character) then
+				table.insert(Config.DeletedParts, {
+					Part = target,
+					Transparency = target.Transparency,
+					CanCollide = target.CanCollide
+				})
+				target.Transparency = 0.85
+				target.CanCollide = false
+				Notify("🔨 已虚化穿透: " .. target.Name, Color3.fromRGB(255, 55, 95))
+			end
+		end)
+		tool.Parent = backpack
+		Notify("已发放【🔨灵动穿门锤】点击门/墙即可穿透！")
+	end
+end)
 
-SpawnPlatBtn.MouseButton1Click:Connect(function()
-	PlayClickSound(1.15)
+-- 3. V9新增：一键恢复所有被穿门锤虚化的物体
+CreateToolActionBtn(3, 1, "♻️ 恢复拆除物", Color3.fromRGB(48, 209, 88), function()
+	local count = #Config.DeletedParts
+	for _, info in ipairs(Config.DeletedParts) do
+		if info.Part and info.Part.Parent then
+			info.Part.Transparency = info.Transparency
+			info.Part.CanCollide = info.CanCollide
+		end
+	end
+	table.clear(Config.DeletedParts)
+	Notify("♻️ 已恢复 " .. count .. " 个被虚化的障碍物！")
+end)
+
+-- 4. 脚下建安全平台
+CreateToolActionBtn(1, 2, "🧱 脚下建平台", Color3.fromRGB(191, 90, 242), function()
 	local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
 	if hrp then
-		local p = Instance.new("Part")
-		p.Size = Vector3.new(16, 1, 16)
-		p.CFrame = CFrame.new(hrp.Position - Vector3.new(0, 3.5, 0))
-		p.Anchored = true
-		p.Material = Enum.Material.Glass
-		p.Color = Themes[CurrentThemeIndex].Accent
-		p.Transparency = 0.25
-		p.Parent = workspace
-		ShowToast("🧱 已在脚下生成永久水晶安全平台")
+		local plat = Instance.new("Part")
+		plat.Size = Vector3.new(16, 1, 16)
+		plat.CFrame = hrp.CFrame * CFrame.new(0, -3.4, 0)
+		plat.Anchored = true
+		plat.Material = Enum.Material.Glass
+		plat.Color = Themes[Config.CurrentTheme].Accent
+		plat.Transparency = 0.35
+		plat.Parent = workspace
+		Notify("🧱 已在脚下生成永久安全平台！")
 	end
 end)
 
-local DeathReturnBtn = Instance.new("TextButton")
-DeathReturnBtn.Size = UDim2.new(0.32, 0, 1, 0)
-DeathReturnBtn.Position = UDim2.new(0.68, 0, 0, 0)
-DeathReturnBtn.BackgroundColor3 = Color3.fromRGB(28, 28, 40)
-DeathReturnBtn.Text = "💀 回死亡位置"
-DeathReturnBtn.TextColor3 = Color3.fromRGB(255, 110, 125)
-DeathReturnBtn.Font = Enum.Font.GothamBold
-DeathReturnBtn.TextSize = 11
-DeathReturnBtn.ZIndex = 15
-DeathReturnBtn.Parent = ToolRow
-Instance.new("UICorner", DeathReturnBtn).CornerRadius = UDim.new(0, 9)
-
-DeathReturnBtn.MouseButton1Click:Connect(function()
-	PlayClickSound(1.1)
+-- 5. 回上次死亡位置
+CreateToolActionBtn(2, 2, "💀 回死亡位置", Color3.fromRGB(255, 159, 10), function()
 	local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
 	if hrp and Config.LastDeathCFrame then
 		hrp.CFrame = Config.LastDeathCFrame
-		ShowToast("💀 已闪现回上次死亡地点！")
+		Notify("⚡ 已回到上次阵亡坐标！")
 	else
-		ShowToast("⚠️ 暂无死亡地点记录")
+		Notify("暂无死亡记录", Color3.fromRGB(255, 69, 58))
 	end
 end)
 
--- 灵动秒表
-local TimerCard = Instance.new("Frame")
-TimerCard.Size = UDim2.new(1, -4, 0, 38)
-TimerCard.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
-TimerCard.ZIndex = 14
-TimerCard.Parent = WaypointPage
-Instance.new("UICorner", TimerCard).CornerRadius = UDim.new(0, 10)
-
-local TimerLabel = Instance.new("TextLabel")
-TimerLabel.Size = UDim2.new(0.55, 0, 1, 0)
-TimerLabel.Position = UDim2.new(0, 12, 0, 0)
-TimerLabel.BackgroundTransparency = 1
-TimerLabel.Text = "⏱️ 灵动秒表: 00:00.0"
-TimerLabel.TextColor3 = Themes[1].Accent
-TimerLabel.Font = Enum.Font.GothamBold
-TimerLabel.TextSize = 12
-TimerLabel.TextXAlignment = Enum.TextXAlignment.Left
-TimerLabel.ZIndex = 15
-TimerLabel.Parent = TimerCard
-
-local TimerToggleBtn = Instance.new("TextButton")
-TimerToggleBtn.Size = UDim2.new(0, 68, 0, 24)
-TimerToggleBtn.AnchorPoint = Vector2.new(1, 0.5)
-TimerToggleBtn.Position = UDim2.new(1, -68, 0.5, 0)
-TimerToggleBtn.BackgroundColor3 = Themes[1].Accent
-TimerToggleBtn.Text = "开始"
-TimerToggleBtn.TextColor3 = Color3.fromRGB(10, 10, 14)
-TimerToggleBtn.Font = Enum.Font.GothamBold
-TimerToggleBtn.TextSize = 11
-TimerToggleBtn.ZIndex = 15
-TimerToggleBtn.Parent = TimerCard
-Instance.new("UICorner", TimerToggleBtn).CornerRadius = UDim.new(0, 7)
-
-local TimerResetBtn = Instance.new("TextButton")
-TimerResetBtn.Size = UDim2.new(0, 52, 0, 24)
-TimerResetBtn.AnchorPoint = Vector2.new(1, 0.5)
-TimerResetBtn.Position = UDim2.new(1, -10, 0.5, 0)
-TimerResetBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 58)
-TimerResetBtn.Text = "清零"
-TimerResetBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-TimerResetBtn.Font = Enum.Font.GothamBold
-TimerResetBtn.TextSize = 11
-TimerResetBtn.ZIndex = 15
-TimerResetBtn.Parent = TimerCard
-Instance.new("UICorner", TimerResetBtn).CornerRadius = UDim.new(0, 7)
-
-TimerToggleBtn.MouseButton1Click:Connect(function()
-	PlayClickSound(1.1)
-	Config.StopwatchRunning = not Config.StopwatchRunning
-	TimerToggleBtn.Text = Config.StopwatchRunning and "暂停" or "继续"
+-- 6. V9新增：瞬移全图最近可拾取道具
+CreateToolActionBtn(3, 2, "🎁 瞬移最近道具", Color3.fromRGB(0, 199, 190), function()
+	local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+	if not hrp then return end
+	local nearestPart, minDist = nil, math.huge
+	for _, v in ipairs(workspace:GetDescendants()) do
+		if v:IsA("Tool") and v:FindFirstChild("Handle") then
+			local d = (v.Handle.Position - hrp.Position).Magnitude
+			if d < minDist then
+				minDist = d
+				nearestPart = v.Handle
+			end
+		end
+	end
+	if nearestPart then
+		hrp.CFrame = nearestPart.CFrame + Vector3.new(0, 3, 0)
+		Notify("🎁 已瞬移至道具 (" .. math.floor(minDist) .. "m)！")
+	else
+		Notify("全图暂未发现野生掉落工具", Color3.fromRGB(255, 159, 10))
+	end
 end)
 
-TimerResetBtn.MouseButton1Click:Connect(function()
-	PlayClickSound(0.95)
-	Config.StopwatchRunning = false
-	Config.StopwatchTime = 0
-	TimerToggleBtn.Text = "开始"
-	TimerLabel.Text = "⏱️ 灵动秒表: 00:00.0"
+-- 灵动秒表计时器
+local StopwatchCard = Instance.new("Frame", WaypointPage)
+StopwatchCard.Size = UDim2.new(1, 0, 0, 36)
+StopwatchCard.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
+StopwatchCard.BackgroundTransparency = 0.25
+StopwatchCard.LayoutOrder = 2
+Instance.new("UICorner", StopwatchCard).CornerRadius = UDim.new(0, 10)
+
+local SWLabel = Instance.new("TextLabel", StopwatchCard)
+SWLabel.Size = UDim2.new(0.55, 0, 1, 0)
+SWLabel.Position = UDim2.new(0, 12, 0, 0)
+SWLabel.BackgroundTransparency = 1
+SWLabel.Text = "⏱️ 秒表: 00:00.0"
+SWLabel.TextColor3 = Color3.fromRGB(48, 209, 88)
+SWLabel.Font = Enum.Font.GothamBold
+SWLabel.TextSize = 12
+SWLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+local SWStartBtn = Instance.new("TextButton", StopwatchCard)
+SWStartBtn.Size = UDim2.new(0, 62, 0, 24)
+SWStartBtn.Position = UDim2.new(1, -134, 0.5, -12)
+SWStartBtn.BackgroundColor3 = Themes[1].Accent
+SWStartBtn.Text = "▶ 计时"
+SWStartBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+SWStartBtn.Font = Enum.Font.GothamBold
+SWStartBtn.TextSize = 11
+Instance.new("UICorner", SWStartBtn).CornerRadius = UDim.new(0, 7)
+
+local SWResetBtn = Instance.new("TextButton", StopwatchCard)
+SWResetBtn.Size = UDim2.new(0, 56, 0, 24)
+SWResetBtn.Position = UDim2.new(1, -66, 0.5, -12)
+SWResetBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 58)
+SWResetBtn.Text = "🔄 清零"
+SWResetBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+SWResetBtn.Font = Enum.Font.GothamBold
+SWResetBtn.TextSize = 11
+Instance.new("UICorner", SWResetBtn).CornerRadius = UDim.new(0, 7)
+
+local swRunning, swElapsed = false, 0
+SWStartBtn.MouseButton1Click:Connect(function()
+	swRunning = not swRunning
+	SWStartBtn.Text = swRunning and "⏸ 暂停" or "▶ 继续"
+end)
+SWResetBtn.MouseButton1Click:Connect(function()
+	swRunning = false
+	swElapsed = 0
+	SWStartBtn.Text = "▶ 计时"
+	SWLabel.Text = "⏱️ 秒表: 00:00.0"
 end)
 
+-- 3个自定义坐标槽位
 for slot = 1, 3 do
-	local row = Instance.new("Frame")
-	row.Size = UDim2.new(1, -4, 0, 38)
+	local row = Instance.new("Frame", WaypointPage)
+	row.Size = UDim2.new(1, 0, 0, 38)
 	row.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
-	row.ZIndex = 14
-	row.Parent = WaypointPage
+	row.BackgroundTransparency = 0.25
+	row.LayoutOrder = 2 + slot
 	Instance.new("UICorner", row).CornerRadius = UDim.new(0, 10)
 
-	local slotTitle = Instance.new("TextLabel")
-	slotTitle.Size = UDim2.new(0.52, 0, 1, 0)
+	local slotTitle = Instance.new("TextLabel", row)
+	slotTitle.Size = UDim2.new(1, -150, 1, 0)
 	slotTitle.Position = UDim2.new(0, 12, 0, 0)
 	slotTitle.BackgroundTransparency = 1
-	slotTitle.Text = "📍 锚点 #" .. slot .. " : 未记录"
-	slotTitle.TextColor3 = Color3.fromRGB(230, 230, 240)
+	slotTitle.Text = "📍 坐标槽位 #" .. slot .. " (未记录)"
+	slotTitle.TextColor3 = Color3.fromRGB(220, 220, 235)
 	slotTitle.Font = Enum.Font.GothamBold
 	slotTitle.TextSize = 11
 	slotTitle.TextXAlignment = Enum.TextXAlignment.Left
-	slotTitle.ZIndex = 15
-	slotTitle.Parent = row
 
-	local saveBtn = Instance.new("TextButton")
-	saveBtn.Size = UDim2.new(0, 68, 0, 24)
-	saveBtn.AnchorPoint = Vector2.new(1, 0.5)
-	saveBtn.Position = UDim2.new(1, -82, 0.5, 0)
-	saveBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 52)
-	saveBtn.Text = "💾 记录"
+	local saveBtn = Instance.new("TextButton", row)
+	saveBtn.Size = UDim2.new(0, 62, 0, 24)
+	saveBtn.Position = UDim2.new(1, -134, 0.5, -12)
+	saveBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 58)
+	saveBtn.Text = "💾 保存"
 	saveBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 	saveBtn.Font = Enum.Font.GothamBold
 	saveBtn.TextSize = 11
-	saveBtn.ZIndex = 15
-	saveBtn.Parent = row
 	Instance.new("UICorner", saveBtn).CornerRadius = UDim.new(0, 7)
 
-	local tpBtn = Instance.new("TextButton")
-	tpBtn.Size = UDim2.new(0, 66, 0, 24)
-	tpBtn.AnchorPoint = Vector2.new(1, 0.5)
-	tpBtn.Position = UDim2.new(1, -10, 0.5, 0)
+	local tpBtn = Instance.new("TextButton", row)
+	tpBtn.Size = UDim2.new(0, 56, 0, 24)
+	tpBtn.Position = UDim2.new(1, -66, 0.5, -12)
 	tpBtn.BackgroundColor3 = Themes[1].Accent
 	tpBtn.Text = "⚡ 瞬移"
-	tpBtn.TextColor3 = Color3.fromRGB(10, 10, 14)
+	tpBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 	tpBtn.Font = Enum.Font.GothamBold
 	tpBtn.TextSize = 11
-	tpBtn.ZIndex = 15
-	tpBtn.Parent = row
 	Instance.new("UICorner", tpBtn).CornerRadius = UDim.new(0, 7)
 
 	saveBtn.MouseButton1Click:Connect(function()
 		local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
 		if hrp then
-			PlayClickSound(1.15)
 			Config.Waypoints[slot] = hrp.CFrame
 			local p = hrp.Position
-			slotTitle.Text = string.format("📍 锚点 #%d (%d, %d, %d)", slot, p.X, p.Y, p.Z)
-			ShowToast("📍 锚点 #" .. slot .. " 已保存")
+			slotTitle.Text = string.format("📍 槽位#%d (%d, %d, %d)", slot, p.X, p.Y, p.Z)
+			slotTitle.TextColor3 = Color3.fromRGB(48, 209, 88)
+			Notify("已保存坐标槽位 #" .. slot)
 		end
 	end)
 
 	tpBtn.MouseButton1Click:Connect(function()
 		local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
 		if hrp and Config.Waypoints[slot] then
-			PlayClickSound(1.25)
 			hrp.CFrame = Config.Waypoints[slot]
-			ShowToast("⚡ 已瞬移至锚点 #" .. slot)
+			Notify("已瞬移至槽位 #" .. slot)
 		else
-			ShowToast("⚠️ 请先记录锚点 #" .. slot)
+			Notify("槽位 #" .. slot .. " 尚未保存坐标", Color3.fromRGB(255, 69, 58))
 		end
 	end)
 end
 
--- ==================== 5. 👥 玩家列表页面 ====================
-local PlayersListPage = Pages["PlayersList"]
-local PListLayout = Instance.new("UIListLayout", PlayersListPage)
-PListLayout.Padding = UDim.new(0, 6)
+-- ==================== 12. 【👥玩家】实时搜索 + 观战/骑头/环绕/瞬移 ====================
+local PlayersListPage = Pages["Players"]
 
-local ResetActionsBtn = Instance.new("TextButton")
-ResetActionsBtn.Size = UDim2.new(1, -4, 0, 30)
-ResetActionsBtn.BackgroundColor3 = Color3.fromRGB(36, 36, 48)
-ResetActionsBtn.Text = "🔄 停止观战 / 停止环绕伴随 (恢复自身状态)"
-ResetActionsBtn.TextColor3 = Themes[1].Accent
+local PlayerTopRow = Instance.new("Frame", PlayersListPage)
+PlayerTopRow.Size = UDim2.new(1, 0, 0, 28)
+PlayerTopRow.BackgroundTransparency = 1
+
+local PlayerSearchBox = Instance.new("TextBox", PlayerTopRow)
+PlayerSearchBox.Size = UDim2.new(0.54, -4, 1, 0)
+PlayerSearchBox.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
+PlayerSearchBox.PlaceholderText = "🔍 搜索玩家名字..."
+PlayerSearchBox.Text = ""
+PlayerSearchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+PlayerSearchBox.PlaceholderColor3 = Color3.fromRGB(130, 130, 148)
+PlayerSearchBox.Font = Enum.Font.Gotham
+PlayerSearchBox.TextSize = 11
+Instance.new("UICorner", PlayerSearchBox).CornerRadius = UDim.new(0, 8)
+
+local ResetActionsBtn = Instance.new("TextButton", PlayerTopRow)
+ResetActionsBtn.Size = UDim2.new(0.46, -2, 1, 0)
+ResetActionsBtn.Position = UDim2.new(0.54, 4, 0, 0)
+ResetActionsBtn.BackgroundColor3 = Color3.fromRGB(255, 69, 58)
+ResetActionsBtn.BackgroundTransparency = 0.2
+ResetActionsBtn.Text = "🛑 停止观战/骑头/环绕"
+ResetActionsBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 ResetActionsBtn.Font = Enum.Font.GothamBold
-ResetActionsBtn.TextSize = 11
-ResetActionsBtn.ZIndex = 14
-ResetActionsBtn.Parent = PlayersListPage
-Instance.new("UICorner", ResetActionsBtn).CornerRadius = UDim.new(0, 9)
+ResetActionsBtn.TextSize = 10
+Instance.new("UICorner", ResetActionsBtn).CornerRadius = UDim.new(0, 8)
 
 ResetActionsBtn.MouseButton1Click:Connect(function()
-	PlayClickSound(1.0)
 	Config.OrbitTarget = nil
+	Config.PiggybackTarget = nil
 	if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+		LocalPlayer.Character:FindFirstChildOfClass("Humanoid").Sit = false
 		Camera.CameraSubject = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-		ShowToast("🎥 已恢复主视角并停止环绕")
 	end
+	Notify("已停止观战、骑头与环绕锁定")
 end)
 
-local PlayerCardsContainer = Instance.new("Frame")
-PlayerCardsContainer.Size = UDim2.new(1, -4, 0, 0)
-PlayerCardsContainer.AutomaticSize = Enum.AutomaticSize.Y
-PlayerCardsContainer.BackgroundTransparency = 1
-PlayerCardsContainer.ZIndex = 14
-PlayerCardsContainer.Parent = PlayersListPage
+local PlayerCards = {}
+local function RefreshPlayerList()
+	for _, c in pairs(PlayerCards) do c:Destroy() end
+	table.clear(PlayerCards)
 
-local PCardsLayout = Instance.new("UIListLayout", PlayerCardsContainer)
-PCardsLayout.Padding = UDim.new(0, 5)
-
-local function RefreshPlayersList()
-	for _, child in ipairs(PlayerCardsContainer:GetChildren()) do
-		if child:IsA("Frame") then child:Destroy() end
-	end
 	local myHrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+	local keyword = string.lower(Config.PlayerSearchText or "")
 
-	for _, plr in ipairs(Players:GetPlayers()) do
-		if plr ~= LocalPlayer then
-			local row = Instance.new("Frame")
-			row.Size = UDim2.new(1, 0, 0, 40)
-			row.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
-			row.ZIndex = 14
-			row.Parent = PlayerCardsContainer
-			Instance.new("UICorner", row).CornerRadius = UDim.new(0, 10)
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= LocalPlayer then
+			local matchName = string.find(string.lower(p.Name), keyword, 1, true) or string.find(string.lower(p.DisplayName), keyword, 1, true)
+			if keyword == "" or matchName then
+				local card = Instance.new("Frame", PlayersListPage)
+				card.Size = UDim2.new(1, 0, 0, 42)
+				card.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
+				card.BackgroundTransparency = 0.25
+				Instance.new("UICorner", card).CornerRadius = UDim.new(0, 10)
+				table.insert(PlayerCards, card)
 
-			local avatar = Instance.new("ImageLabel")
-			avatar.Size = UDim2.new(0, 28, 0, 28)
-			avatar.Position = UDim2.new(0, 7, 0.5, -14)
-			avatar.BackgroundColor3 = Color3.fromRGB(40, 40, 52)
-			avatar.Image = "rbxthumb://type=AvatarHeadShot&id=" .. plr.UserId .. "&w=150&h=150"
-			avatar.ZIndex = 15
-			avatar.Parent = row
-			Instance.new("UICorner", avatar).CornerRadius = UDim.new(1, 0)
+				local avatar = Instance.new("ImageLabel", card)
+				avatar.Size = UDim2.new(0, 30, 0, 30)
+				avatar.Position = UDim2.new(0, 6, 0.5, -15)
+				avatar.BackgroundColor3 = Color3.fromRGB(40, 40, 52)
+				avatar.Image = "rbxthumb://type=AvatarHeadShot&id=" .. p.UserId .. "&w=150&h=150"
+				Instance.new("UICorner", avatar).CornerRadius = UDim.new(1, 0)
 
-			local distStr = "--m"
-			local hpStr = "100%"
-			if plr.Character then
-				local tHrp = plr.Character:FindFirstChild("HumanoidRootPart")
-				local tHum = plr.Character:FindFirstChildOfClass("Humanoid")
-				if myHrp and tHrp then
-					distStr = string.format("%dm", math.floor((myHrp.Position - tHrp.Position).Magnitude))
+				local distStr, hpStr = "--m", "100%"
+				if myHrp and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+					local d = (p.Character.HumanoidRootPart.Position - myHrp.Position).Magnitude
+					distStr = string.format("%dm", math.floor(d))
 				end
-				if tHum and tHum.MaxHealth > 0 then
-					hpStr = string.format("%d%%", math.floor((tHum.Health / tHum.MaxHealth) * 100))
+				if p.Character and p.Character:FindFirstChildOfClass("Humanoid") then
+					local h = p.Character:FindFirstChildOfClass("Humanoid")
+					hpStr = string.format("%d%%", math.floor((h.Health / math.max(h.MaxHealth, 1)) * 100))
 				end
-			end
 
-			local nameLbl = Instance.new("TextLabel")
-			nameLbl.Size = UDim2.new(1, -200, 1, 0)
-			nameLbl.Position = UDim2.new(0, 42, 0, 0)
-			nameLbl.BackgroundTransparency = 1
-			nameLbl.Text = plr.DisplayName .. "\n📏" .. distStr .. " | ❤️" .. hpStr
-			nameLbl.TextColor3 = Color3.fromRGB(235, 235, 245)
-			nameLbl.Font = Enum.Font.GothamBold
-			nameLbl.TextSize = 10
-			nameLbl.TextXAlignment = Enum.TextXAlignment.Left
-			nameLbl.TextTruncate = Enum.TextTruncate.AtEnd
-			nameLbl.ZIndex = 15
-			nameLbl.Parent = row
+				local nameLbl = Instance.new("TextLabel", card)
+				nameLbl.Size = UDim2.new(1, -225, 0, 18)
+				nameLbl.Position = UDim2.new(0, 42, 0, 4)
+				nameLbl.BackgroundTransparency = 1
+				nameLbl.Text = p.DisplayName
+				nameLbl.TextColor3 = Color3.fromRGB(240, 240, 250)
+				nameLbl.Font = Enum.Font.GothamBold
+				nameLbl.TextSize = 11
+				nameLbl.TextXAlignment = Enum.TextXAlignment.Left
+				nameLbl.TextTruncate = Enum.TextTruncate.AtEnd
 
-			local specBtn = Instance.new("TextButton")
-			specBtn.Size = UDim2.new(0, 46, 0, 24)
-			specBtn.AnchorPoint = Vector2.new(1, 0.5)
-			specBtn.Position = UDim2.new(1, -108, 0.5, 0)
-			specBtn.BackgroundColor3 = Color3.fromRGB(42, 42, 56)
-			specBtn.Text = "🎥观战"
-			specBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-			specBtn.Font = Enum.Font.GothamBold
-			specBtn.TextSize = 10
-			specBtn.ZIndex = 15
-			specBtn.Parent = row
-			Instance.new("UICorner", specBtn).CornerRadius = UDim.new(0, 6)
+				local infoLbl = Instance.new("TextLabel", card)
+				infoLbl.Size = UDim2.new(1, -225, 0, 14)
+				infoLbl.Position = UDim2.new(0, 42, 0, 22)
+				infoLbl.BackgroundTransparency = 1
+				infoLbl.Text = "📏 " .. distStr .. "  ❤️ " .. hpStr
+				infoLbl.TextColor3 = Color3.fromRGB(48, 209, 88)
+				infoLbl.Font = Enum.Font.Gotham
+				infoLbl.TextSize = 10
+				infoLbl.TextXAlignment = Enum.TextXAlignment.Left
 
-			local orbitBtn = Instance.new("TextButton")
-			orbitBtn.Size = UDim2.new(0, 46, 0, 24)
-			orbitBtn.AnchorPoint = Vector2.new(1, 0.5)
-			orbitBtn.Position = UDim2.new(1, -58, 0.5, 0)
-			orbitBtn.BackgroundColor3 = Color3.fromRGB(42, 42, 56)
-			orbitBtn.Text = "🛰️环绕"
-			orbitBtn.TextColor3 = Color3.fromRGB(0, 230, 255)
-			orbitBtn.Font = Enum.Font.GothamBold
-			orbitBtn.TextSize = 10
-			orbitBtn.ZIndex = 15
-			orbitBtn.Parent = row
-			Instance.new("UICorner", orbitBtn).CornerRadius = UDim.new(0, 6)
-
-			local tpBtn = Instance.new("TextButton")
-			tpBtn.Size = UDim2.new(0, 46, 0, 24)
-			tpBtn.AnchorPoint = Vector2.new(1, 0.5)
-			tpBtn.Position = UDim2.new(1, -8, 0.5, 0)
-			tpBtn.BackgroundColor3 = Themes[CurrentThemeIndex].Accent
-			tpBtn.Text = "⚡瞬移"
-			tpBtn.TextColor3 = Color3.fromRGB(10, 10, 14)
-			tpBtn.Font = Enum.Font.GothamBold
-			tpBtn.TextSize = 10
-			tpBtn.ZIndex = 15
-			tpBtn.Parent = row
-			Instance.new("UICorner", tpBtn).CornerRadius = UDim.new(0, 6)
-
-			specBtn.MouseButton1Click:Connect(function()
-				if plr.Character and plr.Character:FindFirstChildOfClass("Humanoid") then
-					PlayClickSound(1.1)
-					Camera.CameraSubject = plr.Character:FindFirstChildOfClass("Humanoid")
-					ShowToast("🎥 正在观战: " .. plr.DisplayName)
+				local function MakePBtn(txt, rightOffset, bgCol, fn)
+					local b = Instance.new("TextButton", card)
+					b.Size = UDim2.new(0, 40, 0, 24)
+					b.Position = UDim2.new(1, rightOffset, 0.5, -12)
+					b.BackgroundColor3 = bgCol
+					b.Text = txt
+					b.TextColor3 = Color3.fromRGB(255, 255, 255)
+					b.Font = Enum.Font.GothamBold
+					b.TextSize = 10
+					Instance.new("UICorner", b).CornerRadius = UDim.new(0, 6)
+					b.MouseButton1Click:Connect(fn)
 				end
-			end)
 
-			orbitBtn.MouseButton1Click:Connect(function()
-				PlayClickSound(1.2)
-				if Config.OrbitTarget == plr then
+				-- 1. 观战
+				MakePBtn("🎥观战", -174, Color3.fromRGB(45, 45, 58), function()
+					if p.Character and p.Character:FindFirstChildOfClass("Humanoid") then
+						Camera.CameraSubject = p.Character:FindFirstChildOfClass("Humanoid")
+						Notify("正在观战: " .. p.DisplayName)
+					end
+				end)
+				-- 2. V9新增：头顶骑乘
+				MakePBtn("🎒骑头", -130, Color3.fromRGB(255, 55, 95), function()
 					Config.OrbitTarget = nil
-					ShowToast("🛰️ 已停止环绕 " .. plr.DisplayName)
-				else
-					Config.OrbitTarget = plr
-					ShowToast("🛰️ 正在 360° 环绕护卫: " .. plr.DisplayName)
-				end
-			end)
-
-			tpBtn.MouseButton1Click:Connect(function()
-				local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-				local targetRoot = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
-				if myRoot and targetRoot then
-					PlayClickSound(1.25)
-					myRoot.CFrame = targetRoot.CFrame * CFrame.new(0, 0, 3)
-					ShowToast("⚡ 已瞬移至: " .. plr.DisplayName)
-				end
-			end)
+					Config.PiggybackTarget = (Config.PiggybackTarget == p) and nil or p
+					Notify(Config.PiggybackTarget and ("🎒 已骑乘在 " .. p.DisplayName .. " 头顶") or "已取消骑乘")
+				end)
+				-- 3. 环绕
+				MakePBtn("🛰️环绕", -86, Color3.fromRGB(191, 90, 242), function()
+					Config.PiggybackTarget = nil
+					Config.OrbitTarget = (Config.OrbitTarget == p) and nil or p
+					Notify(Config.OrbitTarget and ("🛰️ 正在环绕: " .. p.DisplayName) or "已停止环绕")
+				end)
+				-- 4. 瞬移
+				MakePBtn("⚡瞬移", -42, Themes[Config.CurrentTheme].Accent, function()
+					local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+					local tHrp = p.Character and p.Character:FindFirstChild("HumanoidRootPart")
+					if hrp and tHrp then
+						hrp.CFrame = tHrp.CFrame * CFrame.new(0, 0, 3)
+						Notify("⚡ 已瞬移至 " .. p.DisplayName)
+					end
+				end)
+			end
 		end
 	end
 end
 
-Players.PlayerAdded:Connect(RefreshPlayersList)
-Players.PlayerRemoving:Connect(RefreshPlayersList)
-RefreshPlayersList()
+PlayerSearchBox:GetPropertyChangedSignal("Text"):Connect(function()
+	Config.PlayerSearchText = PlayerSearchBox.Text
+	RefreshPlayerList()
+end)
 
--- ==================== 6. 🎨 视觉与主题页面 ====================
-SetupGridPage(Pages["Visual"])
+-- ==================== 13. 【🎨视觉】主题 + 24h时间滑块 + 除雾 + 透视 ====================
+local VisualPage = Pages["Visual"]
 
-local ThemeSwitchBtn = Instance.new("TextButton")
-ThemeSwitchBtn.BackgroundColor3 = Color3.fromRGB(28, 28, 40)
-ThemeSwitchBtn.Text = "🎨 主题: " .. Themes[1].Name .. " (切换)"
-ThemeSwitchBtn.TextColor3 = Themes[1].Accent
-ThemeSwitchBtn.Font = Enum.Font.GothamBold
-ThemeSwitchBtn.TextSize = 11
-ThemeSwitchBtn.ZIndex = 14
-ThemeSwitchBtn.Parent = Pages["Visual"]
-Instance.new("UICorner", ThemeSwitchBtn).CornerRadius = UDim.new(0, 11)
+local ThemeBtn = Instance.new("TextButton", VisualPage)
+ThemeBtn.Size = UDim2.new(1, 0, 0, 36)
+ThemeBtn.BackgroundColor3 = Themes[1].Accent
+ThemeBtn.BackgroundTransparency = 0.15
+ThemeBtn.Text = "🎨 点击切换灵动岛主题配色 (当前: 深空钛黑)"
+ThemeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+ThemeBtn.Font = Enum.Font.GothamBold
+ThemeBtn.TextSize = 11
+Instance.new("UICorner", ThemeBtn).CornerRadius = UDim.new(0, 10)
 
-local function ApplyTheme()
-	local th = Themes[CurrentThemeIndex]
-	if not Config.GlassMode then
-		Island.BackgroundColor3 = th.Bg
-	end
-	AmbientGlow.BackgroundColor3 = th.Accent
-	FlyPadStroke.Color = th.Accent
-	ThemeSwitchBtn.Text = "🎨 主题: " .. th.Name .. " (切换)"
-	ThemeSwitchBtn.TextColor3 = th.Accent
-	PlayPauseBtn.BackgroundColor3 = th.Accent
-	QMPlayBtn.BackgroundColor3 = th.Accent
-	PlayIDBtn.BackgroundColor3 = th.Accent
-	TimerLabel.TextColor3 = th.Accent
-	TimerToggleBtn.BackgroundColor3 = th.Accent
-	NetTitle.TextColor3 = th.Accent
-	GiveTPToolBtn.TextColor3 = th.Accent
-	ResetActionsBtn.TextColor3 = th.Accent
-	TabIndicator.BackgroundColor3 = th.Accent
-	for _, f in ipairs(SliderFills) do f.BackgroundColor3 = th.Accent end
-	StrokeGradient.Color = ColorSequence.new({
-		ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
-		ColorSequenceKeypoint.new(0.35, th.Accent),
-		ColorSequenceKeypoint.new(0.7, Color3.fromRGB(35, 35, 45)),
-		ColorSequenceKeypoint.new(1, Color3.fromRGB(220, 220, 255))
+ThemeBtn.MouseButton1Click:Connect(function()
+	Config.CurrentTheme = (Config.CurrentTheme % #Themes) + 1
+	local th = Themes[Config.CurrentTheme]
+	ThemeBtn.Text = "🎨 点击切换灵动岛主题配色 (当前: " .. th.Name .. ")"
+	TweenService:Create(Island, TweenInfo.new(0.35), { BackgroundColor3 = th.Bg }):Play()
+	TweenService:Create(AmbientGlow, TweenInfo.new(0.35), { BackgroundColor3 = th.Accent }):Play()
+	TweenService:Create(TabIndicator, TweenInfo.new(0.35), { BackgroundColor3 = th.Accent }):Play()
+	TweenService:Create(ThemeBtn, TweenInfo.new(0.35), { BackgroundColor3 = th.Accent }):Play()
+	StrokeGrad.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, th.Accent),
+		ColorSequenceKeypoint.new(0.4, Color3.fromRGB(255, 255, 255)),
+		ColorSequenceKeypoint.new(0.7, Color3.fromRGB(45, 45, 55)),
+		ColorSequenceKeypoint.new(1, th.Glow)
 	})
-	for _, fn in ipairs(ActiveSwitchStylers) do fn() end
-	ShowToast("🎨 已切换至 [" .. th.Name .. "] 钛金属主题")
-end
-
-ThemeSwitchBtn.MouseButton1Click:Connect(function()
-	PlayClickSound(1.15)
-	CurrentThemeIndex = (CurrentThemeIndex % #Themes) + 1
-	ApplyTheme()
+	for sw, _ in pairs(ActiveTrackFills) do
+		if sw and sw.Parent then sw.BackgroundColor3 = th.Accent end
+	end
+	Notify("已切换主题：" .. th.Name, th.Accent)
 end)
 
-CreateiOSToggle(Pages["Visual"], "🎯 轮廓高光透视", "全图玩家隔墙高光轮廓", false, function(state)
-	Config.ESP = state
-	if not state then
+-- V9新增：24小时全天候时间滑块
+CreateiOSSlider(VisualPage, nil, "☀️ 游戏时间无级滑块 (拖动立即生效)", 0, 24, 14, ":00", function(val)
+	Config.CustomClockTime = val
+	Config.LockTime = true
+	Lighting.ClockTime = val
+end)
+
+AddSwitch("Visual", "🌫️ 一键彻底除雾", "移除全图浓雾与Atmosphere大气遮挡，视野极度通透", false, function(v)
+	Config.NoFog = v
+	if v then
+		Lighting.FogEnd = 100000
+		for _, eff in ipairs(Lighting:GetChildren()) do
+			if eff:IsA("Atmosphere") then eff.Density = 0 end
+		end
+	else
+		Lighting.FogEnd = OrigLighting.FogEnd
+	end
+end)
+
+AddSwitch("Visual", "🎯 轮廓高光透视 (ESP)", "隔墙高亮显示全服所有玩家身体轮廓", false, function(v)
+	Config.ESP = v
+	if not v then
 		for _, p in ipairs(Players:GetPlayers()) do
-			if p.Character and p.Character:FindFirstChild("AppleESP") then
-				p.Character.AppleESP:Destroy()
+			if p.Character and p.Character:FindFirstChild("IslandESP") then
+				p.Character.IslandESP:Destroy()
 			end
 		end
 	end
-	ShowToast(state and "🎯 轮廓透视已开启" or "🎯 轮廓透视已关闭")
 end)
 
-CreateiOSToggle(Pages["Visual"], "🏷️ 全息血量名片", "头顶显示名字距离与血量", false, function(state)
-	Config.NameESP = state
-	if not state then
+AddSwitch("Visual", "🏷️ 全息血量名片", "在玩家头顶显示悬浮名字、实时米数与血量百分比", false, function(v)
+	Config.NameESP = v
+	if not v then
 		for _, p in ipairs(Players:GetPlayers()) do
-			if p.Character and p.Character:FindFirstChild("AppleNameESP") then
-				p.Character.AppleNameESP:Destroy()
+			if p.Character and p.Character:FindFirstChild("IslandNameTag") then
+				p.Character.IslandNameTag:Destroy()
 			end
 		end
 	end
-	ShowToast(state and "🏷️ 全息头顶名片已开启" or "🏷️ 全息名片已关闭")
 end)
 
-CreateiOSToggle(Pages["Visual"], "📐 玩家追踪激光", "从自身向所有玩家连接光束", false, function(state)
-	Config.TracerESP = state
-	if not state then
+AddSwitch("Visual", "📐 玩家追踪激光", "从自身发射霓虹引力射线直连全图玩家位置", false, function(v)
+	Config.TracerESP = v
+	if not v then
 		for _, p in ipairs(Players:GetPlayers()) do
-			if p.Character and p.Character:FindFirstChild("AppleTracer") then
-				p.Character.AppleTracer:Destroy()
+			if p.Character and p.Character:FindFirstChild("IslandTracer") then
+				p.Character.IslandTracer:Destroy()
 			end
 		end
 	end
-	ShowToast(state and "📐 玩家激光追踪线已开启" or "📐 追踪线已关闭")
 end)
 
-CreateiOSToggle(Pages["Visual"], "✨ 霓虹星尘光环", "角色生成流光粒子星尘", false, function(state)
-	Config.CharTrail = state
+AddSwitch("Visual", "✨ 霓虹星尘光环", "在角色周身环绕果味流光星尘粒子特效", false, function(v)
+	Config.Aura = v
 	local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
 	if hrp then
-		if state then
-			if not hrp:FindFirstChild("IslandHalo") then
-				local p = Instance.new("ParticleEmitter")
-				p.Name = "IslandHalo"
-				p.Texture = "rbxassetid://243098098"
-				p.Color = ColorSequence.new(Themes[CurrentThemeIndex].Accent, Color3.fromRGB(255, 255, 255))
-				p.Size = NumberSequence.new({NumberSequenceKeypoint.new(0, 0.6), NumberSequenceKeypoint.new(1, 0)})
-				p.Lifetime = NumberRange.new(0.8, 1.4)
-				p.Rate = 35
-				p.Speed = NumberRange.new(2, 4)
-				p.SpreadAngle = Vector2.new(180, 30)
-				p.Parent = hrp
-			end
-			ShowToast("✨ 霓虹星尘特效已开启")
-		else
-			if hrp:FindFirstChild("IslandHalo") then hrp.IslandHalo:Destroy() end
-			ShowToast("✨ 角色特效已关闭")
+		if v then
+			local att = Instance.new("Attachment", hrp)
+			att.Name = "IslandAura"
+			local pe = Instance.new("ParticleEmitter", att)
+			pe.Color = ColorSequence.new(Themes[Config.CurrentTheme].Accent, Themes[Config.CurrentTheme].Glow)
+			pe.Size = NumberSequence.new({NumberSequenceKeypoint.new(0, 0.5), NumberSequenceKeypoint.new(1, 0)})
+			pe.Rate = 38
+			pe.Lifetime = NumberRange.new(1, 1.6)
+			pe.Speed = NumberRange.new(2, 5)
+			pe.SpreadAngle = Vector2.new(180, 180)
+			pe.LightEmission = 1
+		elseif hrp:FindFirstChild("IslandAura") then
+			hrp.IslandAura:Destroy()
 		end
 	end
 end)
 
-CreateiOSToggle(Pages["Visual"], "🎯 屏幕动态准星", "屏幕正中央高精度战术准星", false, function(state)
-	Config.Crosshair = state
-	CrosshairFrame.Visible = state
-	ShowToast(state and "🎯 屏幕战术准星已开启" or "🎯 准星已关闭")
+AddSwitch("Visual", "🎯 屏幕动态准星", "在屏幕正中央绘制翠绿光学瞄准十字准星", false, function(v)
+	Config.Crosshair = v
+	CrosshairFrame.Visible = v
 end)
 
-CreateiOSToggle(Pages["Visual"], "🌈 RTX 电影光追", "柔光渲染与鲜艳色彩增强", false, function(state)
-	Config.RTX = state
-	if state then
-		local bloom = Lighting:FindFirstChild("IslandRTXBloom") or Instance.new("BloomEffect", Lighting)
-		bloom.Name = "IslandRTXBloom"
+AddSwitch("Visual", "🌈 RTX 电影级光追", "开启电影级辉光渲染与高对比饱和度调色", false, function(v)
+	Config.RTX = v
+	if v then
+		local bloom = Instance.new("BloomEffect", Lighting)
+		bloom.Name = "IslandBloom"
 		bloom.Intensity = 0.75
 		bloom.Size = 24
 		bloom.Threshold = 0.85
-
-		local cc = Lighting:FindFirstChild("IslandRTXCC") or Instance.new("ColorCorrectionEffect", Lighting)
-		cc.Name = "IslandRTXCC"
+		local cc = Instance.new("ColorCorrectionEffect", Lighting)
+		cc.Name = "IslandCC"
 		cc.Saturation = 0.28
 		cc.Contrast = 0.16
-		ShowToast("🌈 RTX 电影光追已开启")
 	else
-		if Lighting:FindFirstChild("IslandRTXBloom") then Lighting.IslandRTXBloom:Destroy() end
-		if Lighting:FindFirstChild("IslandRTXCC") then Lighting.IslandRTXCC:Destroy() end
-		ShowToast("🌈 RTX 光追已关闭")
+		if Lighting:FindFirstChild("IslandBloom") then Lighting.IslandBloom:Destroy() end
+		if Lighting:FindFirstChild("IslandCC") then Lighting.IslandCC:Destroy() end
 	end
 end)
 
-CreateiOSToggle(Pages["Visual"], "👁️ 极昼全图夜视", "无视黑夜迷雾全图清晰高亮", false, function(state)
-	Config.Fullbright = state
-	if not state then
-		Lighting.Brightness = Config.OrigBrightness
-		Lighting.Ambient = Config.OrigAmbient
-		Lighting.OutdoorAmbient = Config.OrigOutdoor
-		Lighting.ClockTime = Config.OrigClock
-		Lighting.FogEnd = Config.OrigFog
+AddSwitch("Visual", "👁️ 极昼全图夜视", "消除一切黑夜与阴影，全天候保持白天高亮视野", false, function(v)
+	Config.Fullbright = v
+	if not v then
+		Lighting.Brightness = OrigLighting.Brightness
+		Lighting.ClockTime = OrigLighting.ClockTime
+		Lighting.GlobalShadows = OrigLighting.GlobalShadows
+		Lighting.Ambient = OrigLighting.Ambient
 	end
-	ShowToast(state and "👁️ 全图极昼夜视已开启" or "👁️ 全图夜视已关闭")
 end)
 
--- ==================== 7. 📊 本服全部信息页面 ====================
+-- ==================== 14. 【📊本服】服务器全息面板 + 换人少服 ====================
 local ServerPage = Pages["Server"]
-local ServerLayout = Instance.new("UIListLayout", ServerPage)
-ServerLayout.Padding = UDim.new(0, 6)
 
-local ServerBanner = Instance.new("Frame")
-ServerBanner.Size = UDim2.new(1, -4, 0, 52)
-ServerBanner.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
-ServerBanner.ZIndex = 14
-ServerBanner.Parent = ServerPage
-Instance.new("UICorner", ServerBanner).CornerRadius = UDim.new(0, 12)
+local PlaceTitleBox = Instance.new("Frame", ServerPage)
+PlaceTitleBox.Size = UDim2.new(1, -6, 0, 38)
+PlaceTitleBox.Position = UDim2.new(0, 3, 0, 0)
+PlaceTitleBox.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
+PlaceTitleBox.BackgroundTransparency = 0.25
+Instance.new("UICorner", PlaceTitleBox).CornerRadius = UDim.new(0, 10)
 
-local GameTitleLbl = Instance.new("TextLabel")
-GameTitleLbl.Size = UDim2.new(1, -20, 0, 20)
-GameTitleLbl.Position = UDim2.new(0, 10, 0, 6)
-GameTitleLbl.BackgroundTransparency = 1
-GameTitleLbl.Text = "🎮 正在获取服务器名称..."
-GameTitleLbl.TextColor3 = Themes[1].Accent
-GameTitleLbl.Font = Enum.Font.GothamBold
-GameTitleLbl.TextSize = 12
-GameTitleLbl.TextXAlignment = Enum.TextXAlignment.Left
-GameTitleLbl.TextTruncate = Enum.TextTruncate.AtEnd
-GameTitleLbl.ZIndex = 15
-GameTitleLbl.Parent = ServerBanner
+local PlaceNameLbl = Instance.new("TextLabel", PlaceTitleBox)
+PlaceNameLbl.Size = UDim2.new(1, -110, 1, 0)
+PlaceNameLbl.Position = UDim2.new(0, 10, 0, 0)
+PlaceNameLbl.BackgroundTransparency = 1
+PlaceNameLbl.Text = "🎮 正在获取游戏名称..."
+PlaceNameLbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+PlaceNameLbl.Font = Enum.Font.GothamBold
+PlaceNameLbl.TextSize = 11
+PlaceNameLbl.TextXAlignment = Enum.TextXAlignment.Left
+PlaceNameLbl.TextTruncate = Enum.TextTruncate.AtEnd
 
-local CapBarBg = Instance.new("Frame")
-CapBarBg.Size = UDim2.new(1, -20, 0, 6)
-CapBarBg.Position = UDim2.new(0, 10, 0, 30)
+local CapBarBg = Instance.new("Frame", PlaceTitleBox)
+CapBarBg.Size = UDim2.new(0, 86, 0, 8)
+CapBarBg.Position = UDim2.new(1, -96, 0.5, -4)
 CapBarBg.BackgroundColor3 = Color3.fromRGB(45, 45, 58)
-CapBarBg.ZIndex = 15
-CapBarBg.Parent = ServerBanner
 Instance.new("UICorner", CapBarBg).CornerRadius = UDim.new(1, 0)
 
-local CapBarFill = Instance.new("Frame")
+local CapBarFill = Instance.new("Frame", CapBarBg)
 CapBarFill.Size = UDim2.new(0.5, 0, 1, 0)
 CapBarFill.BackgroundColor3 = Color3.fromRGB(48, 209, 88)
-CapBarFill.ZIndex = 16
-CapBarFill.Parent = CapBarBg
 Instance.new("UICorner", CapBarFill).CornerRadius = UDim.new(1, 0)
 
-local CapLabel = Instance.new("TextLabel")
-CapLabel.Size = UDim2.new(1, -20, 0, 12)
-CapLabel.Position = UDim2.new(0, 10, 0, 37)
-CapLabel.BackgroundTransparency = 1
-CapLabel.Text = "服务器负载: 计算中..."
-CapLabel.TextColor3 = Color3.fromRGB(165, 165, 180)
-CapLabel.Font = Enum.Font.Gotham
-CapLabel.TextSize = 9
-CapLabel.TextXAlignment = Enum.TextXAlignment.Left
-CapLabel.ZIndex = 15
-CapLabel.Parent = ServerBanner
-
 task.spawn(function()
-	local ok, info = pcall(function()
-		return MarketplaceService:GetProductInfo(game.PlaceId)
-	end)
-	if ok and info and info.Name then
-		GameTitleLbl.Text = "🎮 " .. info.Name
-	else
-		GameTitleLbl.Text = "🎮 Place ID: " .. tostring(game.PlaceId)
-	end
+	local ok, info = pcall(function() return MarketplaceService:GetProductInfo(game.PlaceId) end)
+	PlaceNameLbl.Text = (ok and info and info.Name) and ("🎮 " .. info.Name) or ("🎮 PlaceId: " .. tostring(game.PlaceId))
 end)
 
-local InfoGridFrame = Instance.new("Frame")
-InfoGridFrame.Size = UDim2.new(1, -4, 0, 74)
-InfoGridFrame.BackgroundTransparency = 1
-InfoGridFrame.ZIndex = 14
-InfoGridFrame.Parent = ServerPage
+local GridBox = Instance.new("Frame", ServerPage)
+GridBox.Size = UDim2.new(1, -6, 0, 114)
+GridBox.Position = UDim2.new(0, 3, 0, 44)
+GridBox.BackgroundTransparency = 1
+local SGrid = Instance.new("UIGridLayout", GridBox)
+SGrid.CellSize = UDim2.new(0.49, 0, 0, 34)
+SGrid.CellPadding = UDim2.new(0.02, 0, 0, 5)
 
-local InfoGrid = Instance.new("UIGridLayout", InfoGridFrame)
-InfoGrid.CellSize = UDim2.new(0.5, -4, 0, 34)
-InfoGrid.CellPadding = UDim2.new(0, 6, 0, 6)
+local SLabels = {}
+local SItems = {
+	{ Key = "Players", Title = "👥 在线人数" },
+	{ Key = "Ping",    Title = "📶 网络延迟" },
+	{ Key = "FPS",     Title = "⚡ 实时帧率" },
+	{ Key = "Uptime",  Title = "⏱️ 本服运行" },
+	{ Key = "Memory",  Title = "💾 内存占用" },
+	{ Key = "Pos",     Title = "🧭 当前坐标" }
+}
 
-local function CreateStatBox(text)
-	local box = Instance.new("Frame")
-	box.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
-	box.ZIndex = 14
-	box.Parent = InfoGridFrame
-	Instance.new("UICorner", box).CornerRadius = UDim.new(0, 9)
+for _, item in ipairs(SItems) do
+	local cell = Instance.new("Frame", GridBox)
+	cell.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
+	cell.BackgroundTransparency = 0.25
+	Instance.new("UICorner", cell).CornerRadius = UDim.new(0, 8)
 
-	local lbl = Instance.new("TextLabel")
-	lbl.Size = UDim2.new(1, -14, 1, 0)
-	lbl.Position = UDim2.new(0, 7, 0, 0)
-	lbl.BackgroundTransparency = 1
-	lbl.Text = text
-	lbl.TextColor3 = Color3.fromRGB(225, 225, 235)
-	lbl.Font = Enum.Font.GothamMedium
-	lbl.TextSize = 10
-	lbl.TextXAlignment = Enum.TextXAlignment.Left
-	lbl.ZIndex = 15
-	lbl.Parent = box
-	return lbl
+	local k = Instance.new("TextLabel", cell)
+	k.Size = UDim2.new(0.46, 0, 1, 0)
+	k.Position = UDim2.new(0, 8, 0, 0)
+	k.BackgroundTransparency = 1
+	k.Text = item.Title
+	k.TextColor3 = Color3.fromRGB(155, 155, 172)
+	k.Font = Enum.Font.GothamMedium
+	k.TextSize = 10
+	k.TextXAlignment = Enum.TextXAlignment.Left
+
+	local v = Instance.new("TextLabel", cell)
+	v.Size = UDim2.new(0.52, -8, 1, 0)
+	v.Position = UDim2.new(0.48, 0, 0, 0)
+	v.BackgroundTransparency = 1
+	v.Text = "--"
+	v.TextColor3 = Color3.fromRGB(255, 255, 255)
+	v.Font = Enum.Font.GothamBold
+	v.TextSize = 10
+	v.TextXAlignment = Enum.TextXAlignment.Right
+	SLabels[item.Key] = v
 end
 
-local StatUptime = CreateStatBox("⏱️ 运行时长: 00:00:00")
-local StatMemory = CreateStatBox("💾 内存占用: -- MB")
-local StatPhysics = CreateStatBox("⚙️ 物理帧率: 60 Hz")
-local StatPos = CreateStatBox("📍 实时坐标: 0, 0, 0")
+local SActRow = Instance.new("Frame", ServerPage)
+SActRow.Size = UDim2.new(1, -6, 0, 28)
+SActRow.Position = UDim2.new(0, 3, 0, 164)
+SActRow.BackgroundTransparency = 1
 
-local ServerBtnRow = Instance.new("Frame")
-ServerBtnRow.Size = UDim2.new(1, -4, 0, 32)
-ServerBtnRow.BackgroundTransparency = 1
-ServerBtnRow.ZIndex = 14
-ServerBtnRow.Parent = ServerPage
-
-local SBtnLayout = Instance.new("UIListLayout", ServerBtnRow)
-SBtnLayout.FillDirection = Enum.FillDirection.Horizontal
-SBtnLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-SBtnLayout.Padding = UDim.new(0, 6)
-
-local function CreateActionBtn(txt, color, callback)
-	local b = Instance.new("TextButton")
-	b.Size = UDim2.new(0.333, -4, 1, 0)
-	b.BackgroundColor3 = color
+local function CreateSrvBtn(txt, posScale, widthScale, col, fn)
+	local b = Instance.new("TextButton", SActRow)
+	b.Size = UDim2.new(widthScale, -4, 1, 0)
+	b.Position = UDim2.new(posScale, 2, 0, 0)
+	b.BackgroundColor3 = col
 	b.Text = txt
 	b.TextColor3 = Color3.fromRGB(255, 255, 255)
 	b.Font = Enum.Font.GothamBold
-	b.TextSize = 11
-	b.ZIndex = 15
-	b.Parent = ServerBtnRow
-	Instance.new("UICorner", b).CornerRadius = UDim.new(0, 9)
-	b.MouseButton1Click:Connect(callback)
+	b.TextSize = 10
+	Instance.new("UICorner", b).CornerRadius = UDim.new(0, 8)
+	b.MouseButton1Click:Connect(fn)
 end
 
-CreateActionBtn("📋 复制信息", Color3.fromRGB(42, 42, 56), function()
-	PlayClickSound(1.1)
+CreateSrvBtn("📋复制ID", 0.00, 0.25, Color3.fromRGB(45, 45, 58), function()
 	if setclipboard then
 		setclipboard("PlaceId: " .. game.PlaceId .. " | JobId: " .. game.JobId)
-		ShowToast("✅ 服务器信息已复制")
+		Notify("服务器信息已复制到剪贴板！")
 	else
-		ShowToast("PlaceId: " .. tostring(game.PlaceId))
+		Notify("JobId: " .. string.sub(game.JobId, 1, 12) .. "...")
 	end
 end)
 
-CreateActionBtn("🔄 重进本服", Color3.fromRGB(0, 130, 215), function()
-	PlayClickSound(1.1)
-	ShowToast("🔄 正在重新连接本服...")
+CreateSrvBtn("🔄重进本服", 0.25, 0.25, Themes[1].Accent, function()
+	Notify("正在重新连接当前服务器...")
 	TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
 end)
 
-CreateActionBtn("🌐 匹配新服", Color3.fromRGB(40, 175, 95), function()
-	PlayClickSound(1.1)
-	ShowToast("🌐 正在为您匹配新服务器...")
+CreateSrvBtn("🌐匹配新服", 0.50, 0.25, Color3.fromRGB(48, 209, 88), function()
+	Notify("正在为您匹配全新服务器...")
 	TeleportService:Teleport(game.PlaceId, LocalPlayer)
 end)
 
--- 底部 iOS Home Bar 手势横条
-local HomeBarBtn = Instance.new("TextButton")
-HomeBarBtn.Size = UDim2.new(1, 0, 0, 18)
-HomeBarBtn.AnchorPoint = Vector2.new(0.5, 1)
-HomeBarBtn.Position = UDim2.new(0.5, 0, 1, 0)
-HomeBarBtn.BackgroundTransparency = 1
-HomeBarBtn.Text = ""
-HomeBarBtn.ZIndex = 15
-HomeBarBtn.Parent = ExpandedView
+-- V9新增：智能寻找人少空闲服
+CreateSrvBtn("📉换人少服", 0.75, 0.25, Color3.fromRGB(191, 90, 242), function()
+	Notify("正在检索人少低延迟服务器...")
+	task.spawn(function()
+		local ok, res = pcall(function()
+			return HttpService:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"))
+		end)
+		if ok and res and res.data then
+			for _, srv in ipairs(res.data) do
+				if srv.playing and srv.playing > 0 and srv.playing < srv.maxPlayers and srv.id ~= game.JobId then
+					TeleportService:TeleportToPlaceInstance(game.PlaceId, srv.id, LocalPlayer)
+					return
+				end
+			end
+		end
+		TeleportService:Teleport(game.PlaceId, LocalPlayer)
+	end)
+end)
 
-local HomeBarPill = Instance.new("Frame")
-HomeBarPill.Size = UDim2.new(0, 115, 0, 4)
-HomeBarPill.AnchorPoint = Vector2.new(0.5, 0.5)
-HomeBarPill.Position = UDim2.new(0.5, 0, 0.5, 0)
-HomeBarPill.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-HomeBarPill.BackgroundTransparency = 0.45
-HomeBarPill.ZIndex = 16
-HomeBarPill.Parent = HomeBarBtn
-Instance.new("UICorner", HomeBarPill).CornerRadius = UDim.new(1, 0)
+-- ==================== 15. 丝滑弹簧展开/收起 & 琉璃/缩放/拖拽 ====================
+local SpringTween = TweenInfo.new(0.45, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 
--- ==================== 展开/收起丝滑动画、无损缩放与防越界拖拽 ====================
-local function SetIslandState(expand)
-	if Config.Expanded == expand then return end
-	Config.Expanded = expand
-	PlayClickSound(expand and 1.15 or 0.9)
+local function SetIslandExpanded(state)
+	if Config.IsExpanded == state then return end
+	Config.IsExpanded = state
 
-	if expand then
+	if state then
 		CompactView.Visible = false
 		ExpandedView.Visible = true
-		RefreshPlayersList()
-		InnerRimCorner.CornerRadius = UDim.new(0, 28)
-		TweenService:Create(Island, TweenInfo.new(0.44, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-			Size = EXPANDED_SIZE
-		}):Play()
-		TweenService:Create(AmbientGlow, TweenInfo.new(0.44, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-			Size = UDim2.new(0, EXPANDED_SIZE.X.Offset + 12, 0, EXPANDED_SIZE.Y.Offset + 12),
-			BackgroundTransparency = 0.85
-		}):Play()
-		TweenService:Create(IslandCorner, TweenInfo.new(0.35, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
-			CornerRadius = UDim.new(0, 30)
-		}):Play()
+		RefreshPlayerList()
+		TweenService:Create(Island, SpringTween, { Size = EXPANDED_SIZE }):Play()
+		TweenService:Create(IslandCorner, SpringTween, { CornerRadius = UDim.new(0, 28) }):Play()
+		TweenService:Create(InnerRimCorner, SpringTween, { CornerRadius = UDim.new(0, 26) }):Play()
 	else
 		ExpandedView.Visible = false
-		InnerRimCorner.CornerRadius = UDim.new(1, 0)
-		TweenService:Create(Island, TweenInfo.new(0.36, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
-			Size = COMPACT_SIZE
-		}):Play()
-		TweenService:Create(AmbientGlow, TweenInfo.new(0.36, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
-			Size = UDim2.new(0, COMPACT_SIZE.X.Offset + 8, 0, COMPACT_SIZE.Y.Offset + 8),
-			BackgroundTransparency = 0.78
-		}):Play()
-		TweenService:Create(IslandCorner, TweenInfo.new(0.35, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
-			CornerRadius = UDim.new(1, 0)
-		}):Play()
-		task.delay(0.14, function()
-			if not Config.Expanded then CompactView.Visible = true end
+		TweenService:Create(Island, SpringTween, { Size = COMPACT_SIZE }):Play()
+		TweenService:Create(IslandCorner, SpringTween, { CornerRadius = UDim.new(0, 18) }):Play()
+		TweenService:Create(InnerRimCorner, SpringTween, { CornerRadius = UDim.new(0, 16) }):Play()
+		task.delay(0.2, function()
+			if not Config.IsExpanded then CompactView.Visible = true end
 		end)
 	end
 end
 
-CollapseTopBtn.MouseButton1Click:Connect(function() SetIslandState(false) end)
-HomeBarBtn.MouseButton1Click:Connect(function() SetIslandState(false) end)
+CollapseTopBtn.MouseButton1Click:Connect(function() SetIslandExpanded(false) end)
+HomeBarBtn.MouseButton1Click:Connect(function() SetIslandExpanded(false) end)
 
--- 窗口自由缩放比例切换 (85% / 100% / 112%)
-local ScaleValues = {0.85, 1.0, 1.12}
-local ScaleLabels = {"🔍 85%", "🔍 100%", "🔍 112%"}
 ScaleBtn.MouseButton1Click:Connect(function()
-	PlayClickSound(1.1)
-	Config.ScaleIndex = (Config.ScaleIndex % #ScaleValues) + 1
-	local s = ScaleValues[Config.ScaleIndex]
-	ScaleBtn.Text = ScaleLabels[Config.ScaleIndex]
-	TweenService:Create(IslandUIScale, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Scale = s}):Play()
-	TweenService:Create(GlowUIScale, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Scale = s}):Play()
-	ShowToast("🔍 界面缩放已调整为: " .. ScaleLabels[Config.ScaleIndex])
-end)
-
-GlassBtn.MouseButton1Click:Connect(function()
-	PlayClickSound(1.1)
-	Config.GlassMode = not Config.GlassMode
-	TweenService:Create(Island, TweenInfo.new(0.25), {
-		BackgroundTransparency = Config.GlassMode and 0.36 or 0.03
-	}):Play()
-	ShowToast(Config.GlassMode and "💧 VisionOS 琉璃半透明已开启" or "💧 已恢复深空实心背景")
+	local scales = { 0.85, 1.0, 1.12 }
+	local names  = { "🔍85%", "🔍100%", "🔍112%" }
+	Config.UIScaleIndex = (Config.UIScaleIndex % #scales) + 1
+	ScaleBtn.Text = names[Config.UIScaleIndex]
+	TweenService:Create(IslandScale, TweenInfo.new(0.25), { Scale = scales[Config.UIScaleIndex] }):Play()
 end)
 
 CenterPosBtn.MouseButton1Click:Connect(function()
-	PlayClickSound(1.15)
-	TweenService:Create(Island, TweenInfo.new(0.32, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-		Position = START_POS
-	}):Play()
-	TweenService:Create(AmbientGlow, TweenInfo.new(0.32, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-		Position = START_POS
-	}):Play()
-	ShowToast("🎯 灵动岛已居中归位")
+	TweenService:Create(Island, SpringTween, { Position = UDim2.new(0.5, 0, 0, 10) }):Play()
+	Notify("🎯 灵动岛已归位至屏幕顶部中央")
 end)
 
-local dragging, dragStart, startPos = false, nil, nil
-local movedDistance = 0
+GlassBtn.MouseButton1Click:Connect(function()
+	Config.GlassMode = not Config.GlassMode
+	GlassBtn.Text = Config.GlassMode and "💧琉璃" or "🌑实心"
+	GlassBtn.BackgroundColor3 = Config.GlassMode and Themes[Config.CurrentTheme].Accent or Color3.fromRGB(55, 55, 68)
+	TweenService:Create(Island, TweenInfo.new(0.3), {
+		BackgroundTransparency = Config.GlassMode and 0.36 or 0.03
+	}):Play()
+end)
 
-local function StartDrag(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-		local relY = input.Position.Y - Island.AbsolutePosition.Y
-		if not Config.Expanded or relY <= 38 then
-			dragging = true
-			movedDistance = 0
-			dragStart = input.Position
-			startPos = Island.Position
-		end
-	end
+-- 顶部防越界拖拽系统
+local dragging, dragInput, dragStart, startPos, hasMoved = false, nil, nil, nil, false
+
+local function ClampIslandPosition(pos)
+	local vp = Camera.ViewportSize
+	local halfW = Island.AbsoluteSize.X * 0.5
+	local xOffset = startPos.X.Scale * vp.X + startPos.X.Offset + (pos.X - dragStart.X)
+	local yOffset = startPos.Y.Scale * vp.Y + startPos.Y.Offset + (pos.Y - dragStart.Y)
+	local clampedX = math.clamp(xOffset, halfW + 6, vp.X - halfW - 6)
+	local clampedY = math.clamp(yOffset, 4, vp.Y - Island.AbsoluteSize.Y - 6)
+	return UDim2.new(0, clampedX, 0, clampedY)
 end
 
-Island.InputBegan:Connect(StartDrag)
-CompactView.InputBegan:Connect(StartDrag)
-
-UserInputService.InputChanged:Connect(function(input)
-	if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-		local delta = input.Position - dragStart
-		movedDistance = delta.Magnitude
-		local vp = Camera.ViewportSize
-		local halfW = (Island.AbsoluteSize.X * 0.5)
-		local newX = math.clamp(startPos.X.Scale * vp.X + startPos.X.Offset + delta.X, halfW + 6, vp.X - halfW - 6)
-		local newY = math.clamp(startPos.Y.Scale * vp.Y + startPos.Y.Offset + delta.Y, 6, vp.Y - 46)
-		local targetPos = UDim2.new(0, newX, 0, newY)
-		Island.Position = targetPos
-		AmbientGlow.Position = targetPos
+Island.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		local relY = input.Position.Y - Island.AbsolutePosition.Y
+		if not Config.IsExpanded or relY <= 38 then
+			dragging = true
+			hasMoved = false
+			dragStart = input.Position
+			startPos = Island.Position
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then dragging = false end
+			end)
+		end
 	end
 end)
 
-UserInputService.InputEnded:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-		dragging = false
+Island.InputChanged:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+		dragInput = input
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if input == dragInput and dragging then
+		if (input.Position - dragStart).Magnitude > 6 then
+			hasMoved = true
+			Island.Position = ClampIslandPosition(input.Position)
+		end
 	end
 end)
 
 CompactView.MouseButton1Click:Connect(function()
-	if movedDistance < 10 then
-		SetIslandState(true)
+	if not hasMoved then SetIslandExpanded(true) end
+end)
+
+UserInputService.InputBegan:Connect(function(input, gpe)
+	if not gpe and input.KeyCode == Enum.KeyCode.RightShift then
+		SetIslandExpanded(not Config.IsExpanded)
 	end
 end)
 
-UserInputService.InputBegan:Connect(function(input, gp)
-	if not gp and input.KeyCode == Enum.KeyCode.RightShift then
-		SetIslandState(not Config.Expanded)
-	end
-end)
-
--- 开机解锁过渡动画
-SwitchTab("Control")
-task.delay(0.65, function()
-	TweenService:Create(FaceIDLabel, TweenInfo.new(0.22), {TextTransparency = 1}):Play()
-	task.wait(0.22)
-	FaceIDLabel:Destroy()
-	TweenService:Create(Island, TweenInfo.new(0.45, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-		Size = COMPACT_SIZE
-	}):Play()
-	TweenService:Create(AmbientGlow, TweenInfo.new(0.45, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-		Size = UDim2.new(0, COMPACT_SIZE.X.Offset + 8, 0, COMPACT_SIZE.Y.Offset + 8)
-	}):Play()
-	TweenService:Create(IslandCorner, TweenInfo.new(0.45), {CornerRadius = UDim.new(1, 0)}):Play()
-	task.wait(0.2)
-	CompactView.Visible = true
-	ShowToast(" iOS 18 灵动岛 V8.0 已就绪")
-end)
-
--- ==================== 核心功能守护循环与事件监听 ====================
+-- ==================== 16. 死亡坐标记录、无限连跳、秒交互 ====================
 local function BindCharacterEvents(char)
 	local hum = char:WaitForChild("Humanoid", 5)
 	if hum then
 		hum.Died:Connect(function()
 			local hrp = char:FindFirstChild("HumanoidRootPart")
-			if hrp then
-				Config.LastDeathCFrame = hrp.CFrame
-			end
+			if hrp then Config.LastDeathCFrame = hrp.CFrame end
 		end)
 	end
 end
 if LocalPlayer.Character then BindCharacterEvents(LocalPlayer.Character) end
 LocalPlayer.CharacterAdded:Connect(BindCharacterEvents)
-
-LocalPlayer.Idled:Connect(function()
-	if Config.AntiAFK then
-		VirtualUser:CaptureController()
-		VirtualUser:ClickButton2(Vector2.new())
-	end
-end)
-
-ProximityPromptService.PromptShown:Connect(function(prompt)
-	if Config.AutoInteract then
-		prompt.HoldDuration = 0
-		if fireproximityprompt then
-			pcall(fireproximityprompt, prompt)
-		else
-			prompt:InputHoldBegin()
-			task.wait()
-			prompt:InputHoldEnd()
-		end
-	end
-end)
 
 UserInputService.JumpRequest:Connect(function()
 	if Config.InfJump and LocalPlayer.Character then
@@ -2323,315 +2100,368 @@ UserInputService.JumpRequest:Connect(function()
 	end
 end)
 
-RunService.Stepped:Connect(function()
-	local myChar = LocalPlayer.Character
-	if Config.Noclip and myChar then
-		for _, part in ipairs(myChar:GetDescendants()) do
-			if part:IsA("BasePart") and part.CanCollide then
-				part.CanCollide = false
+ProximityPromptService.PromptButtonHoldBegan:Connect(function(prompt)
+	if Config.AutoInteract then
+		if fireproximityprompt then fireproximityprompt(prompt)
+		else prompt.HoldDuration = 0 end
+	end
+end)
+
+-- ==================== 17. 主循环引擎 (60FPS 物理/渲染/音频/实用功能) ====================
+local fpsCounter, lastTick, currentFPS = 0, tick(), 60
+local freecamYaw, freecamPitch = 0, 0
+local lastHistoryRecord = 0
+local lastPanicTrigger = 0
+
+RunService.RenderStepped:Connect(function(dt)
+	fpsCounter = fpsCounter + 1
+	if tick() - lastTick >= 0.5 then
+		currentFPS = math.floor(fpsCounter / (tick() - lastTick))
+		fpsCounter = 0
+		lastTick = tick()
+		MiniFPSLabel.Text = currentFPS .. "Hz"
+		MiniTimeLabel.Text = os.date("%H:%M")
+
+		local pingVal = 0
+		pcall(function() pingVal = math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue()) end)
+		NetTileValue.Text = string.format("Ping: %dms | %d FPS", pingVal, currentFPS)
+
+		if Config.IsExpanded and Pages["Server"].Visible then
+			local pCount = #Players:GetPlayers()
+			local maxP = Players.MaxPlayers
+			SLabels["Players"].Text = pCount .. " / " .. maxP
+			CapBarFill.Size = UDim2.new(math.clamp(pCount / math.max(maxP, 1), 0, 1), 0, 1, 0)
+			SLabels["Ping"].Text = pingVal .. " ms"
+			SLabels["FPS"].Text = currentFPS .. " FPS"
+			local up = math.floor(workspace.DistributedGameTime)
+			SLabels["Uptime"].Text = string.format("%02d:%02d:%02d", math.floor(up/3600), math.floor((up%3600)/60), up%60)
+			SLabels["Memory"].Text = math.floor(Stats:GetTotalMemoryUsageMb()) .. " MB"
+			local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+			if hrp then
+				SLabels["Pos"].Text = string.format("%d,%d,%d", hrp.Position.X, hrp.Position.Y, hrp.Position.Z)
 			end
 		end
 	end
-	-- 🛡️ 防撞飞/防击退 (屏蔽其他玩家物理碰撞 + 限制自身异常旋转角速度)
-	if Config.AntiFling then
-		for _, plr in ipairs(Players:GetPlayers()) do
-			if plr ~= LocalPlayer and plr.Character then
-				for _, part in ipairs(plr.Character:GetDescendants()) do
-					if part:IsA("BasePart") and part.CanCollide then
-						part.CanCollide = false
+
+	-- 秒表跳动
+	if swRunning then
+		swElapsed = swElapsed + dt
+		SWLabel.Text = string.format("⏱️ 秒表: %02d:%04.1f", math.floor(swElapsed / 60), swElapsed % 60)
+	end
+
+	-- 灵动岛流光边框旋转
+	StrokeGrad.Rotation = (StrokeGrad.Rotation + 85 * dt) % 360
+
+	-- 音乐黑胶旋转与频谱律动
+	if Config.MusicPlaying and MusicSound.IsPlaying then
+		AlbumArt.Rotation = (AlbumArt.Rotation + 95 * dt) % 360
+		MiniDisk.Rotation = (MiniDisk.Rotation + 95 * dt) % 360
+		local loudness = math.clamp(MusicSound.PlaybackLoudness / 380, 0.15, 1)
+		for i, bar in ipairs(MiniBars) do
+			local h = math.clamp(4 + math.sin(tick() * 14 + i) * 10 * loudness, 3, 15)
+			bar.Size = UDim2.new(0, 3, 0, h)
+		end
+		for i, w in ipairs(WaveBars) do
+			local h = math.clamp(6 + math.cos(tick() * 16 + i * 1.4) * 24 * loudness, 4, 30)
+			w.Size = UDim2.new(0, 5, 0, h)
+		end
+		if MusicSound.TimeLength > 0 then
+			local ratio = math.clamp(MusicSound.TimePosition / MusicSound.TimeLength, 0, 1)
+			ProgressFill.Size = UDim2.new(ratio, 0, 1, 0)
+			local cur, tot = math.floor(MusicSound.TimePosition), math.floor(MusicSound.TimeLength)
+			TimeLeftLbl.Text = string.format("%02d:%02d / %02d:%02d", math.floor(cur/60), cur%60, math.floor(tot/60), tot%60)
+		end
+	end
+
+	-- 角色物理与强化逻辑
+	local char = LocalPlayer.Character
+	if char then
+		local hum = char:FindFirstChildOfClass("Humanoid")
+		local hrp = char:FindFirstChild("HumanoidRootPart")
+
+		if hum and hrp then
+			-- 1. V9新增：记录 3 秒时光倒流轨迹 (每0.1秒采样一次，保留30帧即3秒)
+			if tick() - lastHistoryRecord >= 0.1 then
+				lastHistoryRecord = tick()
+				table.insert(Config.HistoryCFrames, hrp.CFrame)
+				if #Config.HistoryCFrames > 30 then
+					table.remove(Config.HistoryCFrames, 1)
+				end
+			end
+
+			-- 2. V9新增：手持工具自动连点
+			if Config.AutoClickTool then
+				local heldTool = char:FindFirstChildOfClass("Tool")
+				if heldTool then
+					pcall(function() heldTool:Activate() end)
+				end
+			end
+
+			-- 3. V9新增：濒死自动升空逃生 (HP < 28%)
+			if Config.PanicEscape and hum.Health > 0 and (hum.Health / math.max(hum.MaxHealth, 1)) < 0.28 and (tick() - lastPanicTrigger > 6) then
+				lastPanicTrigger = tick()
+				local safePos = hrp.Position + Vector3.new(0, 85, 0)
+				local safePod = Instance.new("Part")
+				safePod.Size = Vector3.new(18, 1.2, 18)
+				safePod.Position = safePos - Vector3.new(0, 3.5, 0)
+				safePod.Anchored = true
+				safePod.Material = Enum.Material.Neon
+				safePod.Color = Color3.fromRGB(48, 209, 88)
+				safePod.Transparency = 0.35
+				safePod.Parent = workspace
+				hrp.Velocity = Vector3.zero
+				hrp.CFrame = CFrame.new(safePos)
+				Notify("🚑 濒死自动逃生触发！已升空保命", Color3.fromRGB(255, 55, 95))
+			end
+
+			-- 4. V9新增：踏水而行模式
+			if Config.WalkOnWater then
+				local pad = workspace:FindFirstChild("IslandWaterPad")
+				if not pad then
+					pad = Instance.new("Part")
+					pad.Name = "IslandWaterPad"
+					pad.Size = Vector3.new(10, 0.6, 10)
+					pad.Anchored = true
+					pad.Material = Enum.Material.Glass
+					pad.Color = Color3.fromRGB(0, 199, 190)
+					pad.Transparency = 0.55
+					pad.Parent = workspace
+				end
+				if hum:GetState() == Enum.HumanoidStateType.Swimming then
+					hrp.Velocity = Vector3.new(hrp.Velocity.X, 22, hrp.Velocity.Z)
+				end
+				pad.CFrame = CFrame.new(hrp.Position.X, hrp.Position.Y - 3.3, hrp.Position.Z)
+			end
+
+			-- 5. 移速与跳跃锁定
+			if Config.UseCustomSpeed then hum.WalkSpeed = Config.Speed end
+			if Config.UseCustomJump then
+				hum.UseJumpPower = true
+				hum.JumpPower = Config.Jump
+			end
+
+			-- 6. 防掉虚空自动救援
+			if Config.AntiVoid then
+				if hum.FloorMaterial ~= Enum.Material.Air and hrp.Position.Y > (workspace.FallenPartsDestroyHeight + 65) then
+					Config.LastSafeCFrame = hrp.CFrame
+				end
+				if hrp.Position.Y < (workspace.FallenPartsDestroyHeight + 45) and Config.LastSafeCFrame then
+					hrp.Velocity = Vector3.zero
+					hrp.CFrame = Config.LastSafeCFrame + Vector3.new(0, 4, 0)
+					Notify("🛟 防掉虚空已将您救回安全陆地！", Color3.fromRGB(48, 209, 88))
+				end
+			end
+
+			-- 7. 防撞飞保护
+			if Config.AntiFling then
+				for _, p in ipairs(Players:GetPlayers()) do
+					if p ~= LocalPlayer and p.Character then
+						for _, part in ipairs(p.Character:GetDescendants()) do
+							if part:IsA("BasePart") then part.CanCollide = false end
+						end
+					end
+				end
+				if hrp.RotVelocity.Magnitude > 50 or hrp.Velocity.Magnitude > 250 then
+					hrp.RotVelocity = Vector3.zero
+					hrp.Velocity = Vector3.zero
+				end
+			end
+
+			-- 8. V9新增：头顶骑乘目标玩家
+			if Config.PiggybackTarget and Config.PiggybackTarget.Character and Config.PiggybackTarget.Character:FindFirstChild("HumanoidRootPart") then
+				local tHrp = Config.PiggybackTarget.Character.HumanoidRootPart
+				hum.Sit = true
+				hrp.Velocity = Vector3.zero
+				hrp.CFrame = tHrp.CFrame * CFrame.new(0, 3.2, 0)
+			elseif Config.PiggybackTarget then
+				Config.PiggybackTarget = nil
+			end
+
+			-- 9. 环绕目标玩家
+			if Config.OrbitTarget and Config.OrbitTarget.Character and Config.OrbitTarget.Character:FindFirstChild("HumanoidRootPart") then
+				Config.OrbitAngle = Config.OrbitAngle + dt * 4.5
+				local tPos = Config.OrbitTarget.Character.HumanoidRootPart.Position
+				local offset = Vector3.new(math.cos(Config.OrbitAngle) * 7, 2, math.sin(Config.OrbitAngle) * 7)
+				hrp.CFrame = CFrame.new(tPos + offset, tPos)
+				hrp.Velocity = Vector3.zero
+			elseif Config.OrbitTarget then
+				Config.OrbitTarget = nil
+			end
+
+			-- 10. 灵魂自由视角 (Freecam)
+			if Config.Freecam then
+				local moveDir = hum.MoveDirection
+				local camCF = Camera.CFrame
+				local upVec = Vector3.new(0, Config.VerticalInput, 0)
+				if UserInputService:IsKeyDown(Enum.KeyCode.Space) then upVec = Vector3.new(0, 1, 0) end
+				if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then upVec = Vector3.new(0, -1, 0) end
+				local delta = UserInputService:GetMouseDelta()
+				freecamYaw = freecamYaw - delta.X * 0.004
+				freecamPitch = math.clamp(freecamPitch - delta.Y * 0.004, -1.4, 1.4)
+				local rotCF = CFrame.Angles(0, freecamYaw, 0) * CFrame.Angles(freecamPitch, 0, 0)
+				local nextPos = camCF.Position + (moveDir + upVec) * (Config.FlySpeed * dt * 1.4)
+				Camera.CFrame = CFrame.new(nextPos) * rotCF
+			end
+
+			-- 11. 摇杆/键盘全向飞行
+			if Config.Fly and not Config.Freecam then
+				local moveDir = hum.MoveDirection
+				local camLook = Camera.CFrame.LookVector
+				local vInput = Config.VerticalInput
+				if UserInputService:IsKeyDown(Enum.KeyCode.Space) then vInput = 1 end
+				if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then vInput = -1 end
+				local vel = Vector3.zero
+				if moveDir.Magnitude > 0 then
+					vel = (moveDir + Vector3.new(0, camLook.Y, 0)).Unit * Config.FlySpeed
+				end
+				vel = vel + Vector3.new(0, vInput * Config.FlySpeed, 0)
+				hrp.Velocity = vel
+			end
+
+			-- 12. 虚空踏空漫步
+			if Config.AirWalk then
+				Config.AirWalkY = Config.AirWalkY + Config.VerticalInput * (dt * 22)
+				local airPart = workspace:FindFirstChild("IslandAirPart")
+				if not airPart then
+					airPart = Instance.new("Part")
+					airPart.Name = "IslandAirPart"
+					airPart.Size = Vector3.new(9, 0.6, 9)
+					airPart.Anchored = true
+					airPart.Material = Enum.Material.Neon
+					airPart.Transparency = 0.45
+					airPart.Parent = workspace
+				end
+				airPart.Color = Themes[Config.CurrentTheme].Accent
+				airPart.CFrame = CFrame.new(hrp.Position.X, Config.AirWalkY, hrp.Position.Z)
+			end
+
+			-- 13. 蜘蛛自动爬墙
+			if Config.SpiderClimb then
+				local params = RaycastParams.new()
+				params.FilterDescendantsInstances = { char }
+				params.FilterType = Enum.RaycastFilterType.Exclude
+				local hit = workspace:Raycast(hrp.Position, hrp.CFrame.LookVector * 2.8, params)
+				if hit then
+					hrp.Velocity = Vector3.new(hrp.Velocity.X, 34, hrp.Velocity.Z)
+				end
+			end
+
+			-- 14. 自动吸取周围掉落物
+			if Config.AutoCollect and firetouchinterest then
+				for _, obj in ipairs(workspace:GetDescendants()) do
+					if obj:IsA("TouchTransmitter") and obj.Parent and obj.Parent:IsA("BasePart") then
+						if (obj.Parent.Position - hrp.Position).Magnitude <= 35 then
+							pcall(function()
+								firetouchinterest(hrp, obj.Parent, 0)
+								firetouchinterest(hrp, obj.Parent, 1)
+							end)
+						end
 					end
 				end
 			end
-		end
-		local hrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
-		if hrp then
-			if hrp.AssemblyAngularVelocity.Magnitude > 50 then
-				hrp.AssemblyAngularVelocity = Vector3.zero
+
+			-- 15. 陀螺旋转
+			if Config.SpinBot then
+				hrp.CFrame = hrp.CFrame * CFrame.Angles(0, math.rad(28), 0)
 			end
-			if hrp.AssemblyLinearVelocity.Magnitude > 350 and not Config.Fly then
-				hrp.AssemblyLinearVelocity = Vector3.zero
+		end
+
+		if Config.Noclip then
+			for _, part in ipairs(char:GetDescendants()) do
+				if part:IsA("BasePart") and part.CanCollide then
+					part.CanCollide = false
+				end
+			end
+		end
+	end
+
+	-- 极昼夜视与锁定时间保持
+	if Config.Fullbright then
+		Lighting.Brightness = 2.5
+		Lighting.ClockTime = 14
+		Lighting.GlobalShadows = false
+		Lighting.Ambient = Color3.fromRGB(255, 255, 255)
+	elseif Config.LockTime then
+		Lighting.ClockTime = Config.CustomClockTime
+	end
+
+	if Config.NoFog then
+		Lighting.FogEnd = 100000
+	end
+
+	-- 全息视觉 ESP (轮廓 + 头顶名片 + 追踪激光)
+	local myHrp = char and char:FindFirstChild("HumanoidRootPart")
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= LocalPlayer and p.Character then
+			local tChar = p.Character
+			local tHrp = tChar:FindFirstChild("HumanoidRootPart")
+			local tHum = tChar:FindFirstChildOfClass("Humanoid")
+
+			if Config.ESP then
+				local hl = tChar:FindFirstChild("IslandESP")
+				if not hl then
+					hl = Instance.new("Highlight", tChar)
+					hl.Name = "IslandESP"
+					hl.FillTransparency = 0.55
+				end
+				hl.FillColor = Themes[Config.CurrentTheme].Accent
+			end
+
+			if Config.NameESP and tHrp and tHum then
+				local bg = tChar:FindFirstChild("IslandNameTag")
+				if not bg then
+					bg = Instance.new("BillboardGui", tChar)
+					bg.Name = "IslandNameTag"
+					bg.Size = UDim2.new(0, 150, 0, 36)
+					bg.StudsOffset = Vector3.new(0, 3.4, 0)
+					bg.AlwaysOnTop = true
+					local txt = Instance.new("TextLabel", bg)
+					txt.Name = "TagLbl"
+					txt.Size = UDim2.new(1, 0, 1, 0)
+					txt.BackgroundTransparency = 1
+					txt.Font = Enum.Font.GothamBold
+					txt.TextSize = 11
+					txt.TextStrokeTransparency = 0.3
+				end
+				bg.Adornee = tHrp
+				local dist = myHrp and math.floor((tHrp.Position - myHrp.Position).Magnitude) or 0
+				local hp = math.floor((tHum.Health / math.max(tHum.MaxHealth, 1)) * 100)
+				bg.TagLbl.Text = string.format("%s [%dm]\n❤️ %d%%", p.DisplayName, dist, hp)
+				bg.TagLbl.TextColor3 = Themes[Config.CurrentTheme].Accent
+			end
+
+			if Config.TracerESP and myHrp and tHrp then
+				local beam = tChar:FindFirstChild("IslandTracer")
+				if not beam then
+					beam = Instance.new("Beam", tChar)
+					beam.Name = "IslandTracer"
+					beam.FaceCamera = true
+					beam.Width0 = 0.09
+					beam.Width1 = 0.09
+					local a0 = Instance.new("Attachment", myHrp)
+					a0.Name = "TracerA0"
+					local a1 = Instance.new("Attachment", tHrp)
+					a1.Name = "TracerA1"
+					beam.Attachment0 = a0
+					beam.Attachment1 = a1
+				end
+				beam.Color = ColorSequence.new(Themes[Config.CurrentTheme].Accent)
 			end
 		end
 	end
 end)
 
-local function FormatSec(s)
-	return string.format("%02d:%02d", math.floor(s / 60), math.floor(s % 60))
-end
-
-local frameCount, lastTime, currentFPS = 0, os.clock(), 60
-local rotAngle = 0
-
-RunService.RenderStepped:Connect(function(dt)
-	frameCount = frameCount + 1
-	local now = os.clock()
-	local char = LocalPlayer.Character
-	local hum = char and char:FindFirstChildOfClass("Humanoid")
-	local hrp = char and char:FindFirstChild("HumanoidRootPart")
-
-	if now - lastTime >= 0.5 then
-		currentFPS = math.clamp(math.floor(frameCount / (now - lastTime)), 1, 999)
-		frameCount = 0
-		lastTime = now
-
-		StatusInfoLabel.Text = "5G " .. os.date("%H:%M") .. " 🔋100%"
-
-		-- iOS 隐私指示灯状态切换
-		local anyActive = Config.Fly or Config.Noclip or Config.SpeedLock or Config.Freecam or Config.ESP
-		PrivacyDot.BackgroundColor3 = anyActive and Color3.fromRGB(255, 159, 10) or Color3.fromRGB(48, 209, 88)
-
-		local ping = 0
-		pcall(function()
-			ping = math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue())
-		end)
-		NetDetail.Text = string.format("延迟: %d ms | %d FPS\n防坠虚空救生: %s", ping, currentFPS, Config.AntiVoid and "已开启" or "已关闭")
-
-		if not Config.StopwatchRunning then
-			if IsPlaying then
-				CompactTitle.Text = "🎵 " .. string.sub(SongTitle.Text, 1, 11)
-			else
-				CompactTitle.Text = currentFPS .. " FPS · " .. os.date("%H:%M")
-			end
-		end
-
-		local pCount = #Players:GetPlayers()
-		local maxP = Players.MaxPlayers
-		CapBarFill.Size = UDim2.new(math.clamp(pCount / math.max(maxP, 1), 0, 1), 0, 1, 0)
-		CapLabel.Text = string.format("人数负载: %d / %d 人 | Ping: %d ms", pCount, maxP, ping)
-
-		local up = math.floor(workspace.DistributedGameTime)
-		StatUptime.Text = string.format("⏱️ 运行时长: %02d:%02d:%02d", math.floor(up/3600), math.floor((up%3600)/60), up%60)
-		pcall(function()
-			StatMemory.Text = string.format("💾 内存占用: %d MB", math.floor(Stats:GetTotalMemoryUsageMb()))
-			StatPhysics.Text = string.format("⚙️ 物理帧率: %d Hz", math.floor(workspace:GetRealPhysicsFPS()))
-		end)
-
-		-- 🧲 自动吸取周围可触碰掉落物
-		if Config.AutoCollect and hrp and firetouchinterest then
-			for _, obj in ipairs(workspace:GetDescendants()) do
-				if obj:IsA("TouchTransmitter") and obj.Parent and obj.Parent:IsA("BasePart") then
-					if (obj.Parent.Position - hrp.Position).Magnitude <= 35 then
-						pcall(function()
-							firetouchinterest(hrp, obj.Parent, 0)
-							firetouchinterest(hrp, obj.Parent, 1)
-						end)
-					end
-				end
-			end
-		end
-	end
-
-	if Config.StopwatchRunning then
-		Config.StopwatchTime = Config.StopwatchTime + dt
-		local m = math.floor(Config.StopwatchTime / 60)
-		local s = Config.StopwatchTime % 60
-		local str = string.format("%02d:%04.1f", m, s)
-		TimerLabel.Text = "⏱️ 灵动秒表: " .. str
-		CompactTitle.Text = "⏱️ " .. str
-	end
-
-	StrokeGradient.Rotation = (StrokeGradient.Rotation + dt * 42) % 360
-
-	if IsPlaying and AudioPlayer.IsPlaying then
-		rotAngle = (rotAngle + dt * 115) % 360
-		AlbumArt.Rotation = rotAngle
-		MiniDisk.Rotation = rotAngle
-
-		local tPos = AudioPlayer.TimePosition
-		local tLen = AudioPlayer.TimeLength
-		if tLen > 0 then
-			ProgressFill.Size = UDim2.new(math.clamp(tPos / tLen, 0, 1), 0, 1, 0)
-			TimeLabel.Text = FormatSec(tPos) .. " / " .. FormatSec(tLen)
-		end
-
-		local loud = math.clamp(AudioPlayer.PlaybackLoudness / 380, 0.18, 1)
-		for i, bar in ipairs(WaveBars) do
-			local h = math.clamp(( math.sin(now * 13 + i * 1.4) * 0.5 + 0.5 ) * loud * 24, 4, 24)
-			bar.Size = UDim2.new(0, 4, 0, h)
-		end
-		for i, mb in ipairs(MiniBars) do
-			local mh = math.clamp(( math.cos(now * 14 + i * 1.6) * 0.5 + 0.5 ) * loud * 15, 4, 15)
-			mb.Size = UDim2.new(0, 3, 0, mh)
-		end
-	end
-
-	-- 垂直升降输入汇总 (支持手机右侧按钮 + PC端 Space/LeftControl)
-	local vInput = Config.VerticalInput
-	if UserInputService:IsKeyDown(Enum.KeyCode.Space) then vInput = 1
-	elseif UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then vInput = -1 end
-
-	-- 🎥 灵魂自由视角控制
-	if Config.Freecam then
-		local moveDir = hum and hum.MoveDirection or Vector3.zero
-		local camCF = Camera.CFrame
-		local offset = Vector3.zero
-		if moveDir.Magnitude > 0 then
-			local flatLook = Vector3.new(camCF.LookVector.X, 0, camCF.LookVector.Z).Unit
-			local flatRight = Vector3.new(camCF.RightVector.X, 0, camCF.RightVector.Z).Unit
-			offset = (camCF.LookVector * flatLook:Dot(moveDir) + camCF.RightVector * flatRight:Dot(moveDir)) * 75 * dt
-		end
-		offset = offset + Vector3.new(0, vInput * 60 * dt, 0)
-		Config.FreecamCF = CFrame.new(Config.FreecamCF.Position + offset) * camCF.Rotation
-		Camera.CFrame = Config.FreecamCF
-	end
-
-	if hum and hrp then
-		if Config.SpeedLock then hum.WalkSpeed = Config.TargetSpeed end
-		if Config.JumpLock then
-			hum.UseJumpPower = true
-			hum.JumpPower = Config.TargetJump
-		end
-		StatPos.Text = string.format("📍 坐标: %d, %d, %d", hrp.Position.X, hrp.Position.Y, hrp.Position.Z)
-
-		-- 🛟 自动防掉虚空记录与拉回保护
-		if Config.AntiVoid then
-			if hum.FloorMaterial ~= Enum.Material.Air and hrp.Position.Y > (workspace.FallenPartsDestroyHeight + 40) then
-				Config.LastSafeCFrame = hrp.CFrame
-			end
-			local voidLimit = math.max(workspace.FallenPartsDestroyHeight + 25, -120)
-			if hrp.Position.Y < voidLimit and Config.LastSafeCFrame then
-				hrp.AssemblyLinearVelocity = Vector3.zero
-				hrp.CFrame = Config.LastSafeCFrame + Vector3.new(0, 4, 0)
-				ShowToast("🛟 防掉虚空已触发！已将您拉回安全地面")
-			end
-		end
-
-		-- 🦅 摇杆与手机升降按钮通用丝滑自由飞行
-		if Config.Fly and not Config.Freecam then
-			local moveDir = hum.MoveDirection
-			local camCF = Camera.CFrame
-			local flyVel = Vector3.zero
-			if moveDir.Magnitude > 0 then
-				local flatLook = Vector3.new(camCF.LookVector.X, 0, camCF.LookVector.Z).Unit
-				local flatRight = Vector3.new(camCF.RightVector.X, 0, camCF.RightVector.Z).Unit
-				local forwardDot = flatLook:Dot(moveDir)
-				local rightDot = flatRight:Dot(moveDir)
-				flyVel = (camCF.LookVector * forwardDot + camCF.RightVector * rightDot) * Config.FlySpeed
-			end
-			flyVel = flyVel + Vector3.new(0, vInput * Config.FlySpeed * 0.85, 0)
-			hrp.AssemblyLinearVelocity = Vector3.zero
-			hrp.CFrame = hrp.CFrame + flyVel * dt
-		end
-
-		-- 🕷️ 蜘蛛自动爬墙
-		if Config.SpiderClimb and hum.MoveDirection.Magnitude > 0 then
-			local rayParams = RaycastParams.new()
-			rayParams.FilterDescendantsInstances = {char}
-			rayParams.FilterType = Enum.RaycastFilterType.Exclude
-			local res = workspace:Raycast(hrp.Position, hrp.CFrame.LookVector * 2.6, rayParams)
-			if res then
-				hrp.AssemblyLinearVelocity = Vector3.new(hrp.AssemblyLinearVelocity.X, 42, hrp.AssemblyLinearVelocity.Z)
-			end
-		end
-
-		-- 🌀 炫酷陀螺旋转
-		if Config.SpinBot then
-			hrp.CFrame = hrp.CFrame * CFrame.Angles(0, math.rad(24), 0)
-		end
-
-		-- 🛰️ 360° 环绕目标玩家
-		if Config.OrbitTarget and Config.OrbitTarget.Character then
-			local tHrp = Config.OrbitTarget.Character:FindFirstChild("HumanoidRootPart")
-			if tHrp then
-				Config.OrbitAngle = (Config.OrbitAngle + dt * 3.6) % (math.pi * 2)
-				local offset = Vector3.new(math.cos(Config.OrbitAngle) * 7, 1, math.sin(Config.OrbitAngle) * 7)
-				hrp.CFrame = CFrame.new(tHrp.Position + offset, tHrp.Position)
-			end
-		end
-
-		-- 👟 踏空漫步
-		if Config.AirWalk then
-			local airPart = workspace:FindFirstChild("IslandAirPart")
-			if not airPart then
-				airPart = Instance.new("Part")
-				airPart.Name = "IslandAirPart"
-				airPart.Size = Vector3.new(9, 0.5, 9)
-				airPart.Anchored = true
-				airPart.Material = Enum.Material.Neon
-				airPart.Transparency = 0.45
-				airPart.Parent = workspace
-			end
-			Config.AirWalkY = Config.AirWalkY + vInput * 25 * dt
-			airPart.Color = Themes[CurrentThemeIndex].Accent
-			airPart.CFrame = CFrame.new(hrp.Position.X, Config.AirWalkY, hrp.Position.Z)
-		end
-	end
-
-	if Config.Fullbright then
-		Lighting.Brightness = 2.5
-		Lighting.Ambient = Color3.fromRGB(255, 255, 255)
-		Lighting.OutdoorAmbient = Color3.fromRGB(255, 255, 255)
-		Lighting.ClockTime = 14
-		Lighting.FogEnd = 100000
-	end
-
-	-- 🎯 轮廓透视 & 🏷️ 头顶名片 & 📐 激光追踪线
-	if Config.ESP or Config.NameESP or Config.TracerESP then
-		for _, p in ipairs(Players:GetPlayers()) do
-			if p ~= LocalPlayer and p.Character then
-				local tHrp = p.Character:FindFirstChild("HumanoidRootPart")
-				if Config.ESP then
-					local hl = p.Character:FindFirstChild("AppleESP")
-					if not hl then
-						hl = Instance.new("Highlight")
-						hl.Name = "AppleESP"
-						hl.FillTransparency = 0.65
-						hl.OutlineColor = Color3.fromRGB(255, 255, 255)
-						hl.Parent = p.Character
-					end
-					hl.FillColor = Themes[CurrentThemeIndex].Accent
-				end
-				if Config.NameESP then
-					local head = p.Character:FindFirstChild("Head")
-					local tHum = p.Character:FindFirstChildOfClass("Humanoid")
-					if head and tHum then
-						local bgui = p.Character:FindFirstChild("AppleNameESP")
-						if not bgui then
-							bgui = Instance.new("BillboardGui")
-							bgui.Name = "AppleNameESP"
-							bgui.Adornee = head
-							bgui.Size = UDim2.new(0, 125, 0, 32)
-							bgui.StudsOffset = Vector3.new(0, 2.5, 0)
-							bgui.AlwaysOnTop = true
-							local tl = Instance.new("TextLabel", bgui)
-							tl.Name = "TagText"
-							tl.Size = UDim2.new(1, 0, 1, 0)
-							tl.BackgroundTransparency = 1
-							tl.Font = Enum.Font.GothamBold
-							tl.TextSize = 11
-							tl.TextStrokeTransparency = 0.2
-							bgui.Parent = p.Character
-						end
-						local dist = hrp and math.floor((hrp.Position - head.Position).Magnitude) or 0
-						bgui.TagText.TextColor3 = Themes[CurrentThemeIndex].Accent
-						bgui.TagText.Text = string.format("%s [%dm]\n❤️ %d/%d", p.DisplayName, dist, math.floor(tHum.Health), math.floor(tHum.MaxHealth))
-					end
-				end
-				if Config.TracerESP and hrp and tHrp then
-					local beamFolder = p.Character:FindFirstChild("AppleTracer")
-					if not beamFolder then
-						beamFolder = Instance.new("Folder")
-						beamFolder.Name = "AppleTracer"
-						beamFolder.Parent = p.Character
-						local a0 = Instance.new("Attachment", hrp)
-						a0.Name = "TracerA0"
-						local a1 = Instance.new("Attachment", tHrp)
-						a1.Name = "TracerA1"
-						local beam = Instance.new("Beam", beamFolder)
-						beam.Name = "LaserBeam"
-						beam.Attachment0 = a0
-						beam.Attachment1 = a1
-						beam.Width0 = 0.12
-						beam.Width1 = 0.12
-						beam.FaceCamera = true
-						beam.LightEmission = 1
-					end
-					local beam = beamFolder:FindFirstChild("LaserBeam")
-					if beam then
-						beam.Color = ColorSequence.new(Themes[CurrentThemeIndex].Accent)
-					end
-				end
-			end
-		end
-	end
+-- ==================== 18. 开机 Face ID 解锁过渡动画 ====================
+task.spawn(function()
+	CompactView.Visible = false
+	SensorPill.Visible = false
+	FaceIDLabel.Visible = true
+	TweenService:Create(Island, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+		Size = UDim2.new(0, 156, 0, 62)
+	}):Play()
+	task.wait(0.85)
+	FaceIDLabel.Visible = false
+	SensorPill.Visible = true
+	CompactView.Visible = true
+	TweenService:Create(Island, SpringTween, { Size = COMPACT_SIZE }):Play()
 end)
