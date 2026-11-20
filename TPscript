@@ -1,4 +1,4 @@
--- ==================== 灵动岛 · 极简自定义主题版 (绝对防Bug) ====================
+-- ==================== 灵动岛 · 极简自定义主题版 (错误修复完美版) ====================
 -- 特性：极简无字胶囊、主题颜色切换、全套战斗/实用功能保留
 
 local Players = game:GetService("Players")
@@ -117,12 +117,11 @@ end)
 local island = Instance.new("TextButton")
 island.AnchorPoint = Vector2.new(0.5, 0) 
 island.Position = UDim2.new(0.5, 0, 0, 15) 
-island.Size = UDim2.fromOffset(140, 36) -- 缩小了一点，更精致
+island.Size = UDim2.fromOffset(140, 36) 
 island.BackgroundColor3 = THEME.BgDark
 island.Text = ""; island.AutoButtonColor = false; island.ZIndex = 10
 island.Parent = screenGui
 
--- 灵动岛渐变动画
 local islandGrad = Instance.new("UIGradient"); islandGrad.Color = THEME.AccentGrad; islandGrad.Parent = island
 task.spawn(function()
 	while island.Parent do
@@ -205,7 +204,7 @@ local function toggleIsland()
 	isAnimating = true; isExpanded = not isExpanded
 
 	expandedFrame.Visible = isExpanded
-	indicator.Visible = not isExpanded -- 展开时隐藏指示灯
+	indicator.Visible = not isExpanded
 	playSound(isExpanded and sndToggle or sndClick)
 
 	local tw = TweenService:Create(island, tweenInfo, { Size = UDim2.fromOffset(isExpanded and 720 or 140, isExpanded and 56 or 36) })
@@ -358,7 +357,7 @@ local function createActionBtn(parent, textStr, yPos, isToggle, callback, initia
 	btn.Text = textStr .. (isToggle and (initialState and " : 开启" or " : 关闭") or "")
 	btn.TextColor3 = THEME.TextWhite; btn.Font = Enum.Font.GothamBold; btn.TextSize = 14
 	btn.Parent = parent; btn:SetAttribute("BaseZ", 2)
-	btn:SetAttribute("IsAccentBtn", not isToggle) -- 标记为强调色按钮，方便换色
+	btn:SetAttribute("IsAccentBtn", not isToggle) 
 	local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 8); c.Parent = btn
 	
 	local state = initialState or false
@@ -409,7 +408,7 @@ local function createSlider(parent, textStr, minVal, maxVal, defaultVal, yPos, c
 	local fill = Instance.new("Frame")
 	fill.Size = UDim2.new((defaultVal-minVal)/(maxVal-minVal), 0, 1, 0)
 	fill.BackgroundColor3 = THEME.Accent; fill.Parent = track; fill:SetAttribute("BaseZ", 3)
-	fill:SetAttribute("IsAccentFill", true) -- 标记为强调色填充
+	fill:SetAttribute("IsAccentFill", true) 
 	local fCorner = Instance.new("UICorner"); fCorner.CornerRadius = UDim.new(1,0); fCorner.Parent = fill
 
 	local knob = Instance.new("TextButton")
@@ -421,6 +420,7 @@ local function createSlider(parent, textStr, minVal, maxVal, defaultVal, yPos, c
 
 	local draggingSlider = false
 	local function updateValue(inputX)
+		if track.AbsoluteSize.X <= 0 then return end
 		local relX = math.clamp((inputX - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1)
 		fill.Size = UDim2.new(relX, 0, 1, 0); knob.Position = UDim2.new(relX, 0, 0.5, 0)
 		local val = minVal + relX * (maxVal - minVal)
@@ -593,7 +593,7 @@ local function openToolsWindow()
 					end
 				end
 			end)
-		elseif GlobalState.MagnetConn then task.cancel(GlobalState.MagnetConn) end
+		elseif GlobalState.MagnetConn then task.cancel(GlobalState.MagnetConn); GlobalState.MagnetConn = nil end
 	end, GlobalState.IsMagnet)
 
 	createActionBtn(content, "🖱️ 点击传送 (开)", 225, false, function()
@@ -760,7 +760,8 @@ local function openPlayerWindow()
 	inputBox.Text = ""; inputBox.ClearTextOnFocus = false; inputBox.Parent = content; inputBox:SetAttribute("BaseZ", 2)
 	local ibCorner = Instance.new("UICorner"); ibCorner.CornerRadius = UDim.new(0, 8); ibCorner.Parent = inputBox
 
-	createActionBtn(content, "💬 发送", 75, false, function()
+	-- 修复发送按钮排版
+	local sendBtn = createActionBtn(content, "💬 发送", 0, false, function()
 		local text = inputBox.Text
 		if text ~= "" then
 			local chatEvent = game:GetService("ReplicatedStorage"):FindFirstChild("DefaultChatSystemChatEvents")
@@ -768,7 +769,9 @@ local function openPlayerWindow()
 				chatEvent.SayMessageRequest:FireServer(text, "All")
 			end
 		end
-	end).Position = UDim2.new(0.7, 0, 0, 0)
+	end)
+	sendBtn.Position = UDim2.new(0.7, 0, 0, 0)
+	sendBtn.Size = UDim2.new(0.3, 0, 0, 35)
 	
 	local scroll = Instance.new("ScrollingFrame"); scroll.Size = UDim2.new(1, 0, 1, -85); scroll.Position = UDim2.new(0, 0, 0, 45)
 	scroll.BackgroundTransparency = 1; scroll.ScrollBarThickness = 4; scroll.Parent = content; scroll:SetAttribute("BaseZ", 2)
@@ -864,7 +867,7 @@ local function openCombatWindow()
 					end
 				end
 			end)
-		elseif GlobalState.KillAuraConn then task.cancel(GlobalState.KillAuraConn) end
+		elseif GlobalState.KillAuraConn then task.cancel(GlobalState.KillAuraConn); GlobalState.KillAuraConn = nil end
 	end, GlobalState.IsKillAura)
 
 	createActionBtn(content, "🛡️ 无敌模式 (God Mode)", 45, true, function(state)
@@ -880,7 +883,7 @@ local function openCombatWindow()
 					end
 				end
 			end)
-		elseif GlobalState.GodModeConn then task.cancel(GlobalState.GodModeConn) end
+		elseif GlobalState.GodModeConn then task.cancel(GlobalState.GodModeConn); GlobalState.GodModeConn = nil end
 	end, GlobalState.IsGodMode)
 
 	createActionBtn(content, "🥊 暴力 Hitbox (范围扩大)", 90, true, function(state)
@@ -895,11 +898,11 @@ local function openCombatWindow()
 				end
 			end)
 		else
-			if GlobalState.HitboxConn then GlobalState.HitboxConn:Disconnect() end
+			if GlobalState.HitboxConn then GlobalState.HitboxConn:Disconnect(); GlobalState.HitboxConn = nil end
 			local char = player.Character
 			if char then
 				local hum = char:FindFirstChild("Humanoid")
-				if hum then hum:BuildRigFromAttachments() end
+				if hum then pcall(function() hum:BuildRigFromAttachments() end) end
 			end
 		end
 	end, GlobalState.IsHitboxExpand)
@@ -945,7 +948,7 @@ local function openCombatWindow()
 					end
 				end
 			end)
-		elseif GlobalState.AutoAimConn then GlobalState.AutoAimConn:Disconnect() end
+		elseif GlobalState.AutoAimConn then GlobalState.AutoAimConn:Disconnect(); GlobalState.AutoAimConn = nil end
 	end, GlobalState.IsAutoAim)
 
 	createActionBtn(content, "🏃 自动奔跑 (Auto-Run)", 225, true, function(state)
@@ -961,7 +964,7 @@ local function openCombatWindow()
 					end
 				end
 			end)
-		elseif GlobalState.AutoRunConn then task.cancel(GlobalState.AutoRunConn) end
+		elseif GlobalState.AutoRunConn then task.cancel(GlobalState.AutoRunConn); GlobalState.AutoRunConn = nil end
 	end, GlobalState.IsAutoRun)
 
 	createActionBtn(content, "🦘 自动跳跃 (Auto-Jump)", 270, true, function(state)
@@ -980,10 +983,20 @@ local function openCombatWindow()
 	createActionBtn(content, "🪶 无掉落伤害", 315, true, function(state)
 		GlobalState.IsNoFall = state
 		if state then
-			GlobalState.NoFallConn = player.Character.Humanoid.StateChanged:Connect(function(old, new)
-				if new == Enum.HumanoidStateType.Landed then player.Character.Humanoid.Health = player.Character.Humanoid.MaxHealth end
+			local function hookChar(c)
+				if c and c:FindFirstChild("Humanoid") then
+					GlobalState.NoFallConn = c.Humanoid.StateChanged:Connect(function(old, new)
+						if new == Enum.HumanoidStateType.Landed then c.Humanoid.Health = c.Humanoid.MaxHealth end
+					end)
+				end
+			end
+			hookChar(player.Character)
+			local cConn = player.CharacterAdded:Connect(function(newChar) 
+				task.wait(0.5)
+				if GlobalState.IsNoFall then hookChar(newChar) end
 			end)
-		elseif GlobalState.NoFallConn then GlobalState.NoFallConn:Disconnect() end
+			content.Destroying:Connect(function() cConn:Disconnect() end)
+		elseif GlobalState.NoFallConn then GlobalState.NoFallConn:Disconnect(); GlobalState.NoFallConn = nil end
 	end, GlobalState.IsNoFall)
 	
 	createActionBtn(content, "🛡️ 锁定血量 (本地)", 360, true, function(state)
@@ -999,7 +1012,7 @@ local function openCombatWindow()
 					end
 				end
 			end)
-		elseif GlobalState.LockHealthConn then task.cancel(GlobalState.LockHealthConn) end
+		elseif GlobalState.LockHealthConn then task.cancel(GlobalState.LockHealthConn); GlobalState.LockHealthConn = nil end
 	end, GlobalState.IsLockHealth)
 
 	createSlider(content, "视野缩放 (FOV)", 50, 120, workspace.CurrentCamera.FieldOfView, 405, function(val)
