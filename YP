@@ -2,281 +2,480 @@ local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local Stats = game:GetService("Stats")
+local Lighting = game:GetService("Lighting")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
+local camera = workspace.CurrentCamera
 
--- 动画配置 (模仿苹果的丝滑弹性动画)
-local expandTweenInfo = TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-local shrinkTweenInfo = TweenInfo.new(0.4, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
-local fadeTweenInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+-- ================= 动画与尺寸配置 =================
+local TWEEN_EXPAND = TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+local TWEEN_SHRINK = TweenInfo.new(0.4, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+local TWEEN_FAST = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 
--- 状态变量
+local SIZE_CLOSED = UDim2.new(0, 140, 0, 34)
+local SIZE_HOVER = UDim2.new(0, 155, 0, 36)
+local SIZE_EXPANDED = UDim2.new(0, 360, 0, 250) -- 更大的悬浮窗以容纳超多功能
+local SIZE_NOTIFY = UDim2.new(0, 300, 0, 70)
+
+local COLOR_BG = Color3.fromRGB(12, 12, 14)
+local COLOR_CARD = Color3.fromRGB(28, 28, 30)
+local COLOR_IOS_BLUE = Color3.fromRGB(10, 132, 255)
+local COLOR_IOS_GREEN = Color3.fromRGB(48, 209, 88)
+local COLOR_TEXT = Color3.fromRGB(240, 240, 245)
+local COLOR_SUBTEXT = Color3.fromRGB(150, 150, 160)
+
 local isExpanded = false
 local isHovering = false
 local isNotifying = false
 
--- 尺寸定义 (使用Offset保证在手机和电脑上大小一致)
-local SIZE_CLOSED = UDim2.new(0, 120, 0, 32)
-local SIZE_HOVER = UDim2.new(0, 135, 0, 34)
-local SIZE_EXPANDED = UDim2.new(0, 320, 0, 110)
+-- ================= 辅助构建函数 =================
+local function addCorner(parent, radius)
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, radius)
+	corner.Parent = parent
+	return corner
+end
 
-local CORNER_CLOSED = UDim.new(0, 16)
-local CORNER_EXPANDED = UDim.new(0, 30)
+local function createLabel(parent, text, size, pos, font, textSize, color, align)
+	local label = Instance.new("TextLabel")
+	label.Size = size
+	label.Position = pos
+	label.BackgroundTransparency = 1
+	label.Text = text
+	label.Font = font or Enum.Font.GothamMedium
+	label.TextSize = textSize or 14
+	label.TextColor3 = color or COLOR_TEXT
+	label.TextXAlignment = align or Enum.TextXAlignment.Left
+	label.Parent = parent
+	return label
+end
 
--- 1. 创建基础 ScreenGui
+-- ================= 1. 主体 UI 构建 =================
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "DynamicIslandGui"
-screenGui.IgnoreGuiInset = true -- 忽略顶部栏，真正置顶
+screenGui.Name = "ProDynamicIsland"
+screenGui.IgnoreGuiInset = true
 screenGui.ResetOnSpawn = false
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 screenGui.Parent = playerGui
 
--- 2. 创建灵动岛主体 (黑色胶囊)
 local island = Instance.new("Frame")
 island.Name = "Island"
 island.AnchorPoint = Vector2.new(0.5, 0)
-island.Position = UDim2.new(0.5, 0, 0, 10) -- 距离屏幕最上方 10 像素
+island.Position = UDim2.new(0.5, 0, 0, 10)
 island.Size = SIZE_CLOSED
-island.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-island.ClipsDescendants = true -- 裁剪超出部分
+island.BackgroundColor3 = COLOR_BG
+island.ClipsDescendants = true
 island.Parent = screenGui
 
-local uiCorner = Instance.new("UICorner")
-uiCorner.CornerRadius = CORNER_CLOSED
-uiCorner.Parent = island
+local mainCorner = addCorner(island, 17)
 
-local uiStroke = Instance.new("UIStroke")
-uiStroke.Color = Color3.fromRGB(45, 45, 45)
-uiStroke.Thickness = 1
-uiStroke.Parent = island
+-- 高级微光边框
+local stroke = Instance.new("UIStroke")
+stroke.Color = Color3.fromRGB(60, 60, 65)
+stroke.Thickness = 1.2
+stroke.Parent = island
 
--- 3. 创建缩小状态的内容 (Compact View)
+-- ================= 2. 折叠状态 (小胶囊) =================
 local compactFrame = Instance.new("Frame")
-compactFrame.Name = "CompactContent"
 compactFrame.Size = UDim2.new(1, 0, 1, 0)
 compactFrame.BackgroundTransparency = 1
 compactFrame.Parent = island
 
--- 小绿点 (模仿iOS隐私指示器/后台活动)
 local statusDot = Instance.new("Frame")
 statusDot.Size = UDim2.new(0, 8, 0, 8)
-statusDot.Position = UDim2.new(0, 14, 0.5, 0)
-statusDot.AnchorPoint = Vector2.new(0, 0.5)
-statusDot.BackgroundColor3 = Color3.fromRGB(48, 209, 88) -- 苹果绿
+statusDot.Position = UDim2.new(0, 14, 0.5, -4)
+statusDot.BackgroundColor3 = COLOR_IOS_GREEN
 statusDot.Parent = compactFrame
-local dotCorner = Instance.new("UICorner")
-dotCorner.CornerRadius = UDim.new(1, 0)
-dotCorner.Parent = statusDot
+addCorner(statusDot, 4)
 
--- 顶部时间显示
-local timeLabel = Instance.new("TextLabel")
-timeLabel.Size = UDim2.new(0, 60, 1, 0)
-timeLabel.Position = UDim2.new(1, -12, 0, 0)
-timeLabel.AnchorPoint = Vector2.new(1, 0)
-timeLabel.BackgroundTransparency = 1
-timeLabel.Text = "12:00"
-timeLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-timeLabel.Font = Enum.Font.GothamMedium
-timeLabel.TextSize = 12
-timeLabel.TextXAlignment = Enum.TextXAlignment.Right
-timeLabel.Parent = compactFrame
+-- 呼吸灯效果
+TweenService:Create(statusDot, TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {BackgroundTransparency = 0.6}):Play()
 
--- 4. 创建展开状态的内容 (Expanded View)
+local compactText = createLabel(compactFrame, "60 FPS", UDim2.new(0, 90, 1, 0), UDim2.new(1, -14, 0, 0), Enum.Font.GothamBold, 12, COLOR_TEXT, Enum.TextXAlignment.Right)
+compactText.AnchorPoint = Vector2.new(1, 0)
+
+-- 点击触发层 (仅在折叠时生效)
+local openBtn = Instance.new("TextButton")
+openBtn.Size = UDim2.new(1, 0, 1, 0)
+openBtn.BackgroundTransparency = 1
+openBtn.Text = ""
+openBtn.Parent = compactFrame
+
+-- ================= 3. 展开状态 (超级悬浮窗) =================
 local expandedFrame = Instance.new("Frame")
-expandedFrame.Name = "ExpandedContent"
 expandedFrame.Size = UDim2.new(1, 0, 1, 0)
 expandedFrame.BackgroundTransparency = 1
 expandedFrame.Visible = false
 expandedFrame.Parent = island
 
--- 玩家头像
+-- 顶部个人信息栏
 local avatar = Instance.new("ImageLabel")
-avatar.Size = UDim2.new(0, 50, 0, 50)
-avatar.Position = UDim2.new(0, 20, 0, 20)
-avatar.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+avatar.Size = UDim2.new(0, 38, 0, 38)
+avatar.Position = UDim2.new(0, 18, 0, 16)
+avatar.BackgroundColor3 = COLOR_CARD
 avatar.Parent = expandedFrame
-local avatarCorner = Instance.new("UICorner")
-avatarCorner.CornerRadius = UDim.new(1, 0)
-avatarCorner.Parent = avatar
-
--- 异步获取玩家头像
+addCorner(avatar, 19)
 task.spawn(function()
-	local content, isReady = Players:GetUserThumbnailAsync(player.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size150x150)
-	if isReady then avatar.Image = content end
+	local content = Players:GetUserThumbnailAsync(player.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size100x100)
+	avatar.Image = content
 end)
 
--- 玩家名称
-local nameLabel = Instance.new("TextLabel")
-nameLabel.Size = UDim2.new(0, 150, 0, 25)
-nameLabel.Position = UDim2.new(0, 82, 0, 22)
-nameLabel.BackgroundTransparency = 1
-nameLabel.Text = player.DisplayName
-nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-nameLabel.Font = Enum.Font.GothamBold
-nameLabel.TextSize = 16
-nameLabel.TextXAlignment = Enum.TextXAlignment.Left
-nameLabel.Parent = expandedFrame
+createLabel(expandedFrame, player.DisplayName, UDim2.new(0, 150, 0, 20), UDim2.new(0, 66, 0, 16), Enum.Font.GothamBold, 15, COLOR_TEXT)
+local subStatus = createLabel(expandedFrame, "@"..player.Name, UDim2.new(0, 150, 0, 16), UDim2.new(0, 66, 0, 35), Enum.Font.Gotham, 12, COLOR_SUBTEXT)
 
--- FPS 显示
-local fpsLabel = Instance.new("TextLabel")
-fpsLabel.Size = UDim2.new(0, 150, 0, 20)
-fpsLabel.Position = UDim2.new(0, 82, 0, 45)
-fpsLabel.BackgroundTransparency = 1
-fpsLabel.Text = "FPS: 60"
-fpsLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
-fpsLabel.Font = Enum.Font.Gotham
-fpsLabel.TextSize = 13
-fpsLabel.TextXAlignment = Enum.TextXAlignment.Left
-fpsLabel.Parent = expandedFrame
+-- 右上角收起按钮
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 28, 0, 28)
+closeBtn.Position = UDim2.new(1, -46, 0, 20)
+closeBtn.BackgroundColor3 = COLOR_CARD
+closeBtn.Text = "×"
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.TextSize = 18
+closeBtn.TextColor3 = COLOR_SUBTEXT
+closeBtn.Parent = expandedFrame
+addCorner(closeBtn, 14)
 
--- 底部装饰条 (模拟音乐进度条或系统状态)
-local barBg = Instance.new("Frame")
-barBg.Size = UDim2.new(1, -40, 0, 6)
-barBg.Position = UDim2.new(0, 20, 1, -20)
-barBg.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-barBg.Parent = expandedFrame
-Instance.new("UICorner", barBg).CornerRadius = UDim.new(1, 0)
+-- 页面容器
+local pagesFolder = Instance.new("Folder", expandedFrame)
 
-local barFill = Instance.new("Frame")
-barFill.Size = UDim2.new(0.6, 0, 1, 0)
-barFill.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-barFill.Parent = barBg
-Instance.new("UICorner", barFill).CornerRadius = UDim.new(1, 0)
+local function createPage()
+	local page = Instance.new("Frame")
+	page.Size = UDim2.new(1, -36, 0, 135)
+	page.Position = UDim2.new(0, 18, 0, 65)
+	page.BackgroundTransparency = 1
+	page.Visible = false
+	page.Parent = pagesFolder
+	return page
+end
 
--- 5. 创建触发按钮 (兼容 PC 点击 和 手机触摸)
-local triggerBtn = Instance.new("TextButton")
-triggerBtn.Size = UDim2.new(1, 0, 1, 0)
-triggerBtn.BackgroundTransparency = 1
-triggerBtn.Text = ""
-triggerBtn.Parent = island
+local pageControls = createPage()
+local pageServer = createPage()
+local pagePlayers = createPage()
+pageControls.Visible = true -- 默认显示第一页
 
--- 动画控制函数
+-- ================= 页面 1：实用控制中心 =================
+local grid = Instance.new("UIGridLayout")
+grid.CellSize = UDim2.new(0.48, 0, 0, 40)
+grid.CellPadding = UDim2.new(0.04, 0, 0, 8)
+grid.Parent = pageControls
+
+local function createToggle(title, icon, callback)
+	local btn = Instance.new("TextButton")
+	btn.BackgroundColor3 = COLOR_CARD
+	btn.Text = "  " .. icon .. "  " .. title
+	btn.Font = Enum.Font.GothamMedium
+	btn.TextSize = 13
+	btn.TextColor3 = COLOR_TEXT
+	btn.TextXAlignment = Enum.TextXAlignment.Left
+	btn.AutoButtonColor = false
+	btn.Parent = pageControls
+	addCorner(btn, 10)
+	
+	local active = false
+	btn.Activated:Connect(function()
+		active = not active
+		TweenService:Create(btn, TWEEN_FAST, {
+			BackgroundColor3 = active and COLOR_IOS_BLUE or COLOR_CARD
+		}):Play()
+		callback(active)
+	end)
+end
+
+-- 实用功能 1：夜视仪
+local defaultBrightness = Lighting.Brightness
+local defaultClock = Lighting.ClockTime
+createToggle("夜视模式", "🌙", function(state)
+	if state then
+		Lighting.Brightness = 3
+		Lighting.ClockTime = 14
+	else
+		Lighting.Brightness = defaultBrightness
+		Lighting.ClockTime = defaultClock
+	end
+end)
+
+-- 实用功能 2：超广角视野
+createToggle("超广角 (FOV)", "👁️", function(state)
+	TweenService:Create(camera, TWEEN_FAST, {FieldOfView = state and 100 or 70}):Play()
+end)
+
+-- 实用功能 3：疾跑加速
+createToggle("超级疾跑", "⚡", function(state)
+	if player.Character and player.Character:FindFirstChild("Humanoid") then
+		player.Character.Humanoid.WalkSpeed = state and 32 or 16
+	end
+end)
+
+-- 实用功能 4：画质优化 (提升FPS)
+createToggle("流畅画质", "🚀", function(state)
+	Lighting.GlobalShadows = not state
+	for _, v in pairs(workspace:GetDescendants()) do
+		if v:IsA("BasePart") and not v.Parent:FindFirstChild("Humanoid") then
+			v.Material = state and Enum.Material.SmoothPlastic or v.Material
+		end
+	end
+end)
+
+-- 实用功能 5：低重力
+createToggle("月球漫步", "🎈", function(state)
+	workspace.Gravity = state and 50 or 196.2
+end)
+
+-- 实用功能 6：快速重置
+createToggle("重置角色", "💀", function(state)
+	if player.Character and player.Character:FindFirstChild("Humanoid") then
+		player.Character.Humanoid.Health = 0
+	end
+end)
+
+-- ================= 页面 2：服务器全部信息 =================
+local serverInfoBg = Instance.new("Frame")
+serverInfoBg.Size = UDim2.new(1, 0, 1, 0)
+serverInfoBg.BackgroundColor3 = COLOR_CARD
+serverInfoBg.Parent = pageServer
+addCorner(serverInfoBg, 12)
+
+local infoLayout = Instance.new("UIListLayout")
+infoLayout.Padding = UDim.new(0, 6)
+infoLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+infoLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+infoLayout.Parent = serverInfoBg
+
+local function createInfoRow(label)
+	local row = createLabel(serverInfoBg, label, UDim2.new(0.9, 0, 0, 16), UDim2.new(0,0,0,0), Enum.Font.Gotham, 12, COLOR_TEXT)
+	row.RichText = true
+	return row
+end
+
+local infoFPS = createInfoRow("🟢 实时帧率: 计算中...")
+local infoPing = createInfoRow("📶 网络延迟: 计算中...")
+local infoMem = createInfoRow("💾 内存占用: 计算中...")
+local infoPlayers = createInfoRow("👥 房间人数: 计算中...")
+local infoTime = createInfoRow("⏱️ 服运行时长: 计算中...")
+local infoId = createInfoRow("🌐 地图 ID: " .. tostring(game.PlaceId))
+
+-- ================= 页面 3：玩家列表与观战 =================
+local playerScroll = Instance.new("ScrollingFrame")
+playerScroll.Size = UDim2.new(1, 0, 1, 0)
+playerScroll.BackgroundTransparency = 1
+playerScroll.ScrollBarThickness = 2
+playerScroll.Parent = pagePlayers
+
+local pLayout = Instance.new("UIListLayout")
+pLayout.Padding = UDim.new(0, 6)
+pLayout.Parent = playerScroll
+
+local function updatePlayerList()
+	for _, child in pairs(playerScroll:GetChildren()) do
+		if child:IsA("Frame") then child:Destroy() end
+	end
+	
+	for _, p in pairs(Players:GetPlayers()) do
+		local pCard = Instance.new("Frame")
+		pCard.Size = UDim2.new(1, -6, 0, 36)
+		pCard.BackgroundColor3 = COLOR_CARD
+		pCard.Parent = playerScroll
+		addCorner(pCard, 8)
+		
+		createLabel(pCard, p.DisplayName .. " (@" .. p.Name .. ")", UDim2.new(0.65, 0, 1, 0), UDim2.new(0, 12, 0, 0), Enum.Font.GothamMedium, 12, COLOR_TEXT)
+		
+		local specBtn = Instance.new("TextButton")
+		specBtn.Size = UDim2.new(0, 60, 0, 24)
+		specBtn.Position = UDim2.new(1, -68, 0.5, -12)
+		specBtn.BackgroundColor3 = (p == player) and Color3.fromRGB(60, 60, 65) or COLOR_IOS_BLUE
+		specBtn.Text = (p == player) and "还原视角" or "👁️ 观战"
+		specBtn.Font = Enum.Font.GothamBold
+		specBtn.TextSize = 11
+		specBtn.TextColor3 = COLOR_TEXT
+		specBtn.Parent = pCard
+		addCorner(specBtn, 6)
+		
+		specBtn.Activated:Connect(function()
+			if p.Character and p.Character:FindFirstChild("Humanoid") then
+				camera.CameraSubject = p.Character.Humanoid
+				subStatus.Text = (p == player) and ("@"..player.Name) or ("正在观战: " .. p.DisplayName)
+			end
+		end)
+	end
+	playerScroll.CanvasSize = UDim2.new(0, 0, 0, #Players:GetPlayers() * 42)
+end
+
+-- ================= 底部导航栏 (Tab Bar) =================
+local navBar = Instance.new("Frame")
+navBar.Size = UDim2.new(1, -36, 0, 32)
+navBar.Position = UDim2.new(0, 18, 1, -42)
+navBar.BackgroundColor3 = COLOR_CARD
+navBar.Parent = expandedFrame
+addCorner(navBar, 10)
+
+local navLayout = Instance.new("UIListLayout")
+navLayout.FillDirection = Enum.FillDirection.Horizontal
+navLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+navLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+navLayout.Padding = UDim.new(0, 4)
+navLayout.Parent = navBar
+
+local navBtns = {}
+local function createNavBtn(text, targetPage)
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(0.32, 0, 0, 26)
+	btn.BackgroundColor3 = (targetPage == pageControls) and COLOR_IOS_BLUE or COLOR_CARD
+	btn.BackgroundTransparency = (targetPage == pageControls) and 0 or 1
+	btn.Text = text
+	btn.Font = Enum.Font.GothamBold
+	btn.TextSize = 12
+	btn.TextColor3 = COLOR_TEXT
+	btn.Parent = navBar
+	addCorner(btn, 7)
+	table.insert(navBtns, {btn = btn, page = targetPage})
+	
+	btn.Activated:Connect(function()
+		for _, item in pairs(navBtns) do
+			item.page.Visible = (item.page == targetPage)
+			TweenService:Create(item.btn, TWEEN_FAST, {
+				BackgroundTransparency = (item.page == targetPage) and 0 or 1,
+				BackgroundColor3 = (item.page == targetPage) and COLOR_IOS_BLUE or COLOR_CARD
+			}):Play()
+		end
+		if targetPage == pagePlayers then updatePlayerList() end
+	end)
+end
+
+createNavBtn("🛠️ 控制中心", pageControls)
+createNavBtn("📊 服务器信息", pageServer)
+createNavBtn("👥 玩家列表", pagePlayers)
+
+-- ================= 4. 动画与交互逻辑 =================
 local function toggleIsland(expand)
-	if isNotifying then return end -- 如果正在通知，禁止手动切换
+	if isNotifying then return end
 	isExpanded = expand
 	
 	if isExpanded then
 		compactFrame.Visible = false
 		expandedFrame.Visible = true
-		
-		TweenService:Create(island, expandTweenInfo, {Size = SIZE_EXPANDED}):Play()
-		TweenService:Create(uiCorner, expandTweenInfo, {CornerRadius = CORNER_EXPANDED}):Play()
+		TweenService:Create(island, TWEEN_EXPAND, {Size = SIZE_EXPANDED}):Play()
+		TweenService:Create(mainCorner, TWEEN_EXPAND, {CornerRadius = UDim.new(0, 28)}):Play()
 	else
 		expandedFrame.Visible = false
 		compactFrame.Visible = true
-		
 		local targetSize = isHovering and SIZE_HOVER or SIZE_CLOSED
-		TweenService:Create(island, shrinkTweenInfo, {Size = targetSize}):Play()
-		TweenService:Create(uiCorner, shrinkTweenInfo, {CornerRadius = CORNER_CLOSED}):Play()
+		TweenService:Create(island, TWEEN_SHRINK, {Size = targetSize}):Play()
+		TweenService:Create(mainCorner, TWEEN_SHRINK, {CornerRadius = UDim.new(0, 17)}):Play()
 	end
 end
 
--- 交互事件绑定 (PC + 移动端通用)
-triggerBtn.Activated:Connect(function()
-	toggleIsland(not isExpanded)
-end)
+openBtn.Activated:Connect(function() toggleIsland(true) end)
+closeBtn.Activated:Connect(function() toggleIsland(false) end)
 
--- PC端特有的鼠标悬停效果
-triggerBtn.MouseEnter:Connect(function()
+-- PC 悬停放大效果
+openBtn.MouseEnter:Connect(function()
 	isHovering = true
 	if not isExpanded and not isNotifying then
-		TweenService:Create(island, fadeTweenInfo, {Size = SIZE_HOVER}):Play()
+		TweenService:Create(island, TWEEN_FAST, {Size = SIZE_HOVER}):Play()
 	end
 end)
-
-triggerBtn.MouseLeave:Connect(function()
+openBtn.MouseLeave:Connect(function()
 	isHovering = false
 	if not isExpanded and not isNotifying then
-		TweenService:Create(island, fadeTweenInfo, {Size = SIZE_CLOSED}):Play()
+		TweenService:Create(island, TWEEN_FAST, {Size = SIZE_CLOSED}):Play()
 	end
 end)
 
--- 点击灵动岛外部自动收起 (提升移动端和PC体验)
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
+-- 点击空白处自动收起 (兼容手机触摸与电脑点击)
+UserInputService.InputBegan:Connect(function(input)
 	if isExpanded and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
 		local pos = input.Position
-		local islandPos = island.AbsolutePosition
-		local islandSize = island.AbsoluteSize
-		
-		-- 检查点击位置是否在灵动岛外部
-		if pos.X < islandPos.X or pos.X > islandPos.X + islandSize.X or
-		   pos.Y < islandPos.Y or pos.Y > islandPos.Y + islandSize.Y then
+		local iPos = island.AbsolutePosition
+		local iSize = island.AbsoluteSize
+		if pos.X < iPos.X or pos.X > iPos.X + iSize.X or pos.Y < iPos.Y or pos.Y > iPos.Y + iSize.Y then
 			toggleIsland(false)
 		end
 	end
 end)
 
--- 实时更新时间和 FPS
+-- ================= 5. 数据实时监控引擎 =================
 local lastUpdate = os.clock()
 local frames = 0
+local showTimeInCompact = false
 
 RunService.RenderStepped:Connect(function()
 	frames += 1
 	local now = os.clock()
 	if now - lastUpdate >= 1 then
-		fpsLabel.Text = "正在运行 - FPS: " .. tostring(frames)
+		local currentFps = frames
 		frames = 0
 		lastUpdate = now
 		
-		-- 更新时间
-		timeLabel.Text = os.date("%H:%M")
+		-- 获取真实 Ping (毫秒) 和 内存
+		local ping = math.round(player:GetNetworkPing() * 1000)
+		local mem = math.round(Stats:GetTotalMemoryUsageMb())
+		
+		-- 顶部小胶囊文字交替显示 (FPS / 时间)
+		showTimeInCompact = not showTimeInCompact
+		if showTimeInCompact then
+			compactText.Text = os.date("%H:%M") .. " • " .. ping .. "ms"
+		else
+			compactText.Text = currentFps .. " FPS • " .. ping .. "ms"
+		end
+		
+		-- 如果展开了服务器页面，更新全部详细信息
+		if isExpanded and pageServer.Visible then
+			local upTime = math.floor(workspace.DistributedGameTime)
+			local hours = math.floor(upTime / 3600)
+			local mins = math.floor((upTime % 3600) / 60)
+			local secs = upTime % 60
+			
+			infoFPS.Text = string.format("🟢 实时帧率: <font color='#30D158'><b>%d FPS</b></font>", currentFps)
+			infoPing.Text = string.format("📶 网络延迟: <font color='#0A84FF'><b>%d ms</b></font>", ping)
+			infoMem.Text = string.format("💾 内存占用: <b>%d MB</b>", mem)
+			infoPlayers.Text = string.format("👥 房间人数: <b>%d / %d 人</b>", #Players:GetPlayers(), Players.MaxPlayers)
+			infoTime.Text = string.format("⏱️ 服运行时长: <b>%02d时 %02d分 %02d秒</b>", hours, mins, secs)
+		end
 	end
 end)
 
--- ==========================================
--- 附加功能：发送灵动岛通知 (你可以在其他地方调用)
--- ==========================================
-local function sendNotification(title, text, duration)
+-- ================= 6. 智能通知系统 =================
+local function sendNotification(title, msg, color)
+	if isNotifying then return end
 	if isExpanded then toggleIsland(false) task.wait(0.3) end
 	isNotifying = true
 	compactFrame.Visible = false
 	
-	-- 创建临时通知UI
-	local notifyFrame = Instance.new("Frame")
-	notifyFrame.Size = UDim2.new(1, 0, 1, 0)
-	notifyFrame.BackgroundTransparency = 1
-	notifyFrame.Parent = island
+	local notifyBox = Instance.new("Frame")
+	notifyBox.Size = UDim2.new(1, 0, 1, 0)
+	notifyBox.BackgroundTransparency = 1
+	notifyBox.Parent = island
 	
-	local nTitle = Instance.new("TextLabel")
-	nTitle.Size = UDim2.new(1, -40, 0, 20)
-	nTitle.Position = UDim2.new(0, 20, 0, 12)
-	nTitle.BackgroundTransparency = 1
-	nTitle.Text = title
-	nTitle.Font = Enum.Font.GothamBold
-	nTitle.TextColor3 = Color3.fromRGB(48, 209, 88)
-	nTitle.TextSize = 14
-	nTitle.TextXAlignment = Enum.TextXAlignment.Left
-	nTitle.Parent = notifyFrame
+	createLabel(notifyBox, "🔔 " .. title, UDim2.new(1, -30, 0, 20), UDim2.new(0, 18, 0, 12), Enum.Font.GothamBold, 14, color or COLOR_IOS_GREEN)
+	createLabel(notifyBox, msg, UDim2.new(1, -30, 0, 20), UDim2.new(0, 18, 0, 34), Enum.Font.Gotham, 13, COLOR_TEXT)
 	
-	local nText = Instance.new("TextLabel")
-	nText.Size = UDim2.new(1, -40, 0, 20)
-	nText.Position = UDim2.new(0, 20, 0, 32)
-	nText.BackgroundTransparency = 1
-	nText.Text = text
-	nText.Font = Enum.Font.Gotham
-	nText.TextColor3 = Color3.fromRGB(255, 255, 255)
-	nText.TextSize = 13
-	nText.TextXAlignment = Enum.TextXAlignment.Left
-	nText.Parent = notifyFrame
+	TweenService:Create(island, TWEEN_EXPAND, {Size = SIZE_NOTIFY}):Play()
+	TweenService:Create(mainCorner, TWEEN_EXPAND, {CornerRadius = UDim.new(0, 24)}):Play()
 	
-	-- 展开到通知大小
-	TweenService:Create(island, expandTweenInfo, {Size = UDim2.new(0, 280, 0, 65)}):Play()
-	TweenService:Create(uiCorner, expandTweenInfo, {CornerRadius = UDim.new(0, 25)}):Play()
+	task.wait(3.5)
 	
-	task.wait(duration or 3)
-	
-	-- 恢复原状
-	notifyFrame:Destroy()
+	notifyBox:Destroy()
 	compactFrame.Visible = true
-	TweenService:Create(island, shrinkTweenInfo, {Size = SIZE_CLOSED}):Play()
-	TweenService:Create(uiCorner, shrinkTweenInfo, {CornerRadius = CORNER_CLOSED}):Play()
-	
+	TweenService:Create(island, TWEEN_SHRINK, {Size = SIZE_CLOSED}):Play()
+	TweenService:Create(mainCorner, TWEEN_SHRINK, {CornerRadius = UDim.new(0, 17)}):Play()
 	task.wait(0.3)
 	isNotifying = false
 end
 
--- 游戏启动3秒后测试一次弹窗通知
-task.delay(3, function()
-	sendNotification("灵动岛已激活", "欢迎来到游戏，" .. player.DisplayName .. "！", 4)
+-- 监听玩家进出服务器，自动弹窗提示！
+Players.PlayerAdded:Connect(function(newPlayer)
+	sendNotification("玩家加入服务器", newPlayer.DisplayName .. " 来到了游戏！", COLOR_IOS_GREEN)
+	if isExpanded and pagePlayers.Visible then updatePlayerList() end
+end)
+
+Players.PlayerRemoving:Connect(function(leftPlayer)
+	sendNotification("玩家离开", leftPlayer.DisplayName .. " 离开了游戏。", Color3.fromRGB(255, 69, 58))
+	if isExpanded and pagePlayers.Visible then updatePlayerList() end
+end)
+
+-- 启动欢迎通知
+task.delay(2, function()
+	sendNotification("灵动岛 Pro 已就绪", "点击顶部黑条即可打开超级控制中心！", COLOR_IOS_BLUE)
 end)
