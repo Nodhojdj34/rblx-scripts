@@ -1,0 +1,1207 @@
+-- 放在 StarterPlayer > StarterPlayerScripts > LocalScript
+-- 游戏内灵动岛音乐播放器：支持 PC 鼠标与移动端触摸
+
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local SoundService = game:GetService("SoundService")
+local Workspace = game:GetService("Workspace")
+
+local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+
+-- 把 id = 0 换成有权限使用的 Roblox 音频 ID
+-- cover 可以留空，也可以填写封面图片的 Roblox 资产 ID
+local TRACKS = {
+	{ title = "夜色漫游", artist = "示例歌手", id = 0, cover = "" },
+	{ title = "晴天电台", artist = "示例歌手", id = 0, cover = "" },
+	{ title = "像素心跳", artist = "示例歌手", id = 0, cover = "" },
+}
+
+local COLORS = {
+	background = Color3.fromRGB(5, 7, 9),
+	panel = Color3.fromRGB(17, 19, 23),
+	rail = Color3.fromRGB(57, 60, 67),
+	text = Color3.fromRGB(244, 245, 248),
+	muted = Color3.fromRGB(151, 155, 165),
+	green = Color3.fromRGB(101, 226, 169),
+	amber = Color3.fromRGB(245, 190, 99),
+	red = Color3.fromRGB(255, 105, 105),
+	pink = Color3.fromRGB(255, 110, 145),
+	black = Color3.fromRGB(10, 11, 14),
+}
+
+-- 清理上次运行创建的 UI 和本地音乐
+for _, guiName in ipairs({ "DynamicIslandMusicGui", "DynamicIslandGui" }) do
+	local oldGui = playerGui:FindFirstChild(guiName)
+	if oldGui then
+		oldGui:Destroy()
+	end
+end
+
+local oldSound = SoundService:FindFirstChild("DynamicIslandLocalMusic")
+if oldSound then
+	oldSound:Destroy()
+end
+
+local function toAssetUri(value)
+	if value == nil then
+		return nil
+	end
+
+	local text = tostring(value):gsub("^%s*(.-)%s*$", "%1")
+	if text == "" or text == "0" then
+		return nil
+	end
+
+	if text:match("^rbxassetid://%d+$") then
+		return text
+	end
+
+	local number = tonumber(text)
+	if number and number > 0 then
+		return "rbxassetid://" .. tostring(math.floor(number))
+	end
+
+	return nil
+end
+
+local function makeFrame(parent, name, size, position, color, radius, zIndex)
+	local frame = Instance.new("Frame")
+	frame.Name = name
+	frame.Size = size
+	frame.Position = position
+	frame.BackgroundColor3 = color
+	frame.BorderSizePixel = 0
+	frame.ZIndex = zIndex or 10
+	frame.Parent = parent
+
+	if radius then
+		local corner = Instance.new("UICorner")
+		corner.CornerRadius = UDim.new(0, radius)
+		corner.Parent = frame
+	end
+
+	return frame
+end
+
+local function makeLabel(parent, name, text, position, size, textSize, color, font, zIndex)
+	local label = Instance.new("TextLabel")
+	label.Name = name
+	label.Position = position
+	label.Size = size
+	label.BackgroundTransparency = 1
+	label.Text = text
+	label.TextSize = textSize or 12
+	label.TextColor3 = color or COLORS.text
+	label.Font = font or Enum.Font.Gotham
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.TextYAlignment = Enum.TextYAlignment.Center
+	label.TextWrapped = false
+	label.TextScaled = false
+	label.TextTruncate = Enum.TextTruncate.AtEnd
+	label.ZIndex = zIndex or 12
+	label.Parent = parent
+
+	return label
+end
+
+local function makeButton(parent, name, text, position, size, textSize, zIndex, bgColor, radius)
+	local button = Instance.new("TextButton")
+	button.Name = name
+	button.Position = position
+	button.Size = size
+	button.BackgroundColor3 = bgColor or Color3.new(1, 1, 1)
+	button.BackgroundTransparency = bgColor and 0 or 1
+	button.BorderSizePixel = 0
+	button.Text = text or ""
+	button.TextSize = textSize or 14
+	button.TextColor3 = COLORS.text
+	button.Font = Enum.Font.GothamBold
+	button.TextWrapped = false
+	button.AutoButtonColor = false
+	button.Active = true
+	button.Selectable = false
+	button.ZIndex = zIndex or 14
+	button.Parent = parent
+
+	if radius then
+		local corner = Instance.new("UICorner")
+		corner.CornerRadius = UDim.new(0, radius)
+		corner.Parent = button
+	end
+
+	return button
+end
+
+local function addGradient(frame)
+	local gradient = Instance.new("UIGradient")
+	gradient.Color = ColorSequence.new(
+		Color3.fromRGB(137, 76, 255),
+		Color3.fromRGB(39, 183, 178)
+	)
+	gradient.Rotation = 35
+	gradient.Parent = frame
+end
+
+-- ScreenGui
+local gui = Instance.new("ScreenGui")
+gui.Name = "DynamicIslandMusicGui"
+gui.ResetOnSpawn = false
+gui.IgnoreGuiInset = true
+gui.DisplayOrder = 50
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui.Parent = playerGui
+
+-- 音乐声音对象：在 LocalScript 中创建，只播放给本地玩家
+local musicSound = Instance.new("Sound")
+musicSound.Name = "DynamicIslandLocalMusic"
+musicSound.Volume = 0.65
+musicSound.Looped = false
+musicSound.Parent = SoundService
+
+-- 灵动岛主体
+local CLOSED_SIZE = UDim2.fromOffset(178, 50)
+local OPEN_SIZE = UDim2.fromOffset(360, 286)
+
+local island = makeFrame(
+	gui,
+	"Island",
+	CLOSED_SIZE,
+	UDim2.new(0.5, 0, 0, 10),
+	COLORS.background,
+	26,
+	10
+)
+island.AnchorPoint = Vector2.new(0.5, 0)
+island.ClipsDescendants = true
+
+local islandStroke = Instance.new("UIStroke")
+islandStroke.Color = Color3.fromRGB(57, 60, 67)
+islandStroke.Thickness = 1
+islandStroke.Transparency = 0.25
+islandStroke.Parent = island
+
+-- 根据屏幕宽度缩放，适配手机和较窄窗口
+local uiScale = Instance.new("UIScale")
+uiScale.Scale = 1
+uiScale.Parent = island
+
+local viewportConnection
+
+local function updateScale()
+	local camera = Workspace.CurrentCamera
+	if camera then
+		uiScale.Scale = math.clamp(camera.ViewportSize.X / 430, 0.76, 1)
+	end
+end
+
+local function bindCamera()
+	if viewportConnection then
+		viewportConnection:Disconnect()
+		viewportConnection = nil
+	end
+
+	local camera = Workspace.CurrentCamera
+	if camera then
+		updateScale()
+		viewportConnection =
+			camera:GetPropertyChangedSignal("ViewportSize"):Connect(updateScale)
+	end
+end
+
+Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(bindCamera)
+bindCamera()
+
+-- 收起状态
+local compact = Instance.new("Frame")
+compact.Name = "Compact"
+compact.Size = UDim2.fromScale(1, 1)
+compact.BackgroundTransparency = 1
+compact.ZIndex = 11
+compact.Parent = island
+
+local miniCover = makeFrame(
+	compact,
+	"MiniCover",
+	UDim2.fromOffset(32, 32),
+	UDim2.new(0, 9, 0.5, -16),
+	Color3.fromRGB(83, 67, 123),
+	8,
+	12
+)
+miniCover.ClipsDescendants = true
+addGradient(miniCover)
+
+local miniGlyph = makeLabel(
+	miniCover,
+	"MiniGlyph",
+	"♪",
+	UDim2.fromScale(0, 0),
+	UDim2.fromScale(1, 1),
+	19,
+	COLORS.text,
+	Enum.Font.GothamBold,
+	13
+)
+miniGlyph.TextXAlignment = Enum.TextXAlignment.Center
+
+local miniCoverImage = Instance.new("ImageLabel")
+miniCoverImage.Name = "MiniCoverImage"
+miniCoverImage.Size = UDim2.fromScale(1, 1)
+miniCoverImage.BackgroundTransparency = 1
+miniCoverImage.Image = ""
+miniCoverImage.ScaleType = Enum.ScaleType.Crop
+miniCoverImage.Visible = false
+miniCoverImage.ZIndex = 14
+miniCoverImage.Parent = miniCover
+
+local miniCoverImageCorner = Instance.new("UICorner")
+miniCoverImageCorner.CornerRadius = UDim.new(0, 8)
+miniCoverImageCorner.Parent = miniCoverImage
+
+local miniTitle = makeLabel(
+	compact,
+	"MiniTitle",
+	"音乐播放器",
+	UDim2.new(0, 49, 0, 7),
+	UDim2.new(0, 83, 0, 18),
+	10,
+	COLORS.text,
+	Enum.Font.GothamMedium,
+	13
+)
+
+local miniSubtitle = makeLabel(
+	compact,
+	"MiniSubtitle",
+	"TAP TO OPEN",
+	UDim2.new(0, 49, 0, 25),
+	UDim2.new(0, 83, 0, 13),
+	8,
+	COLORS.muted,
+	Enum.Font.Gotham,
+	13
+)
+
+local miniWaveBars = {}
+
+for i = 1, 4 do
+	local bar = makeFrame(
+		compact,
+		"MiniWave" .. i,
+		UDim2.fromOffset(3, 4),
+		UDim2.new(1, -(13 + (i - 1) * 5), 0.5, 0),
+		COLORS.text,
+		2,
+		14
+	)
+	bar.AnchorPoint = Vector2.new(0.5, 0.5)
+	table.insert(miniWaveBars, bar)
+end
+
+-- 透明点击层：点收起的胶囊展开播放器
+local compactHit = makeButton(
+	island,
+	"CompactHit",
+	"",
+	UDim2.fromScale(0, 0),
+	UDim2.fromScale(1, 1),
+	12,
+	40,
+	nil,
+	nil
+)
+
+-- 展开状态播放器
+local expanded = Instance.new("Frame")
+expanded.Name = "Expanded"
+expanded.Size = UDim2.fromScale(1, 1)
+expanded.BackgroundTransparency = 1
+expanded.Visible = false
+expanded.ZIndex = 11
+expanded.Parent = island
+
+local largeCover = makeFrame(
+	expanded,
+	"LargeCover",
+	UDim2.fromOffset(68, 68),
+	UDim2.new(0, 16, 0, 16),
+	Color3.fromRGB(83, 67, 123),
+	12,
+	12
+)
+largeCover.ClipsDescendants = true
+addGradient(largeCover)
+
+local largeGlyph = makeLabel(
+	largeCover,
+	"LargeGlyph",
+	"♪",
+	UDim2.fromScale(0, 0),
+	UDim2.fromScale(1, 1),
+	32,
+	COLORS.text,
+	Enum.Font.GothamBold,
+	13
+)
+largeGlyph.TextXAlignment = Enum.TextXAlignment.Center
+
+local largeCoverImage = Instance.new("ImageLabel")
+largeCoverImage.Name = "LargeCoverImage"
+largeCoverImage.Size = UDim2.fromScale(1, 1)
+largeCoverImage.BackgroundTransparency = 1
+largeCoverImage.Image = ""
+largeCoverImage.ScaleType = Enum.ScaleType.Crop
+largeCoverImage.Visible = false
+largeCoverImage.ZIndex = 14
+largeCoverImage.Parent = largeCover
+
+local largeCoverImageCorner = Instance.new("UICorner")
+largeCoverImageCorner.CornerRadius = UDim.new(0, 12)
+largeCoverImageCorner.Parent = largeCoverImage
+
+makeLabel(
+	expanded,
+	"NowPlayingLabel",
+	"NOW PLAYING",
+	UDim2.new(0, 98, 0, 16),
+	UDim2.new(0, 190, 0, 14),
+	9,
+	COLORS.green,
+	Enum.Font.GothamBold,
+	14
+)
+
+local titleLabel = makeLabel(
+	expanded,
+	"TrackTitle",
+	"",
+	UDim2.new(0, 98, 0, 33),
+	UDim2.new(0, 207, 0, 24),
+	16,
+	COLORS.text,
+	Enum.Font.GothamBold,
+	14
+)
+
+local artistLabel = makeLabel(
+	expanded,
+	"Artist",
+	"",
+	UDim2.new(0, 98, 0, 58),
+	UDim2.new(0, 207, 0, 18),
+	11,
+	COLORS.muted,
+	Enum.Font.Gotham,
+	14
+)
+
+local closeButton = makeButton(
+	expanded,
+	"CollapseButton",
+	"⌄",
+	UDim2.new(1, -34, 0, 9),
+	UDim2.fromOffset(24, 24),
+	19,
+	20,
+	nil,
+	nil
+)
+closeButton.TextColor3 = COLORS.muted
+
+local favoriteButton = makeButton(
+	expanded,
+	"FavoriteButton",
+	"♡",
+	UDim2.new(1, -49, 0, 45),
+	UDim2.fromOffset(34, 32),
+	22,
+	18,
+	nil,
+	nil
+)
+favoriteButton.TextColor3 = COLORS.muted
+
+-- 播放进度条
+local seekHit = makeButton(
+	expanded,
+	"SeekHit",
+	"",
+	UDim2.new(0, 16, 0, 96),
+	UDim2.new(1, -32, 0, 22),
+	10,
+	16,
+	nil,
+	nil
+)
+
+local seekRail = makeFrame(
+	seekHit,
+	"SeekRail",
+	UDim2.new(1, 0, 0, 4),
+	UDim2.new(0, 0, 0.5, -2),
+	COLORS.rail,
+	2,
+	17
+)
+
+local seekFill = makeFrame(
+	seekRail,
+	"SeekFill",
+	UDim2.new(0, 0, 1, 0),
+	UDim2.fromScale(0, 0),
+	COLORS.green,
+	2,
+	18
+)
+
+local seekDot = makeFrame(
+	seekRail,
+	"SeekDot",
+	UDim2.fromOffset(10, 10),
+	UDim2.new(0, 0, 0.5, 0),
+	COLORS.text,
+	5,
+	19
+)
+seekDot.AnchorPoint = Vector2.new(0.5, 0.5)
+
+local currentTimeLabel = makeLabel(
+	expanded,
+	"CurrentTime",
+	"0:00",
+	UDim2.new(0, 16, 0, 117),
+	UDim2.fromOffset(60, 16),
+	9,
+	COLORS.muted,
+	Enum.Font.Gotham,
+	14
+)
+
+local durationLabel = makeLabel(
+	expanded,
+	"Duration",
+	"0:00",
+	UDim2.new(1, -76, 0, 117),
+	UDim2.fromOffset(60, 16),
+	9,
+	COLORS.muted,
+	Enum.Font.Gotham,
+	14
+)
+durationLabel.TextXAlignment = Enum.TextXAlignment.Right
+
+-- 播放控制按钮
+local shuffleButton = makeButton(
+	expanded,
+	"ShuffleButton",
+	"⇄",
+	UDim2.new(0, 70, 0, 151),
+	UDim2.fromOffset(34, 34),
+	18,
+	17,
+	nil,
+	nil
+)
+
+local previousButton = makeButton(
+	expanded,
+	"PreviousButton",
+	"⏮",
+	UDim2.new(0, 116, 0, 151),
+	UDim2.fromOffset(34, 34),
+	18,
+	17,
+	nil,
+	nil
+)
+
+local playButton = makeButton(
+	expanded,
+	"PlayButton",
+	"▶",
+	UDim2.new(0.5, -23, 0, 145),
+	UDim2.fromOffset(46, 46),
+	21,
+	18,
+	COLORS.text,
+	23
+)
+playButton.TextColor3 = COLORS.black
+
+local nextButton = makeButton(
+	expanded,
+	"NextButton",
+	"⏭",
+	UDim2.new(1, -150, 0, 151),
+	UDim2.fromOffset(34, 34),
+	18,
+	17,
+	nil,
+	nil
+)
+
+local repeatButton = makeButton(
+	expanded,
+	"RepeatButton",
+	"↻",
+	UDim2.new(1, -104, 0, 151),
+	UDim2.fromOffset(34, 34),
+	19,
+	17,
+	nil,
+	nil
+)
+
+local repeatBadge = makeLabel(
+	repeatButton,
+	"RepeatOneBadge",
+	"1",
+	UDim2.new(1, -11, 0, 0),
+	UDim2.fromOffset(10, 10),
+	8,
+	COLORS.green,
+	Enum.Font.GothamBold,
+	19
+)
+repeatBadge.TextXAlignment = Enum.TextXAlignment.Center
+repeatBadge.Visible = false
+
+-- 音量控制
+makeFrame(
+	expanded,
+	"Divider",
+	UDim2.new(1, -32, 0, 1),
+	UDim2.new(0, 16, 0, 201),
+	Color3.fromRGB(42, 45, 51),
+	nil,
+	14
+)
+
+local muteButton = makeButton(
+	expanded,
+	"MuteButton",
+	"♪",
+	UDim2.new(0, 15, 0, 208),
+	UDim2.fromOffset(30, 26),
+	16,
+	16,
+	nil,
+	nil
+)
+muteButton.TextColor3 = COLORS.muted
+
+local volumeHit = makeButton(
+	expanded,
+	"VolumeHit",
+	"",
+	UDim2.new(0, 54, 0, 211),
+	UDim2.new(1, -112, 0, 20),
+	10,
+	16,
+	nil,
+	nil
+)
+
+local volumeRail = makeFrame(
+	volumeHit,
+	"VolumeRail",
+	UDim2.new(1, 0, 0, 4),
+	UDim2.new(0, 0, 0.5, -2),
+	COLORS.rail,
+	2,
+	17
+)
+
+local volumeFill = makeFrame(
+	volumeRail,
+	"VolumeFill",
+	UDim2.new(0.65, 0, 1, 0),
+	UDim2.fromScale(0, 0),
+	COLORS.green,
+	2,
+	18
+)
+
+local volumeKnob = makeFrame(
+	volumeRail,
+	"VolumeKnob",
+	UDim2.fromOffset(10, 10),
+	UDim2.new(0.65, 0, 0.5, 0),
+	COLORS.text,
+	5,
+	19
+)
+volumeKnob.AnchorPoint = Vector2.new(0.5, 0.5)
+
+local volumePercent = makeLabel(
+	expanded,
+	"VolumePercent",
+	"65%",
+	UDim2.new(1, -51, 0, 211),
+	UDim2.fromOffset(37, 20),
+	9,
+	COLORS.muted,
+	Enum.Font.Gotham,
+	14
+)
+volumePercent.TextXAlignment = Enum.TextXAlignment.Right
+
+local statusDot = makeFrame(
+	expanded,
+	"StatusDot",
+	UDim2.fromOffset(7, 7),
+	UDim2.new(0, 17, 0, 253),
+	COLORS.muted,
+	4,
+	15
+)
+
+local statusLabel = makeLabel(
+	expanded,
+	"Status",
+	"准备就绪",
+	UDim2.new(0, 30, 0, 245),
+	UDim2.new(1, -115, 0, 22),
+	9,
+	COLORS.muted,
+	Enum.Font.Gotham,
+	14
+)
+
+local footerLabel = makeLabel(
+	expanded,
+	"Footer",
+	"LOCAL AUDIO",
+	UDim2.new(1, -93, 0, 246),
+	UDim2.fromOffset(77, 20),
+	8,
+	COLORS.muted,
+	Enum.Font.GothamBold,
+	14
+)
+footerLabel.TextXAlignment = Enum.TextXAlignment.Right
+
+-- 播放器状态
+local currentIndex = 1
+local isPlaying = false
+local hasStarted = false
+local isExpanded = false
+local shuffleEnabled = false
+local repeatMode = 0 -- 0 = 关闭，1 = 列表循环，2 = 单曲循环
+local favorites = {}
+local loadToken = 0
+local randomGenerator = Random.new()
+
+local volume = 0.65
+local lastNonZeroVolume = volume
+musicSound.Volume = volume
+
+local function setStatus(text, color)
+	statusLabel.Text = text
+	statusDot.BackgroundColor3 = color or COLORS.muted
+end
+
+local function updatePlayerButtons()
+	playButton.Text = isPlaying and "Ⅱ" or "▶"
+
+	miniSubtitle.Text = isPlaying and "NOW PLAYING" or "TAP TO OPEN"
+	miniSubtitle.TextColor3 = isPlaying and COLORS.green or COLORS.muted
+
+	local isFavorite = favorites[currentIndex] == true
+	favoriteButton.Text = isFavorite and "♥" or "♡"
+	favoriteButton.TextColor3 = isFavorite and COLORS.pink or COLORS.muted
+
+	shuffleButton.TextColor3 = shuffleEnabled and COLORS.green or COLORS.muted
+	repeatButton.TextColor3 = repeatMode == 0 and COLORS.muted or COLORS.green
+	repeatBadge.Visible = repeatMode == 2
+end
+
+local function updateTrackUI()
+	local track = TRACKS[currentIndex]
+	if not track then
+		return
+	end
+
+	titleLabel.Text = track.title or "未知曲目"
+	artistLabel.Text = track.artist or "未知歌手"
+	miniTitle.Text = track.title or "音乐播放器"
+
+	local coverUri = toAssetUri(track.cover)
+	if coverUri then
+		largeCoverImage.Image = coverUri
+		largeCoverImage.Visible = true
+		largeGlyph.Visible = false
+
+		miniCoverImage.Image = coverUri
+		miniCoverImage.Visible = true
+		miniGlyph.Visible = false
+	else
+		largeCoverImage.Image = ""
+		largeCoverImage.Visible = false
+		largeGlyph.Visible = true
+
+		miniCoverImage.Image = ""
+		miniCoverImage.Visible = false
+		miniGlyph.Visible = true
+	end
+
+	updatePlayerButtons()
+end
+
+local function formatTime(seconds)
+	if not seconds or seconds ~= seconds or seconds < 0 then
+		seconds = 0
+	end
+
+	seconds = math.floor(seconds)
+	local minutes = math.floor(seconds / 60)
+	local remainingSeconds = seconds % 60
+
+	return string.format("%d:%02d", minutes, remainingSeconds)
+end
+
+local function refreshProgress()
+	local length = musicSound.TimeLength
+	local position = musicSound.TimePosition
+
+	if not length or length ~= length or length <= 0 then
+		length = 0
+	end
+
+	if not position or position ~= position or position < 0 then
+		position = 0
+	end
+
+	local ratio = 0
+	if length > 0 then
+		ratio = math.clamp(position / length, 0, 1)
+	end
+
+	seekFill.Size = UDim2.new(ratio, 0, 1, 0)
+	seekDot.Position = UDim2.new(ratio, 0, 0.5, 0)
+	currentTimeLabel.Text = formatTime(position)
+	durationLabel.Text = formatTime(length)
+end
+
+local function updateVolumeUI()
+	volume = math.clamp(volume, 0, 1)
+	musicSound.Volume = volume
+
+	volumeFill.Size = UDim2.new(volume, 0, 1, 0)
+	volumeKnob.Position = UDim2.new(volume, 0, 0.5, 0)
+	volumePercent.Text = tostring(math.floor(volume * 100 + 0.5)) .. "%"
+	muteButton.Text = volume <= 0 and "×" or "♪"
+end
+
+local function watchLoading(token)
+	task.spawn(function()
+		local deadline = os.clock() + 12
+
+		while gui.Parent
+			and token == loadToken
+			and not musicSound.IsLoaded
+			and os.clock() < deadline do
+			task.wait(0.15)
+		end
+
+		if not gui.Parent or token ~= loadToken then
+			return
+		end
+
+		if musicSound.IsLoaded then
+			if isPlaying then
+				setStatus("正在播放", COLORS.green)
+			else
+				setStatus("已暂停", COLORS.muted)
+			end
+		else
+			isPlaying = false
+			hasStarted = false
+			pcall(function()
+				musicSound:Stop()
+			end)
+			updatePlayerButtons()
+			setStatus("加载失败：检查音频 ID / 权限", COLORS.red)
+		end
+	end)
+end
+
+local function startPlayback()
+	local track = TRACKS[currentIndex]
+	local audioUri = track and toAssetUri(track.id)
+
+	if not audioUri then
+		isPlaying = false
+		updatePlayerButtons()
+		setStatus("请先配置可用的 Roblox 音频 ID", COLORS.amber)
+		return
+	end
+
+	if musicSound.SoundId ~= audioUri then
+		musicSound.SoundId = audioUri
+		hasStarted = false
+	end
+
+	if musicSound.IsLoaded
+		and musicSound.TimeLength > 0
+		and musicSound.TimePosition >= musicSound.TimeLength then
+		pcall(function()
+			musicSound.TimePosition = 0
+		end)
+		hasStarted = false
+	end
+
+	local ok = true
+
+	if hasStarted then
+		ok = pcall(function()
+			musicSound:Resume()
+		end)
+
+		if not ok then
+			ok = pcall(function()
+				musicSound:Play()
+			end)
+		end
+	else
+		ok = pcall(function()
+			musicSound:Play()
+		end)
+		hasStarted = ok
+	end
+
+	if not ok then
+		isPlaying = false
+		updatePlayerButtons()
+		setStatus("无法播放：检查音频资产权限", COLORS.red)
+		return
+	end
+
+	isPlaying = true
+	updatePlayerButtons()
+
+	if musicSound.IsLoaded then
+		setStatus("正在播放", COLORS.green)
+	else
+		setStatus("正在加载音频…", COLORS.amber)
+	end
+
+	watchLoading(loadToken)
+end
+
+local function pausePlayback()
+	if not isPlaying then
+		return
+	end
+
+	pcall(function()
+		musicSound:Pause()
+	end)
+
+	isPlaying = false
+	updatePlayerButtons()
+	setStatus("已暂停", COLORS.muted)
+end
+
+local function playTrack(index, autoPlay)
+	if #TRACKS == 0 then
+		return
+	end
+
+	currentIndex = ((index - 1) % #TRACKS) + 1
+	loadToken += 1
+
+	isPlaying = false
+	hasStarted = false
+
+	pcall(function()
+		musicSound:Stop()
+	end)
+
+	local track = TRACKS[currentIndex]
+	local audioUri = track and toAssetUri(track.id)
+
+	musicSound.SoundId = audioUri or ""
+	pcall(function()
+		musicSound.TimePosition = 0
+	end)
+
+	updateTrackUI()
+	refreshProgress()
+
+	if not audioUri then
+		setStatus("请先配置可用的 Roblox 音频 ID", COLORS.amber)
+		return
+	end
+
+	setStatus("已就绪 · 点击播放", COLORS.muted)
+
+	if autoPlay then
+		startPlayback()
+	end
+end
+
+local function getRandomNextIndex()
+	if #TRACKS <= 1 then
+		return currentIndex
+	end
+
+	local nextIndex = currentIndex
+	while nextIndex == currentIndex do
+		nextIndex = randomGenerator:NextInteger(1, #TRACKS)
+	end
+
+	return nextIndex
+end
+
+local function nextTrack()
+	if shuffleEnabled then
+		playTrack(getRandomNextIndex(), true)
+	else
+		playTrack((currentIndex % #TRACKS) + 1, true)
+	end
+end
+
+local function previousTrack()
+	if musicSound.TimeLength > 0 and musicSound.TimePosition > 3 then
+		pcall(function()
+			musicSound.TimePosition = 0
+		end)
+		refreshProgress()
+		setStatus(isPlaying and "正在播放" or "已暂停", isPlaying and COLORS.green or COLORS.muted)
+		return
+	end
+
+	local previousIndex = currentIndex - 1
+	if previousIndex < 1 then
+		previousIndex = #TRACKS
+	end
+
+	playTrack(previousIndex, true)
+end
+
+-- 点击 / 触摸展开与收起
+local activeTween
+local expansionToken = 0
+
+local function setExpanded(value)
+	if isExpanded == value then
+		return
+	end
+
+	isExpanded = value
+	expansionToken += 1
+	local token = expansionToken
+
+	if activeTween then
+		activeTween:Cancel()
+		activeTween = nil
+	end
+
+	if value then
+		compact.Visible = false
+		expanded.Visible = true
+	end
+
+	local targetSize = value and OPEN_SIZE or CLOSED_SIZE
+	local tween = TweenService:Create(
+		island,
+		TweenInfo.new(0.32, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+		{ Size = targetSize }
+	)
+
+	activeTween = tween
+
+	tween.Completed:Connect(function(playbackState)
+		if token ~= expansionToken or playbackState ~= Enum.PlaybackState.Completed then
+			return
+		end
+
+		activeTween = nil
+
+		if not value then
+			expanded.Visible = false
+			compact.Visible = true
+		end
+	end)
+
+	tween:Play()
+end
+
+compactHit.Activated:Connect(function()
+	setExpanded(true)
+end)
+
+closeButton.Activated:Connect(function()
+	setExpanded(false)
+end)
+
+-- 播放控制
+playButton.Activated:Connect(function()
+	if isPlaying then
+		pausePlayback()
+	else
+		startPlayback()
+	end
+end)
+
+previousButton.Activated:Connect(previousTrack)
+nextButton.Activated:Connect(nextTrack)
+
+shuffleButton.Activated:Connect(function()
+	shuffleEnabled = not shuffleEnabled
+	updatePlayerButtons()
+	setStatus(
+		shuffleEnabled and "随机播放已开启" or "随机播放已关闭",
+		shuffleEnabled and COLORS.green or COLORS.muted
+	)
+end)
+
+repeatButton.Activated:Connect(function()
+	repeatMode = (repeatMode + 1) % 3
+	updatePlayerButtons()
+
+	if repeatMode == 0 then
+		setStatus("循环已关闭", COLORS.muted)
+	elseif repeatMode == 1 then
+		setStatus("列表循环已开启", COLORS.green)
+	else
+		setStatus("单曲循环已开启", COLORS.green)
+	end
+end)
+
+favoriteButton.Activated:Connect(function()
+	favorites[currentIndex] = not favorites[currentIndex]
+	updatePlayerButtons()
+	setStatus(
+		favorites[currentIndex] and "已加入收藏" or "已取消收藏",
+		favorites[currentIndex] and COLORS.pink or COLORS.muted
+	)
+end)
+
+muteButton.Activated:Connect(function()
+	if volume > 0 then
+		lastNonZeroVolume = volume
+		volume = 0
+	else
+		volume = lastNonZeroVolume > 0 and lastNonZeroVolume or 0.65
+	end
+
+	updateVolumeUI()
+end)
+
+-- 自然播放结束后的队列逻辑
+musicSound.Ended:Connect(function()
+	if not isPlaying then
+		return
+	end
+
+	isPlaying = false
+	hasStarted = false
+
+	if repeatMode == 2 then
+		playTrack(currentIndex, true)
+	elseif shuffleEnabled then
+		playTrack(getRandomNextIndex(), true)
+	elseif currentIndex < #TRACKS then
+		playTrack(currentIndex + 1, true)
+	elseif repeatMode == 1 then
+		playTrack(1, true)
+	else
+		pcall(function()
+			musicSound.TimePosition = 0
+		end)
+		updatePlayerButtons()
+		refreshProgress()
+		setStatus("播放结束", COLORS.muted)
+	end
+end)
+
+-- 进度条和音量条：支持鼠标点击、触摸以及拖动
+local dragTarget = nil
+
+local function applySliderPointer(slider, pointerX)
+	if not slider or not pointerX then
+		return
+	end
+
+	local width = slider.AbsoluteSize.X
+	if width <= 0 then
+		return
+	end
+
+	local ratio = math.clamp(
+		(pointerX - slider.AbsolutePosition.X) / width,
+		0,
+		1
+	)
+
+	if slider == seekHit then
+		if musicSound.TimeLength > 0 then
+			pcall(function()
+				musicSound.TimePosition = ratio * musicSound.TimeLength
+			end)
+			refreshProgress()
+		end
+	elseif slider == volumeHit then
+		volume = ratio
+		if volume > 0 then
+			lastNonZeroVolume = volume
+		end
+		updateVolumeUI()
+	end
+end
+
+local function bindSlider(slider)
+	slider.InputBegan:Connect(function(input)
+		local inputType = input.UserInputType
+		if inputType == Enum.UserInputType.MouseButton1
+			or inputType == Enum.UserInputType.Touch then
+			dragTarget = slider
+			applySliderPointer(slider, input.Position.X)
+		end
+	end)
+end
+
+bindSlider(seekHit)
+bindSlider(volumeHit)
+
+UserInputService.InputChanged:Connect(function(input)
+	if dragTarget
+		and (input.UserInputType == Enum.UserInputType.MouseMovement
+			or input.UserInputType == Enum.UserInputType.Touch) then
+		applySliderPointer(dragTarget, input.Position.X)
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1
+		or input.UserInputType == Enum.UserInputType.Touch then
+		dragTarget = nil
+	end
+end)
+
+-- 初始化
+updateVolumeUI()
+playTrack(1, false)
+
+-- 刷新进度与收起状态的动态音波
+task.spawn(function()
+	while gui.Parent do
+		refreshProgress()
+
+		local now = os.clock()
+		for i, bar in ipairs(miniWaveBars) do
+			local height = 3
+
+			if isPlaying then
+				height = 4 + math.floor((math.sin(now * 8 + i * 1.3) + 1) * 5)
+			end
+
+			bar.Size = UDim2.fromOffset(3, height)
+		end
+
+		task.wait(0.08)
+	end
+end)
