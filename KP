@@ -1,44 +1,322 @@
--- 灵动岛框架 (LocalScript)
+-- ============================================
+-- Roblox 灵动岛 + 音乐播放器 (完整版)
+-- 放入 StarterPlayerScripts 中的 LocalScript
+-- ============================================
+
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
+local SoundService = game:GetService("SoundService")
+local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
+local camera = workspace.CurrentCamera
 
--- 1. 创建主GUI容器
+-- ============================================
+-- 1. 音乐数据（替换成你自己的音频ID）
+-- ============================================
+local playlist = {
+    { title = "歌曲一", artist = "歌手一", id = "rbxassetid://1234567890" },
+    { title = "歌曲二", artist = "歌手二", id = "rbxassetid://0987654321" },
+    { title = "歌曲三", artist = "歌手三", id = "rbxassetid://1122334455" },
+}
+local currentIndex = 1
+local isPlaying = false
+
+-- ============================================
+-- 2. GUI 容器
+-- ============================================
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "DynamicIslandGui"
 screenGui.ResetOnSpawn = false
-screenGui.IgnoreGuiInset = true -- 关键：忽略顶部刘海/状态栏
+screenGui.IgnoreGuiInset = true
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 screenGui.Parent = playerGui
 
--- 2. 灵动岛主Frame (使用相对尺寸，便于用UIScale统一缩放)
+-- ============================================
+-- 3. 灵动岛主框架（紧凑尺寸）
+-- ============================================
+local IDLE_SIZE = UDim2.new(0, 88, 0, 24)
+local EXPANDED_SIZE = UDim2.new(0, 176, 0, 36)
+
 local island = Instance.new("Frame")
 island.Name = "Island"
-island.AnchorPoint = Vector2.new(0.5, 0) -- 顶部居中
-island.Position = UDim2.new(0.5, 0, 0, 10)
-island.Size = UDim2.new(0, 120, 0, 32) -- 初始紧凑尺寸
+island.AnchorPoint = Vector2.new(0.5, 0)
+island.Position = UDim2.new(0.5, 0, 0, 8)
+island.Size = IDLE_SIZE
 island.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 island.BorderSizePixel = 0
 island.ClipsDescendants = true
 island.Parent = screenGui
 
--- 3. 圆角
 local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0, 16) -- 胶囊形状
+corner.CornerRadius = UDim.new(0, 12)
 corner.Parent = island
 
--- 4. 跨平台缩放控制器
+-- 阴影/描边（可选，提升质感）
+local stroke = Instance.new("UIStroke")
+stroke.Color = Color3.fromRGB(60, 60, 60)
+stroke.Thickness = 1
+stroke.Transparency = 0.5
+stroke.Parent = island
+
+-- ============================================
+-- 4. UIScale 跨平台适配
+-- ============================================
 local uiScale = Instance.new("UIScale")
 uiScale.Parent = island
 
--- 核心适配逻辑：根据视口宽度动态调整整体缩放
 local function updateScale()
-    local viewport = workspace.CurrentCamera.ViewportSize
-    -- 基准设计宽度为 400，clamp 防止在极端屏幕上过小或过大
-    local scaleFactor = math.clamp(viewport.X / 400, 0.8, 1.5)
-    uiScale.Scale = scaleFactor
+    local viewport = camera.ViewportSize
+    local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+    local base = isMobile and 480 or 600
+    local minScale = isMobile and 0.75 or 0.65
+    local maxScale = isMobile and 1.2 or 1.0
+    uiScale.Scale = math.clamp(viewport.X / base, minScale, maxScale)
 end
-workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(updateScale)
+
+camera:GetPropertyChangedSignal("ViewportSize"):Connect(updateScale)
 updateScale()
+
+-- ============================================
+-- 5. 内部 UI 元素
+-- ============================================
+
+-- 5.1 空闲状态图标（音符）
+local idleIcon = Instance.new("TextLabel")
+idleIcon.Name = "IdleIcon"
+idleIcon.Size = UDim2.new(1, 0, 1, 0)
+idleIcon.BackgroundTransparency = 1
+idleIcon.Text = "♪"
+idleIcon.TextColor3 = Color3.fromRGB(220, 220, 220)
+idleIcon.TextScaled = true
+idleIcon.Font = Enum.Font.GothamBold
+idleIcon.Parent = island
+
+local idleIconPadding = Instance.new("UIPadding")
+idleIconPadding.PaddingTop = UDim.new(0, 4)
+idleIconPadding.PaddingBottom = UDim.new(0, 4)
+idleIconPadding.Parent = idleIcon
+
+-- 5.2 展开状态容器
+local expandedContent = Instance.new("Frame")
+expandedContent.Name = "ExpandedContent"
+expandedContent.Size = UDim2.new(1, 0, 1, 0)
+expandedContent.BackgroundTransparency = 1
+expandedContent.Visible = false
+expandedContent.Parent = island
+
+-- 专辑封面占位（左）
+local albumCover = Instance.new("Frame")
+albumCover.Name = "AlbumCover"
+albumCover.Size = UDim2.new(0, 28, 0, 28)
+albumCover.Position = UDim2.new(0, 4, 0.5, 0)
+albumCover.AnchorPoint = Vector2.new(0, 0.5)
+albumCover.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+albumCover.BorderSizePixel = 0
+albumCover.Parent = expandedContent
+
+local albumCorner = Instance.new("UICorner")
+albumCorner.CornerRadius = UDim.new(0, 6)
+albumCorner.Parent = albumCover
+
+local albumIcon = Instance.new("TextLabel")
+albumIcon.Size = UDim2.new(1, 0, 1, 0)
+albumIcon.BackgroundTransparency = 1
+albumIcon.Text = "♫"
+albumIcon.TextColor3 = Color3.fromRGB(29, 185, 84)  -- Spotify 绿
+albumIcon.TextScaled = true
+albumIcon.Font = Enum.Font.GothamBold
+albumIcon.Parent = albumCover
+
+-- 歌名 & 歌手（中）
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Name = "Title"
+titleLabel.Size = UDim2.new(0, 80, 0, 12)
+titleLabel.Position = UDim2.new(0, 36, 0.5, -6)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "歌曲名"
+titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+titleLabel.TextSize = 10
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.TextTruncate = Enum.TextTruncate.AtEnd
+titleLabel.Parent = expandedContent
+
+local artistLabel = Instance.new("TextLabel")
+artistLabel.Name = "Artist"
+artistLabel.Size = UDim2.new(0, 80, 0, 10)
+artistLabel.Position = UDim2.new(0, 36, 0.5, 6)
+artistLabel.BackgroundTransparency = 1
+artistLabel.Text = "歌手名"
+artistLabel.TextColor3 = Color3.fromRGB(160, 160, 160)
+artistLabel.TextSize = 9
+artistLabel.TextXAlignment = Enum.TextXAlignment.Left
+artistLabel.Font = Enum.Font.Gotham
+artistLabel.TextTruncate = Enum.TextTruncate.AtEnd
+artistLabel.Parent = expandedContent
+
+-- 播放/暂停按钮（右）
+local playButton = Instance.new("TextButton")
+playButton.Name = "PlayButton"
+playButton.Size = UDim2.new(0, 22, 0, 22)
+playButton.Position = UDim2.new(1, -50, 0.5, 0)
+playButton.AnchorPoint = Vector2.new(0, 0.5)
+playButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+playButton.BorderSizePixel = 0
+playButton.Text = "▶"
+playButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+playButton.TextSize = 12
+playButton.Font = Enum.Font.GothamBold
+playButton.AutoButtonColor = false
+playButton.Parent = expandedContent
+
+local playBtnCorner = Instance.new("UICorner")
+playBtnCorner.CornerRadius = UDim.new(1, 0)
+playBtnCorner.Parent = playButton
+
+-- 下一首按钮（最右）
+local nextButton = Instance.new("TextButton")
+nextButton.Name = "NextButton"
+nextButton.Size = UDim2.new(0, 22, 0, 22)
+nextButton.Position = UDim2.new(1, -24, 0.5, 0)
+nextButton.AnchorPoint = Vector2.new(0, 0.5)
+nextButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+nextButton.BorderSizePixel = 0
+nextButton.Text = "⏭"
+nextButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+nextButton.TextSize = 12
+nextButton.Font = Enum.Font.GothamBold
+nextButton.AutoButtonColor = false
+nextButton.Parent = expandedContent
+
+local nextBtnCorner = Instance.new("UICorner")
+nextBtnCorner.CornerRadius = UDim.new(1, 0)
+nextBtnCorner.Parent = nextButton
+
+-- ============================================
+-- 6. 音乐播放逻辑
+-- ============================================
+local musicSound = Instance.new("Sound")
+musicSound.Name = "DynamicIslandMusic"
+musicSound.Volume = 0.5
+musicSound.Looped = false
+musicSound.Parent = SoundService
+
+local function updatePlayButtonText()
+    playButton.Text = isPlaying and "⏸" or "▶"
+end
+
+local function updateTrackInfo()
+    local track = playlist[currentIndex]
+    titleLabel.Text = track.title
+    artistLabel.Text = track.artist
+end
+
+local function playCurrentTrack()
+    local track = playlist[currentIndex]
+    if musicSound.SoundId ~= track.id then
+        musicSound.SoundId = track.id
+    end
+    musicSound:Play()
+    isPlaying = true
+    updatePlayButtonText()
+    updateTrackInfo()
+end
+
+local function togglePlay()
+    if isPlaying then
+        musicSound:Pause()
+        isPlaying = false
+    else
+        playCurrentTrack()
+    end
+    updatePlayButtonText()
+end
+
+local function nextTrack()
+    currentIndex = currentIndex % #playlist + 1
+    playCurrentTrack()
+end
+
+musicSound.Ended:Connect(function()
+    nextTrack()
+end)
+
+-- ============================================
+-- 7. 展开/收起动画 + 状态管理
+-- ============================================
+local isExpanded = false
+local autoCollapseThread = nil
+
+local function expandIsland()
+    if isExpanded then return end
+    isExpanded = true
+    idleIcon.Visible = false
+    expandedContent.Visible = true
+    
+    local tween = TweenService:Create(island,
+        TweenInfo.new(0.4, Enum.EasingStyle.Spring, Enum.EasingDirection.Out),
+        { Size = EXPANDED_SIZE, BackgroundColor3 = Color3.fromRGB(25, 25, 25) }
+    )
+    tween:Play()
+    
+    -- 自动收起（5秒无操作）
+    if autoCollapseThread then task.cancel(autoCollapseThread) end
+    autoCollapseThread = task.delay(5, function()
+        if isExpanded then collapseIsland() end
+    end)
+end
+
+function collapseIsland()
+    if not isExpanded then return end
+    isExpanded = false
+    
+    local tween = TweenService:Create(island,
+        TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+        { Size = IDLE_SIZE, BackgroundColor3 = Color3.fromRGB(15, 15, 15) }
+    )
+    tween.Completed:Connect(function()
+        idleIcon.Visible = true
+        expandedContent.Visible = false
+    end)
+    tween:Play()
+end
+
+-- ============================================
+-- 8. 事件绑定
+-- ============================================
+
+-- 点击岛屿展开
+island.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+       or input.UserInputType == Enum.UserInputType.Touch then
+        if not isExpanded then
+            expandIsland()
+        end
+    end
+end)
+
+-- 播放/暂停
+playButton.MouseButton1Click:Connect(function()
+    togglePlay()
+    -- 重置自动收起计时
+    if autoCollapseThread then task.cancel(autoCollapseThread) end
+    autoCollapseThread = task.delay(5, function()
+        if isExpanded then collapseIsland() end
+    end)
+end)
+
+-- 下一首
+nextButton.MouseButton1Click:Connect(function()
+    nextTrack()
+    if autoCollapseThread then task.cancel(autoCollapseThread) end
+    autoCollapseThread = task.delay(5, function()
+        if isExpanded then collapseIsland() end
+    end)
+end)
+
+-- 初始化
+updateTrackInfo()
+updatePlayButtonText()
