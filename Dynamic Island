@@ -1,10 +1,17 @@
 --[[
-	Dynamic Island v3.4
+	Dynamic Island v3.4.1
 	Path: StarterPlayer > StarterPlayerScripts > LocalScript
 
-	PC:     左键点击岛展开 / 收起，拖动顶部可移动，点击岛外收起
-	Mobile: 轻点或拖动，逻辑同上
+	PC:     左键点击岛展开 / 收起，拖动展开态标题栏可移动，点击岛外收起
+	Mobile: 轻点或滑动，逻辑同上
 	Keys:   Ctrl+I 展开收起 / Ctrl+M 播放暂停 / Ctrl+R 重置秒表
+
+	v3.4.1 fixes:
+	- collapsedWidth forward-declared (was nil -> runtime error)
+	- musicQueue/recentPlaylist moved to state block (was nil in clear-queue callback)
+	- getPing fully guarded with pcall
+	- island tap/drag now uses pure geometry, ignores gameProcessed inside island
+	- top sheen hidden while expanded
 ]]
 
 local Players = game:GetService("Players")
@@ -165,10 +172,11 @@ local applyTheme, switchTab, openTab
 local expandIsland, collapseIsland
 local showNotification, renderNotifications, updateBadge
 local updateServerTab, updateMusicUI, updateClock
-local loadAndPlay, togglePlay, stopMusicNow, setMusicVolume
+local loadAndPlay, toggleMusic, stopMusicNow, setMusicVolume
 local renderRecent, addRecent, renderQueue, updateLoopBtn
 local updateStopwatchDisplay, updateCountdownDisplay
 local updateCollapsedText, updateMiniProgress
+local collapsedWidth                      -- FIX: was referenced before declaration
 
 local activeTab = "overview"
 local currentMusicId = nil
@@ -178,6 +186,10 @@ local unreadCount = 0
 local isExpanded = false
 local expandToken = 0
 local notificationActive = false
+
+local musicQueue = {}                     -- FIX: moved up (used by clear-queue button)
+local recentPlaylist = {}
+local RECENT_MAX = 6
 
 local animationsEnabled = true
 local fadeEnabled = true
@@ -200,9 +212,10 @@ local cdActive = false
 local cdEndClock = 0
 local cdValue = 0
 
-local dragging = false
-local dragStartPointer = Vector2.new()
-local dragStartPos = UDim2.new()
+local pressMode = nil
+local pressStart = Vector2.new()
+local pressMoved = false
+local dragBasePos = UDim2.new()
 
 -- ============================================================
 -- 4. ScreenGui + shadows + island root
@@ -720,9 +733,9 @@ local ovQuickRow = new("Frame", {
 }, pageOverview)
 
 local QUICK_DEFS = {
-	{ key = "music",  text = "音乐" },
-	{ key = "tools",  text = "计时" },
-	{ key = "server", text = "服务器" },
+	{ key = "music",    text = "音乐" },
+	{ key = "tools",    text = "计时" },
+	{ key = "server",   text = "服务器" },
 	{ key = "settings", text = "设置" },
 }
 for i, def in ipairs(QUICK_DEFS) do
@@ -888,7 +901,7 @@ local musicLoopBtn = mControlDefs[3].button
 local musicClearQueueBtn = mControlDefs[4].button
 
 musicToggleBtn.MouseButton1Click:Connect(function()
-	togglePlay()
+	toggleMusic()
 end)
 
 musicStopBtn.MouseButton1Click:Connect(function()
@@ -914,9 +927,9 @@ local muteBtn = new("TextButton", {
 	BackgroundColor3 = COL.bgSoft,
 	BorderSizePixel = 0,
 	Position = UDim2.fromOffset(12, 14),
-	Size = UDim2.fromOffset(34, 34),
+	Size = UDim2.fromOffset(38, 34),
 	Font = Enum.Font.GothamMedium,
-	TextSize = 12,
+	TextSize = 11,
 	TextColor3 = COL.text,
 	Text = "音量",
 	AutoButtonColor = false,
@@ -939,8 +952,8 @@ local volPct = label(mVolumeCard, {
 local musicVolume = new("TextButton", {
 	BackgroundColor3 = COL.track,
 	BorderSizePixel = 0,
-	Position = UDim2.fromOffset(54, 26),
-	Size = UDim2.new(1, -112, 0, 8),
+	Position = UDim2.fromOffset(58, 26),
+	Size = UDim2.new(1, -118, 0, 8),
 	Text = "",
 	AutoButtonColor = false,
 	ZIndex = 44,
@@ -1073,10 +1086,6 @@ local queueEmpty = label(queueList, {
 	ZIndex = 45,
 })
 
-local musicQueue = {}
-local recentPlaylist = {}
-local RECENT_MAX = 6
-
 -- ============================================================
 -- 9. Tools page
 -- ============================================================
@@ -1123,6 +1132,7 @@ swDefs[2].button.MouseButton1Click:Connect(function()
 	if not swRunning then return end
 	swAccum = swAccum + (os.clock() - swStartClock)
 	swRunning = false
+	updateStopwatchDisplay()
 end)
 
 swDefs[3].button.MouseButton1Click:Connect(function()
@@ -1587,7 +1597,7 @@ local aboutLabel = label(pageSettings, {
 	TextSize = 10,
 	TextColor3 = COL.textFaint,
 	TextXAlignment = Enum.TextXAlignment.Center,
-	Text = "Dynamic Island v3.4",
+	Text = "Dynamic Island v3.4.1",
 	ZIndex = 44,
 })
 
@@ -1645,6 +1655,7 @@ end, function(rel)
 	lastVolume = math.clamp(rel, 0, 1)
 	if isMuted then
 		isMuted = false
+		volPct.TextColor3 = COL.textDim
 	end
 	musicSound.Volume = lastVolume
 	volPct.Text = tostring(math.floor(lastVolume * 100 + 0.5)) .. "%"
@@ -1661,7 +1672,7 @@ end)
 -- 14. Music logic
 -- ============================================================
 
-local function setMusicVolume(v)
+function setMusicVolume(v)
 	v = math.clamp(v, 0, 1)
 	lastVolume = v
 	if not isMuted then
@@ -1669,6 +1680,13 @@ local function setMusicVolume(v)
 	end
 	musicVolumeFill.Size = UDim2.new(v, 0, 1, 0)
 	volPct.Text = tostring(math.floor(v * 100 + 0.5)) .. "%"
+end
+
+function collapsedWidth()
+	if currentMusicId and musicSound.IsLoaded and (musicSound.IsPlaying or musicSound.IsPaused) then
+		return 190
+	end
+	return ISLAND_W
 end
 
 function addRecent(id)
@@ -1931,7 +1949,7 @@ function loadAndPlay(id)
 	end)
 end
 
-function togglePlay()
+function toggleMusic()
 	if not currentMusicId or not musicSound.IsLoaded then
 		showNotification("提示", "请先输入音频 ID 并播放", 2)
 		return
@@ -1985,13 +2003,6 @@ end)
 -- ============================================================
 -- 15. Collapsed text / mini progress
 -- ============================================================
-
-local function collapsedWidth()
-	if currentMusicId and musicSound.IsLoaded and (musicSound.IsPlaying or musicSound.IsPaused) then
-		return 190
-	end
-	return ISLAND_W
-end
 
 function updateCollapsedText()
 	if isExpanded then return end
@@ -2250,7 +2261,7 @@ function applyTheme(index)
 end
 
 -- ============================================================
--- 19. Expand / collapse / drag
+-- 19. Expand / collapse
 -- ============================================================
 
 function expandIsland()
@@ -2269,6 +2280,8 @@ function expandIsland()
 
 	collapsedContent.Visible = false
 	miniProgress.Visible = false
+	topSheen.Visible = false
+	topLine.Visible = false
 
 	if animationsEnabled then
 		rootScale.Scale = 0.94
@@ -2314,6 +2327,8 @@ function collapseIsland()
 		if expandToken ~= token then return end
 		expanded.Visible = false
 		collapsedContent.Visible = true
+		topSheen.Visible = true
+		topLine.Visible = true
 		updateCollapsedText()
 		updateMiniProgress()
 	end)
@@ -2332,11 +2347,9 @@ local function isInsideHeader(p)
 	return p.X >= ap.X and p.X <= ap.X + as.X and p.Y >= ap.Y and p.Y <= ap.Y + as.Y
 end
 
-local function beginDrag(pointer)
-	dragging = true
-	dragStartPointer = Vector2.new(pointer.X, pointer.Y)
-	dragStartPos = root.Position
-end
+-- ============================================================
+-- 20. Input
+-- ============================================================
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if input.UserInputType == Enum.UserInputType.Keyboard then
@@ -2353,7 +2366,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 			end
 			return
 		elseif ctrl and key == Enum.KeyCode.M then
-			togglePlay()
+			toggleMusic()
 			return
 		elseif ctrl and key == Enum.KeyCode.R then
 			swRunning = false
@@ -2365,27 +2378,30 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		return
 	end
 
-	if gameProcessed then return end
-
 	local t = input.UserInputType
 	if t ~= Enum.UserInputType.MouseButton1 and t ~= Enum.UserInputType.Touch then
 		return
 	end
 
-	local p = input.Position
+	local p = Vector2.new(input.Position.X, input.Position.Y)
 	local inside = isInsideRoot(p)
 
 	if isExpanded then
-		if isInsideHeader(p) then
-			beginDrag(p)
-		elseif not inside then
+		if inside and isInsideHeader(p) then
+			pressMode = "header"
+			pressStart = p
+			pressMoved = false
+			dragBasePos = root.Position
+		elseif not inside and not gameProcessed then
 			collapseIsland()
 		end
-		return
-	end
-
-	if inside then
-		beginDrag(p)
+	else
+		if inside then
+			pressMode = "tap"
+			pressStart = p
+			pressMoved = false
+			dragBasePos = root.Position
+		end
 	end
 end)
 
@@ -2397,51 +2413,43 @@ UserInputService.InputChanged:Connect(function(input, gameProcessed)
 		end
 	end
 
-	if not dragging then return end
+	if not pressMode then return end
 	if input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch then
 		return
 	end
 
-	local delta = Vector2.new(input.Position.X, input.Position.Y) - dragStartPointer
-	root.Position = UDim2.fromOffset(
-		dragStartPos.X.Offset + delta.X,
-		dragStartPos.Y.Offset + delta.Y
-	)
+	local p = Vector2.new(input.Position.X, input.Position.Y)
+	local delta = p - pressStart
+	if not pressMoved and delta.Magnitude > 6 then
+		pressMoved = true
+	end
+	if pressMoved then
+		root.Position = UDim2.fromOffset(
+			dragBasePos.X.Offset + delta.X,
+			dragBasePos.Y.Offset + delta.Y
+		)
+	end
 end)
 
 UserInputService.InputEnded:Connect(function(input)
 	if activeSlider and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
 		activeSlider = nil
 	end
-	if dragging and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
-		dragging = false
-	end
-end)
 
--- tap on island to toggle (only when not dragging)
-local tapStart = nil
-root.InputBegan:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-		tapStart = Vector2.new(input.Position.X, input.Position.Y)
-	end
-end)
-
-root.InputEnded:Connect(function(input)
-	if not tapStart then return end
+	if not pressMode then return end
 	if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then
 		return
 	end
-	local moved = (Vector2.new(input.Position.X, input.Position.Y) - tapStart).Magnitude
-	tapStart = nil
-	if moved > 8 then return end
-	if isExpanded then
-		return
+
+	if pressMode == "tap" and not pressMoved then
+		expandIsland()
 	end
-	expandIsland()
+	pressMode = nil
+	pressMoved = false
 end)
 
 -- ============================================================
--- 20. Server info
+-- 21. Server info
 -- ============================================================
 
 function updateServerTab()
@@ -2531,7 +2539,7 @@ function updateServerTab()
 end
 
 -- ============================================================
--- 21. Clock / FPS / ping loop
+-- 22. Clock / ping loop
 -- ============================================================
 
 function updateClock()
@@ -2564,26 +2572,24 @@ task.spawn(function()
 end)
 
 local function getPing()
-	local item = StatsService.Network.ServerStatsItem["Data Ping"]
-	if not item then return nil end
-
 	local ok, val = pcall(function()
-		return item:GetValue()
+		local net = StatsService:FindFirstChild("Network")
+		if not net then return nil end
+		local statsItem = net:FindFirstChild("ServerStatsItem")
+		if not statsItem then return nil end
+		local item = statsItem:FindFirstChild("Data Ping")
+		if not item then return nil end
+		local v = item:GetValue()
+		if type(v) == "number" and v > 0 then
+			return v
+		end
+		local s = item:GetValueString()
+		local n = tonumber(string.match(s or "", "%d+"))
+		return n
 	end)
 	if ok and type(val) == "number" and val > 0 then
 		return math.floor(val + 0.5)
 	end
-
-	local ok2, str = pcall(function()
-		return item:GetValueString()
-	end)
-	if ok2 and type(str) == "string" then
-		local n = tonumber(string.match(str, "%d+"))
-		if n then
-			return n
-		end
-	end
-
 	return nil
 end
 
@@ -2606,7 +2612,7 @@ task.spawn(function()
 end)
 
 -- ============================================================
--- 22. Player join / leave
+-- 23. Player join / leave
 -- ============================================================
 
 local initialPlayersLoaded = false
@@ -2625,7 +2631,7 @@ Players.PlayerRemoving:Connect(function(plr)
 end)
 
 -- ============================================================
--- 23. Render loop
+-- 24. Render loop
 -- ============================================================
 
 local fpsAccum = 0
@@ -2650,7 +2656,6 @@ local function redrawChart()
 end
 
 RunService.RenderStepped:Connect(function(dt)
-	-- shadows follow the island
 	local ap = root.AbsolutePosition
 	local as = root.AbsoluteSize
 
@@ -2663,13 +2668,11 @@ RunService.RenderStepped:Connect(function(dt)
 	shadowNear.Position = UDim2.fromOffset(ap.X - 4, ap.Y - 1)
 	shadowNear.Size = UDim2.fromOffset(as.X + 8, as.Y + 6)
 
-	-- icon breathing glow
 	if not perfMode then
 		glowPhase = glowPhase + dt * 1.8
 		iconGlow.Transparency = 0.55 + math.sin(glowPhase) * 0.22
 	end
 
-	-- music visualiser
 	if pageMusic.Visible and musicSound.IsPlaying and not perfMode then
 		visPhase = visPhase + dt
 		for i, bar in ipairs(visBars) do
@@ -2683,7 +2686,6 @@ RunService.RenderStepped:Connect(function(dt)
 		end
 	end
 
-	-- fps sampling
 	fpsAccum = fpsAccum + dt
 	fpsFrames = fpsFrames + 1
 
@@ -2718,7 +2720,7 @@ RunService.RenderStepped:Connect(function(dt)
 end)
 
 -- ============================================================
--- 24. Viewport change
+-- 25. Viewport change
 -- ============================================================
 
 local function onViewportChanged()
@@ -2747,7 +2749,7 @@ workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
 end)
 
 -- ============================================================
--- 25. Public API
+-- 26. Public API
 -- ============================================================
 
 _G.DynamicIsland = {
@@ -2798,7 +2800,7 @@ _G.DynamicIsland = {
 		stopMusicNow()
 	end,
 	togglePlay = function()
-		togglePlay()
+		toggleMusic()
 	end,
 	setVolume = function(v)
 		setMusicVolume(v)
@@ -2892,10 +2894,11 @@ _G.DynamicIsland = {
 }
 
 -- ============================================================
--- 26. Init
+-- 27. Init
 -- ============================================================
 
 switchTab("overview", true)
+applyTheme(1)
 updateClock()
 updateMusicUI()
 updateLoopBtn()
@@ -2905,8 +2908,7 @@ renderNotifications()
 updateBadge()
 updateStopwatchDisplay()
 updateCountdownDisplay()
-applyTheme(1)
 updateCollapsedText()
 updateMiniProgress()
 
-print("[Dynamic Island] v3.4 loaded")
+print("[Dynamic Island] v3.4.1 loaded")
