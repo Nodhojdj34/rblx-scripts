@@ -1,0 +1,44 @@
+-- 灵动岛框架 (LocalScript)
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+-- 1. 创建主GUI容器
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "DynamicIslandGui"
+screenGui.ResetOnSpawn = false
+screenGui.IgnoreGuiInset = true -- 关键：忽略顶部刘海/状态栏
+screenGui.Parent = playerGui
+
+-- 2. 灵动岛主Frame (使用相对尺寸，便于用UIScale统一缩放)
+local island = Instance.new("Frame")
+island.Name = "Island"
+island.AnchorPoint = Vector2.new(0.5, 0) -- 顶部居中
+island.Position = UDim2.new(0.5, 0, 0, 10)
+island.Size = UDim2.new(0, 120, 0, 32) -- 初始紧凑尺寸
+island.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+island.BorderSizePixel = 0
+island.ClipsDescendants = true
+island.Parent = screenGui
+
+-- 3. 圆角
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 16) -- 胶囊形状
+corner.Parent = island
+
+-- 4. 跨平台缩放控制器
+local uiScale = Instance.new("UIScale")
+uiScale.Parent = island
+
+-- 核心适配逻辑：根据视口宽度动态调整整体缩放
+local function updateScale()
+    local viewport = workspace.CurrentCamera.ViewportSize
+    -- 基准设计宽度为 400，clamp 防止在极端屏幕上过小或过大
+    local scaleFactor = math.clamp(viewport.X / 400, 0.8, 1.5)
+    uiScale.Scale = scaleFactor
+end
+workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(updateScale)
+updateScale()
