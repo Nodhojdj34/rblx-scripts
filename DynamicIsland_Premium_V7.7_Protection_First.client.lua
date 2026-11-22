@@ -1,0 +1,1719 @@
+--[[
+    Roblox Dynamic Island Premium V7.7 Protection-First Edition
+    Single LocalScript for StarterPlayer > StarterPlayerScripts.
+
+    IMPORTANT:
+    - This is a clean reconstruction from the feature requirements, not a source-level
+      merge of the user's previous V7.3 file (that source was not attached).
+    - Client-side Anti-Fling is best-effort only. Server-owned physics can override it.
+    - No exploit APIs, cheats, anti-cheat bypasses, speed/jump modifications, or auto-farming.
+    - Device hardware identifiers (CPU/GPU/IMEI/serial) are not exposed by Roblox and are
+      deliberately reported as unavailable.
+]]
+
+--// Services
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local SoundService = game:GetService("SoundService")
+local Stats = game:GetService("Stats")
+local GuiService = game:GetService("GuiService")
+local Lighting = game:GetService("Lighting")
+
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+--// Cleanup previous copy
+local oldGui = PlayerGui:FindFirstChild("DynamicIslandPremiumV77") or PlayerGui:FindFirstChild("DynamicIslandPremiumV76") or PlayerGui:FindFirstChild("DynamicIslandPremiumV75") or PlayerGui:FindFirstChild("DynamicIslandPremiumV74")
+if oldGui then oldGui:Destroy() end
+
+--// State
+local State = {
+    Expanded = false,
+    CurrentPage = "Home",
+    Accent = Color3.fromRGB(105, 170, 255),
+    Transparency = 0.12,
+    UIScale = 1,
+    Corner = 18,
+    Compact = false,
+    ReducedMotion = false,
+    HighContrast = false,
+    Language = "简体中文",
+    MusicQueue = {},
+    RecentTracks = {},
+    CurrentTrack = 1,
+    Shuffle = false,
+    Repeat = "Off", -- Off / All / One
+    MusicVolume = 0.5,
+    StopwatchRunning = false,
+    StopwatchStart = 0,
+    StopwatchElapsed = 0,
+    Laps = {},
+    Timers = {},
+    Notifications = {},
+    Unread = 0,
+    FPS = 0,
+    Ping = 0,
+    Memory = 0,
+    PerformanceHistory = {},
+    AntiFlingEnabled = true,
+    AntiFlingSensitivity = "Medium",
+    AntiFlingRecover = true,
+    AntiFlingStats = {Triggers = 0, LastEvent = "无"},
+    FocusMode = false,
+    SessionStartedAt = os.clock(),
+    PartProtectionEnabled = false,
+    ProtectedPartNames = {LeftHand=true, RightHand=true, LeftFoot=true, RightFoot=true, LeftLowerArm=true, RightLowerArm=true, LeftLowerLeg=true, RightLowerLeg=true, ["Left Arm"]=true, ["Right Arm"]=true, ["Left Leg"]=true, ["Right Leg"]=true},
+    PlayerEvents = {},
+    Watchlist = {},
+    Diagnostics = {LastSample = "尚未运行", Warnings = 0},
+}
+
+local LanguageList = {
+    {name="简体中文", native="简体中文"},
+    {name="繁體中文", native="繁體中文"},
+    {name="English", native="English"},
+    {name="日本語", native="日本語"},
+    {name="한국어", native="한국어"},
+    {name="Deutsch", native="Deutsch"},
+    {name="Français", native="Français"},
+    {name="Español", native="Español"},
+    {name="Português", native="Português"},
+    {name="Русский", native="Русский"},
+}
+local LanguageIndex = 1
+for i, item in ipairs(LanguageList) do
+    if item.name == State.Language then LanguageIndex = i break end
+end
+
+-- Core interface translations. Unlisted descriptive text safely falls back to English
+-- rather than showing a misleading translation.
+local L = {
+["繁體中文"] = {
+["Control Center"]="控制中心",["Welcome to Dynamic Island Premium"]="歡迎使用 Dynamic Island Premium",
+["Full-featured panel · local utility tools"]="完整功能面板 · 本機輔助工具",["Memory"]="記憶體",
+["Session time"]="本次遊戲時間",["Quick Actions"]="快速操作",["Open Music Player"]="開啟音樂播放器",
+["Open Notifications"]="開啟通知中心",["Enable Focus Mode"]="開啟專注模式",
+["Refresh Performance Stats"]="重新整理效能資料",["Performance values update on the next sample."]="效能資料將於下次取樣更新",
+["Premium Music Player"]="高級音樂播放器",["No track selected"]="尚未選擇歌曲",
+["Add a music ID to begin"]="輸入音樂 ID 開始播放",["Now Playing"]="正在播放",
+["Paused / Idle"]="已暫停 / 閒置",["Audio must be permitted in this experience"]="音訊必須獲得此體驗授權",
+["Seek"]="播放進度",["Volume"]="音量",["Add Music"]="新增音樂",["Add to Playlist"]="加入播放清單",
+["Playlist"]="播放清單",["Queue is empty. Add a music ID above."]="播放清單是空的，請輸入音樂 ID",
+["Clear Playlist (Confirm)"]="清空播放清單（確認）",["Click again to confirm"]="再次點擊確認",
+["Recently Played"]="最近播放",["No history yet"]="暫無紀錄",["Notifications"]="通知中心",
+["Unread"]="未讀",["Mark All Read"]="全部標記為已讀",["Clear Notification History (Confirm)"]="清空通知紀錄（確認）",
+["Device & Player Info"]="裝置與玩家資訊",["Refresh Device Info"]="重新整理裝置資訊",
+["Performance Monitor"]="效能監控",["Recent Performance Samples"]="最近效能取樣",
+["Time Tools"]="時間工具",["Pause"]="暫停",["Start"]="開始",["Record Lap"]="記錄圈速",
+["Reset Stopwatch"]="重設碼錶",["Lap Records"]="圈速紀錄",["Add Countdown (seconds)"]="新增倒數計時（秒）",
+["Create Timer"]="建立計時器",["Local Protection Status"]="本機防護狀態",["Enabled"]="已啟用",
+["Disabled"]="已關閉",["Triggers"]="觸發次數",["Last Event"]="最近事件",
+["Disable Protection"]="關閉防護",["Enable Protection"]="啟用防護",["Protection Notes"]="防護說明",
+["Settings"]="設定中心",["Cycle Accent Color"]="切換主題色",["Apply HEX Color"]="套用 HEX 顏色",
+["UI Transparency"]="介面透明度",["UI Scale"]="介面縮放",["Reset Island Position"]="重設靈動島位置",
+["Island returned to top center."]="靈動島已回到頂部中央",["Reset Appearance"]="恢復預設外觀",
+},
+["日本語"] = {
+["Control Center"]="コントロールセンター",["Welcome to Dynamic Island Premium"]="Dynamic Island Premium へようこそ",
+["Full-featured panel · local utility tools"]="多機能パネル · ローカルユーティリティ",["Memory"]="メモリ",
+["Session time"]="今回のプレイ時間",["Quick Actions"]="クイック操作",["Open Music Player"]="音楽プレイヤーを開く",
+["Open Notifications"]="通知を開く",["Enable Focus Mode"]="集中モードを有効化",
+["Refresh Performance Stats"]="パフォーマンスを更新",["Performance values update on the next sample."]="次回の計測時に更新されます",
+["Premium Music Player"]="プレミアム音楽プレイヤー",["No track selected"]="曲が選択されていません",
+["Add a music ID to begin"]="音楽 ID を入力してください",["Now Playing"]="再生中",
+["Paused / Idle"]="一時停止 / 待機中",["Audio must be permitted in this experience"]="このゲームで許可された音源が必要です",
+["Seek"]="再生位置",["Volume"]="音量",["Add Music"]="音楽を追加",["Add to Playlist"]="プレイリストに追加",
+["Playlist"]="プレイリスト",["Queue is empty. Add a music ID above."]="リストは空です。音楽 ID を追加してください",
+["Recently Played"]="最近再生した曲",["No history yet"]="履歴はありません",["Notifications"]="通知",
+["Unread"]="未読",["Mark All Read"]="すべて既読にする",["Device & Player Info"]="デバイスとプレイヤー情報",
+["Refresh Device Info"]="デバイス情報を更新",["Performance Monitor"]="パフォーマンス監視",
+["Recent Performance Samples"]="最近の測定値",["Time Tools"]="時間ツール",["Pause"]="一時停止",
+["Start"]="開始",["Record Lap"]="ラップを記録",["Reset Stopwatch"]="ストップウォッチをリセット",
+["Lap Records"]="ラップ記録",["Create Timer"]="タイマーを作成",["Local Protection Status"]="ローカル保護状態",
+["Enabled"]="有効",["Disabled"]="無効",["Triggers"]="検出回数",["Last Event"]="前回のイベント",
+["Disable Protection"]="保護を無効化",["Enable Protection"]="保護を有効化",
+["Settings"]="設定",["Cycle Accent Color"]="テーマ色を変更",["Apply HEX Color"]="HEX 色を適用",
+["UI Transparency"]="UI の透明度",["UI Scale"]="UI スケール",["Reset Island Position"]="島の位置をリセット",
+["Reset Appearance"]="外観をリセット",
+},
+["한국어"] = {
+["Control Center"]="제어 센터",["Welcome to Dynamic Island Premium"]="Dynamic Island Premium에 오신 것을 환영합니다",
+["Full-featured panel · local utility tools"]="전체 기능 패널 · 로컬 유틸리티",["Memory"]="메모리",
+["Session time"]="이번 플레이 시간",["Quick Actions"]="빠른 작업",["Open Music Player"]="음악 플레이어 열기",
+["Open Notifications"]="알림 열기",["Enable Focus Mode"]="집중 모드 켜기",["Refresh Performance Stats"]="성능 정보 새로고침",
+["Premium Music Player"]="프리미엄 음악 플레이어",["No track selected"]="선택된 트랙 없음",
+["Add a music ID to begin"]="음악 ID를 입력하세요",["Now Playing"]="재생 중",["Paused / Idle"]="일시 정지 / 대기",
+["Volume"]="볼륨",["Add Music"]="음악 추가",["Add to Playlist"]="재생 목록에 추가",["Playlist"]="재생 목록",
+["Recently Played"]="최근 재생",["No history yet"]="기록 없음",["Notifications"]="알림",["Unread"]="읽지 않음",
+["Mark All Read"]="모두 읽음으로 표시",["Device & Player Info"]="기기 및 플레이어 정보",
+["Refresh Device Info"]="기기 정보 새로고침",["Performance Monitor"]="성능 모니터",
+["Time Tools"]="시간 도구",["Pause"]="일시 정지",["Start"]="시작",["Record Lap"]="랩 기록",
+["Reset Stopwatch"]="스톱워치 초기화",["Create Timer"]="타이머 만들기",["Local Protection Status"]="로컬 보호 상태",
+["Enabled"]="켜짐",["Disabled"]="꺼짐",["Triggers"]="감지 횟수",["Last Event"]="최근 이벤트",
+["Disable Protection"]="보호 끄기",["Enable Protection"]="보호 켜기",["Settings"]="설정",
+["Cycle Accent Color"]="테마 색상 변경",["Apply HEX Color"]="HEX 색상 적용",["UI Transparency"]="UI 투명도",
+["UI Scale"]="UI 크기",["Reset Island Position"]="아일랜드 위치 초기화",["Reset Appearance"]="모양 초기화",
+},
+["Deutsch"] = {
+["Control Center"]="Kontrollzentrum",["Welcome to Dynamic Island Premium"]="Willkommen bei Dynamic Island Premium",
+["Full-featured panel · local utility tools"]="Funktionsübersicht · lokale Werkzeuge",["Memory"]="Speicher",
+["Session time"]="Spielzeit dieser Sitzung",["Quick Actions"]="Schnellaktionen",["Open Music Player"]="Musikplayer öffnen",
+["Open Notifications"]="Mitteilungen öffnen",["Enable Focus Mode"]="Fokusmodus aktivieren",
+["Refresh Performance Stats"]="Leistungsdaten aktualisieren",["Premium Music Player"]="Premium-Musikplayer",
+["No track selected"]="Kein Titel ausgewählt",["Add a music ID to begin"]="Musik-ID eingeben",
+["Now Playing"]="Wird wiedergegeben",["Paused / Idle"]="Pausiert / Inaktiv",["Volume"]="Lautstärke",
+["Add Music"]="Musik hinzufügen",["Add to Playlist"]="Zur Wiedergabeliste",["Playlist"]="Wiedergabeliste",
+["Recently Played"]="Zuletzt gespielt",["No history yet"]="Noch kein Verlauf",["Notifications"]="Mitteilungen",
+["Unread"]="Ungelesen",["Mark All Read"]="Alle als gelesen markieren",["Device & Player Info"]="Geräte- und Spielerinfos",
+["Refresh Device Info"]="Geräteinfos aktualisieren",["Performance Monitor"]="Leistungsmonitor",
+["Time Tools"]="Zeitwerkzeuge",["Pause"]="Pause",["Start"]="Start",["Record Lap"]="Runde speichern",
+["Reset Stopwatch"]="Stoppuhr zurücksetzen",["Create Timer"]="Timer erstellen",["Local Protection Status"]="Lokaler Schutzstatus",
+["Enabled"]="Aktiviert",["Disabled"]="Deaktiviert",["Triggers"]="Auslösungen",["Last Event"]="Letztes Ereignis",
+["Disable Protection"]="Schutz deaktivieren",["Enable Protection"]="Schutz aktivieren",["Settings"]="Einstellungen",
+["Cycle Accent Color"]="Akzentfarbe wechseln",["Apply HEX Color"]="HEX-Farbe anwenden",["UI Transparency"]="UI-Transparenz",
+["UI Scale"]="UI-Skalierung",["Reset Island Position"]="Island-Position zurücksetzen",["Reset Appearance"]="Darstellung zurücksetzen",
+},
+["Français"] = {
+["Control Center"]="Centre de contrôle",["Welcome to Dynamic Island Premium"]="Bienvenue dans Dynamic Island Premium",
+["Full-featured panel · local utility tools"]="Panneau complet · outils locaux",["Memory"]="Mémoire",
+["Session time"]="Durée de cette session",["Quick Actions"]="Actions rapides",["Open Music Player"]="Ouvrir le lecteur audio",
+["Open Notifications"]="Ouvrir les notifications",["Enable Focus Mode"]="Activer le mode concentration",
+["Refresh Performance Stats"]="Actualiser les performances",["Premium Music Player"]="Lecteur audio Premium",
+["No track selected"]="Aucun morceau sélectionné",["Add a music ID to begin"]="Saisissez un ID audio",
+["Now Playing"]="En lecture",["Paused / Idle"]="En pause / Inactif",["Volume"]="Volume",
+["Add Music"]="Ajouter un titre",["Add to Playlist"]="Ajouter à la liste",["Playlist"]="Liste de lecture",
+["Recently Played"]="Écoutés récemment",["No history yet"]="Aucun historique",["Notifications"]="Notifications",
+["Unread"]="Non lus",["Mark All Read"]="Tout marquer comme lu",["Device & Player Info"]="Infos appareil et joueur",
+["Refresh Device Info"]="Actualiser les infos",["Performance Monitor"]="Moniteur de performances",
+["Time Tools"]="Outils de temps",["Pause"]="Pause",["Start"]="Démarrer",["Record Lap"]="Enregistrer le tour",
+["Reset Stopwatch"]="Réinitialiser le chronomètre",["Create Timer"]="Créer un minuteur",["Local Protection Status"]="État de protection locale",
+["Enabled"]="Activé",["Disabled"]="Désactivé",["Triggers"]="Déclenchements",["Last Event"]="Dernier événement",
+["Disable Protection"]="Désactiver la protection",["Enable Protection"]="Activer la protection",["Settings"]="Réglages",
+["Cycle Accent Color"]="Changer la couleur",["Apply HEX Color"]="Appliquer la couleur HEX",["UI Transparency"]="Transparence UI",
+["UI Scale"]="Échelle UI",["Reset Island Position"]="Recentrer l’île",["Reset Appearance"]="Réinitialiser l’apparence",
+},
+["Español"] = {
+["Control Center"]="Centro de control",["Welcome to Dynamic Island Premium"]="Bienvenido a Dynamic Island Premium",
+["Full-featured panel · local utility tools"]="Panel completo · herramientas locales",["Memory"]="Memoria",
+["Session time"]="Tiempo de esta sesión",["Quick Actions"]="Acciones rápidas",["Open Music Player"]="Abrir reproductor",
+["Open Notifications"]="Abrir notificaciones",["Enable Focus Mode"]="Activar modo concentración",
+["Refresh Performance Stats"]="Actualizar rendimiento",["Premium Music Player"]="Reproductor Premium",
+["No track selected"]="No hay canción seleccionada",["Add a music ID to begin"]="Introduce un ID de audio",
+["Now Playing"]="Reproduciendo",["Paused / Idle"]="Pausado / Inactivo",["Volume"]="Volumen",
+["Add Music"]="Añadir música",["Add to Playlist"]="Añadir a la lista",["Playlist"]="Lista de reproducción",
+["Recently Played"]="Reproducido recientemente",["No history yet"]="Sin historial",["Notifications"]="Notificaciones",
+["Unread"]="Sin leer",["Mark All Read"]="Marcar todo como leído",["Device & Player Info"]="Información del dispositivo y jugador",
+["Refresh Device Info"]="Actualizar información",["Performance Monitor"]="Monitor de rendimiento",
+["Time Tools"]="Herramientas de tiempo",["Pause"]="Pausar",["Start"]="Iniciar",["Record Lap"]="Registrar vuelta",
+["Reset Stopwatch"]="Reiniciar cronómetro",["Create Timer"]="Crear temporizador",["Local Protection Status"]="Estado de protección local",
+["Enabled"]="Activado",["Disabled"]="Desactivado",["Triggers"]="Activaciones",["Last Event"]="Último evento",
+["Disable Protection"]="Desactivar protección",["Enable Protection"]="Activar protección",["Settings"]="Ajustes",
+["Cycle Accent Color"]="Cambiar color",["Apply HEX Color"]="Aplicar color HEX",["UI Transparency"]="Transparencia UI",
+["UI Scale"]="Escala UI",["Reset Island Position"]="Restablecer posición",["Reset Appearance"]="Restablecer apariencia",
+},
+["Português"] = {
+["Control Center"]="Central de controle",["Welcome to Dynamic Island Premium"]="Bem-vindo ao Dynamic Island Premium",
+["Full-featured panel · local utility tools"]="Painel completo · ferramentas locais",["Memory"]="Memória",
+["Session time"]="Tempo desta sessão",["Quick Actions"]="Ações rápidas",["Open Music Player"]="Abrir reprodutor de música",
+["Open Notifications"]="Abrir notificações",["Enable Focus Mode"]="Ativar modo foco",["Refresh Performance Stats"]="Atualizar desempenho",
+["Premium Music Player"]="Reprodutor Premium",["No track selected"]="Nenhuma faixa selecionada",
+["Add a music ID to begin"]="Insira um ID de áudio",["Now Playing"]="Tocando",["Paused / Idle"]="Pausado / Inativo",
+["Volume"]="Volume",["Add Music"]="Adicionar música",["Add to Playlist"]="Adicionar à lista",["Playlist"]="Lista de reprodução",
+["Recently Played"]="Tocadas recentemente",["No history yet"]="Sem histórico",["Notifications"]="Notificações",
+["Unread"]="Não lidas",["Mark All Read"]="Marcar todas como lidas",["Device & Player Info"]="Informações do dispositivo e jogador",
+["Refresh Device Info"]="Atualizar informações",["Performance Monitor"]="Monitor de desempenho",["Time Tools"]="Ferramentas de tempo",
+["Pause"]="Pausar",["Start"]="Iniciar",["Record Lap"]="Registrar volta",["Reset Stopwatch"]="Zerar cronômetro",
+["Create Timer"]="Criar temporizador",["Local Protection Status"]="Estado da proteção local",["Enabled"]="Ativado",
+["Disabled"]="Desativado",["Triggers"]="Ativações",["Last Event"]="Último evento",["Disable Protection"]="Desativar proteção",
+["Enable Protection"]="Ativar proteção",["Settings"]="Configurações",["Cycle Accent Color"]="Alterar cor",
+["Apply HEX Color"]="Aplicar cor HEX",["UI Transparency"]="Transparência da interface",["UI Scale"]="Escala da interface",
+["Reset Island Position"]="Redefinir posição",["Reset Appearance"]="Redefinir aparência",
+},
+["Русский"] = {
+["Control Center"]="Центр управления",["Welcome to Dynamic Island Premium"]="Добро пожаловать в Dynamic Island Premium",
+["Full-featured panel · local utility tools"]="Полная панель · локальные инструменты",["Memory"]="Память",
+["Session time"]="Время текущей сессии",["Quick Actions"]="Быстрые действия",["Open Music Player"]="Открыть плеер",
+["Open Notifications"]="Открыть уведомления",["Enable Focus Mode"]="Включить режим фокуса",
+["Refresh Performance Stats"]="Обновить показатели",["Premium Music Player"]="Премиум-плеер",
+["No track selected"]="Трек не выбран",["Add a music ID to begin"]="Введите ID аудио",
+["Now Playing"]="Сейчас играет",["Paused / Idle"]="Пауза / ожидание",["Volume"]="Громкость",
+["Add Music"]="Добавить музыку",["Add to Playlist"]="В плейлист",["Playlist"]="Плейлист",
+["Recently Played"]="Недавно воспроизведено",["No history yet"]="Истории пока нет",["Notifications"]="Уведомления",
+["Unread"]="Непрочитанные",["Mark All Read"]="Отметить все прочитанными",["Device & Player Info"]="Информация об устройстве и игроке",
+["Refresh Device Info"]="Обновить информацию",["Performance Monitor"]="Монитор производительности",
+["Time Tools"]="Инструменты времени",["Pause"]="Пауза",["Start"]="Старт",["Record Lap"]="Записать круг",
+["Reset Stopwatch"]="Сбросить секундомер",["Create Timer"]="Создать таймер",["Local Protection Status"]="Состояние локальной защиты",
+["Enabled"]="Включено",["Disabled"]="Выключено",["Triggers"]="Срабатывания",["Last Event"]="Последнее событие",
+["Disable Protection"]="Отключить защиту",["Enable Protection"]="Включить защиту",["Settings"]="Настройки",
+["Cycle Accent Color"]="Сменить цвет",["Apply HEX Color"]="Применить HEX-цвет",["UI Transparency"]="Прозрачность UI",
+["UI Scale"]="Масштаб UI",["Reset Island Position"]="Сбросить положение",["Reset Appearance"]="Сбросить оформление",
+},
+}
+local function tr(zh, en)
+    if State.Language == "简体中文" then return zh end
+    if State.Language == "English" then return en end
+    local dictionary = L[State.Language]
+    return (dictionary and dictionary[en]) or en
+end
+local function languageDisplayName()
+    for _, item in ipairs(LanguageList) do
+        if item.name == State.Language then return item.native end
+    end
+    return State.Language
+end
+
+--// Theme
+local C = {
+    Background = Color3.fromRGB(8, 8, 10),
+    Panel = Color3.fromRGB(25, 25, 28),
+    Card = Color3.fromRGB(35, 35, 39),
+    Card2 = Color3.fromRGB(48, 48, 53),
+    Text = Color3.fromRGB(248, 248, 250),
+    SubText = Color3.fromRGB(166, 166, 173),
+    Stroke = Color3.fromRGB(88, 88, 94),
+    Good = Color3.fromRGB(95, 214, 155),
+    Warn = Color3.fromRGB(255, 190, 92),
+    Bad = Color3.fromRGB(255, 105, 115),
+}
+local function accent()
+    return State.Accent
+end
+
+--// Helpers
+local function make(class, props, parent)
+    local obj = Instance.new(class)
+    for k, v in pairs(props or {}) do obj[k] = v end
+    obj.Parent = parent
+    return obj
+end
+
+local function corner(obj, radius)
+    make("UICorner", {CornerRadius = UDim.new(0, radius or State.Corner)}, obj)
+end
+
+local function stroke(obj, color, transparency, thickness)
+    make("UIStroke", {
+        Color = color or C.Stroke,
+        Transparency = transparency == nil and 0.45 or transparency,
+        Thickness = thickness or 1
+    }, obj)
+end
+
+local function pad(obj, amount)
+    make("UIPadding", {
+        PaddingLeft = UDim.new(0, amount),
+        PaddingRight = UDim.new(0, amount),
+        PaddingTop = UDim.new(0, amount),
+        PaddingBottom = UDim.new(0, amount),
+    }, obj)
+end
+
+local function list(obj, direction, gap)
+    make("UIListLayout", {
+        FillDirection = direction or Enum.FillDirection.Vertical,
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Padding = UDim.new(0, gap or 8),
+    }, obj)
+end
+
+local function tween(obj, info, props)
+    if State.ReducedMotion then
+        for k, v in pairs(props) do obj[k] = v end
+        return
+    end
+    TweenService:Create(obj, info, props):Play()
+end
+
+local function formatTime(seconds)
+    seconds = math.max(0, math.floor(seconds))
+    local m = math.floor(seconds / 60)
+    local s = seconds % 60
+    local h = math.floor(m / 60)
+    m = m % 60
+    if h > 0 then return string.format("%02d:%02d:%02d", h, m, s) end
+    return string.format("%02d:%02d", m, s)
+end
+
+local function notify(title, message, category)
+    category = category or "Info"
+    table.insert(State.Notifications, 1, {
+        Title = tostring(title),
+        Message = tostring(message),
+        Category = category,
+        Time = os.date("%H:%M:%S"),
+        Read = State.FocusMode,
+    })
+    while #State.Notifications > 80 do table.remove(State.Notifications) end
+    if not State.FocusMode then State.Unread += 1 end
+    if _G.DynamicIslandRefreshNotifications then
+        task.defer(_G.DynamicIslandRefreshNotifications)
+    end
+end
+
+--// Music sound persists in SoundService while this UI is open
+local MusicSound = SoundService:FindFirstChild("DynamicIslandPremiumMusic")
+if not MusicSound then
+    MusicSound = Instance.new("Sound")
+    MusicSound.Name = "DynamicIslandPremiumMusic"
+    MusicSound.Parent = SoundService
+end
+MusicSound.Volume = State.MusicVolume
+
+--// GUI root
+local Gui = make("ScreenGui", {
+    Name = "DynamicIslandPremiumV77",
+    ResetOnSpawn = false,
+    IgnoreGuiInset = true,
+    ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+}, PlayerGui)
+
+local Scale = make("UIScale", {Scale = State.UIScale}, Gui)
+
+local Main = make("Frame", {
+    Name = "Island",
+    AnchorPoint = Vector2.new(0.5, 0),
+    Position = UDim2.new(0.5, 0, 0, 12),
+    Size = UDim2.fromOffset(132, 36),
+    BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+    BackgroundTransparency = 0,
+    BorderSizePixel = 0,
+    ClipsDescendants = true,
+}, Gui)
+corner(Main, 20)
+stroke(Main, Color3.fromRGB(28, 28, 30), 0.18, 1)
+
+local MainGradient = make("UIGradient", {
+    Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(4, 4, 5)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(0, 0, 0)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(7, 7, 9)),
+    }),
+    Rotation = 18,
+}, Main)
+
+local TopBar = make("Frame", {
+    BackgroundTransparency = 1,
+    Size = UDim2.new(1, 0, 0, 50),
+}, Main)
+
+local IslandDot = make("Frame", {
+    Position = UDim2.fromOffset(13, 15),
+    Size = UDim2.fromOffset(8, 8),
+    BackgroundColor3 = Color3.fromRGB(105, 220, 155),
+    BorderSizePixel = 0,
+}, TopBar)
+corner(IslandDot, 4)
+
+local IslandTitle = make("TextLabel", {
+    BackgroundTransparency = 1,
+    Position = UDim2.fromOffset(42, 7),
+    Size = UDim2.new(1, -76, 0, 20),
+    Font = Enum.Font.GothamBold,
+    Text = "Dynamic Island",
+    TextSize = 13,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    TextColor3 = C.Text,
+}, TopBar)
+
+local IslandSub = make("TextLabel", {
+    BackgroundTransparency = 1,
+    Position = UDim2.fromOffset(42, 27),
+    Size = UDim2.new(1, -76, 0, 15),
+    Font = Enum.Font.Gotham,
+    Text = "Now Playing  ·  Premium",
+    TextSize = 10,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    TextColor3 = C.SubText,
+}, TopBar)
+
+local ExpandButton = make("TextButton", {
+    Position = UDim2.new(1, -25, 0, 4),
+    Size = UDim2.fromOffset(18, 28),
+    BackgroundTransparency = 1,
+    Text = "•••",
+    TextColor3 = C.Text,
+    TextSize = 10,
+    Font = Enum.Font.GothamBold,
+    AutoButtonColor = false,
+}, TopBar)
+corner(ExpandButton, 14)
+
+local Waveform = make("Frame", {
+    Name = "MiniWaveform", BackgroundTransparency = 1,
+    Position = UDim2.new(1, -48, 0, 9), Size = UDim2.fromOffset(16, 18),
+}, TopBar)
+for i, h in ipairs({7, 13, 9, 15}) do
+    local bar = make("Frame", {
+        BackgroundColor3 = Color3.fromRGB(235, 235, 240),
+        BorderSizePixel = 0, AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.new(0, (i - 1) * 5 + 2, 0.5, 0),
+        Size = UDim2.fromOffset(2, h),
+    }, Waveform)
+    corner(bar, 2)
+end
+
+local Body = make("Frame", {
+    Position = UDim2.fromOffset(0, 54),
+    Size = UDim2.new(1, 0, 1, -54),
+    BackgroundTransparency = 1,
+}, Main)
+
+local Sidebar = make("Frame", {
+    Size = UDim2.new(0, 92, 1, -12),
+    Position = UDim2.fromOffset(8, 4),
+    BackgroundColor3 = C.Panel,
+    BackgroundTransparency = 0.08,
+    BorderSizePixel = 0,
+}, Body)
+corner(Sidebar, 16)
+pad(Sidebar, 7)
+list(Sidebar, Enum.FillDirection.Vertical, 5)
+
+local PageHost = make("ScrollingFrame", {
+    Position = UDim2.fromOffset(108, 4),
+    Size = UDim2.new(1, -116, 1, -12),
+    BackgroundTransparency = 1,
+    BorderSizePixel = 0,
+    ScrollBarThickness = 3,
+    ScrollBarImageColor3 = accent(),
+    CanvasSize = UDim2.new(),
+    AutomaticCanvasSize = Enum.AutomaticSize.Y,
+}, Body)
+pad(PageHost, 2)
+list(PageHost, Enum.FillDirection.Vertical, 10)
+
+local function clearPage()
+    for _, child in ipairs(PageHost:GetChildren()) do
+        if not child:IsA("UIListLayout") and not child:IsA("UIPadding") then
+            child:Destroy()
+        end
+    end
+end
+
+local function label(parent, text, size, color, bold)
+    return make("TextLabel", {
+        BackgroundTransparency = 1,
+        Size = UDim2.new(1, 0, 0, size or 22),
+        AutomaticSize = Enum.AutomaticSize.Y,
+        Font = bold and Enum.Font.GothamBold or Enum.Font.Gotham,
+        Text = tostring(text or ""),
+        TextSize = bold and 14 or 12,
+        TextColor3 = color or C.Text,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextYAlignment = Enum.TextYAlignment.Top,
+        TextWrapped = true,
+        RichText = false,
+    }, parent)
+end
+
+-- Cards use an internal vertical layout so labels, inputs and buttons never
+-- spawn on top of one another. The supplied height remains the minimum height;
+-- content-heavy cards grow to fit their children.
+local function card(parent, height, useStack)
+    local baseHeight = height or 80
+    local f = make("Frame", {
+        Size = UDim2.new(1, 0, 0, baseHeight),
+        BackgroundColor3 = C.Card,
+        BackgroundTransparency = 0.08,
+        BorderSizePixel = 0,
+        ClipsDescendants = false,
+    }, parent)
+    corner(f, 14)
+    stroke(f, C.Stroke, 0.72, 1)
+    pad(f, 10)
+    if useStack ~= false then
+        local layout = make("UIListLayout", {
+            FillDirection = Enum.FillDirection.Vertical,
+            SortOrder = Enum.SortOrder.LayoutOrder,
+            Padding = UDim.new(0, 6),
+        }, f)
+        layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+            if f.Parent then
+                f.Size = UDim2.new(1, 0, 0, math.max(baseHeight, layout.AbsoluteContentSize.Y + 20))
+            end
+        end)
+        task.defer(function()
+            if f.Parent then
+                f.Size = UDim2.new(1, 0, 0, math.max(baseHeight, layout.AbsoluteContentSize.Y + 20))
+            end
+        end)
+    end
+    return f
+end
+
+local function button(parent, text, callback, width)
+    local b = make("TextButton", {
+        Size = UDim2.new(width or 1, width and 0 or 0, 0, 34),
+        BackgroundColor3 = C.Card2,
+        BorderSizePixel = 0,
+        Text = text,
+        TextColor3 = C.Text,
+        Font = Enum.Font.GothamMedium,
+        TextSize = 11,
+        TextWrapped = false,
+        TextTruncate = Enum.TextTruncate.AtEnd,
+        AutoButtonColor = false,
+    }, parent)
+    corner(b, 10)
+    b.MouseButton1Click:Connect(callback)
+    b.MouseEnter:Connect(function()
+        tween(b, TweenInfo.new(0.12), {BackgroundColor3 = accent()})
+    end)
+    b.MouseLeave:Connect(function()
+        tween(b, TweenInfo.new(0.12), {BackgroundColor3 = C.Card2})
+    end)
+    return b
+end
+
+local function textBox(parent, placeholder, default, height)
+    local t = make("TextBox", {
+        Size = UDim2.new(1, 0, 0, height or 36),
+        BackgroundColor3 = C.Background,
+        BorderSizePixel = 0,
+        Text = default or "",
+        PlaceholderText = placeholder,
+        PlaceholderColor3 = C.SubText,
+        TextColor3 = C.Text,
+        Font = Enum.Font.Gotham,
+        TextSize = 12,
+        ClearTextOnFocus = false,
+    }, parent)
+    corner(t, 10)
+    stroke(t, C.Stroke, 0.7, 1)
+    pad(t, 9)
+    return t
+end
+
+local function slider(parent, title, minValue, maxValue, initial, callback)
+    local wrap = make("Frame", {Size = UDim2.new(1, 0, 0, 54), BackgroundTransparency = 1}, parent)
+    local titleLabel = label(wrap, title .. ": " .. tostring(initial), 18, C.Text, false)
+    local bar = make("Frame", {
+        Position = UDim2.fromOffset(0, 27),
+        Size = UDim2.new(1, 0, 0, 8),
+        BackgroundColor3 = C.Card2,
+        BorderSizePixel = 0,
+    }, wrap)
+    corner(bar, 5)
+    local fill = make("Frame", {
+        Size = UDim2.new((initial-minValue)/(maxValue-minValue), 0, 1, 0),
+        BackgroundColor3 = accent(),
+        BorderSizePixel = 0,
+    }, bar)
+    corner(fill, 5)
+    local knob = make("Frame", {
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.new((initial-minValue)/(maxValue-minValue), 0, 0.5, 0),
+        Size = UDim2.fromOffset(14, 14),
+        BackgroundColor3 = C.Text,
+        BorderSizePixel = 0,
+    }, bar)
+    corner(knob, 7)
+    local dragging = false
+    local function setFromX(x)
+        local ratio = math.clamp((x - bar.AbsolutePosition.X) / math.max(1, bar.AbsoluteSize.X), 0, 1)
+        local value = minValue + (maxValue-minValue)*ratio
+        fill.Size = UDim2.new(ratio, 0, 1, 0)
+        knob.Position = UDim2.new(ratio, 0, 0.5, 0)
+        titleLabel.Text = title .. ": " .. tostring(math.floor(value*100)/100)
+        callback(value)
+    end
+    bar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            setFromX(input.Position.X)
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            setFromX(input.Position.X)
+        end
+    end)
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end)
+    return wrap
+end
+
+--// Music functions
+local function validAssetId(value)
+    value = tostring(value or ""):gsub("%s+", "")
+    local digits = value:match("^%d+$")
+    local uri = value:match("^rbxassetid://(%d+)$")
+    return digits or uri
+end
+
+local function currentTrack()
+    return State.MusicQueue[State.CurrentTrack]
+end
+
+local function addRecent(track)
+    if not track then return end
+    table.insert(State.RecentTracks, 1, track)
+    while #State.RecentTracks > 20 do table.remove(State.RecentTracks) end
+end
+
+local function playTrack(index)
+    if #State.MusicQueue == 0 then
+        notify("音乐播放器", "播放列表为空，请先添加音乐 ID。", "Warning")
+        return
+    end
+    index = math.clamp(index, 1, #State.MusicQueue)
+    State.CurrentTrack = index
+    local track = currentTrack()
+    MusicSound:Stop()
+    MusicSound.SoundId = "rbxassetid://" .. track.Id
+    MusicSound.TimePosition = 0
+    MusicSound.Volume = State.MusicVolume
+    local loaded = MusicSound.IsLoaded
+    if not loaded then
+        notify("正在加载音乐", "正在尝试加载资源 ID: " .. track.Id, "Info")
+    end
+    local started = false
+    local connection
+    connection = MusicSound.Loaded:Connect(function()
+        if started then return end
+        started = true
+        if connection then connection:Disconnect() end
+        MusicSound:Play()
+        addRecent(track)
+        notify("开始播放", track.Name, "Music")
+    end)
+    if MusicSound.IsLoaded then
+        started = true
+        connection:Disconnect()
+        MusicSound:Play()
+        addRecent(track)
+    end
+    task.delay(12, function()
+        if connection and connection.Connected then
+            connection:Disconnect()
+            notify("音乐加载失败", "资源可能不存在、未获授权或无法在当前体验播放。", "Error")
+        end
+    end)
+end
+
+local function nextTrack()
+    if #State.MusicQueue == 0 then return end
+    if State.Repeat == "One" then
+        playTrack(State.CurrentTrack)
+    elseif State.Shuffle and #State.MusicQueue > 1 then
+        local n = State.CurrentTrack
+        while n == State.CurrentTrack do n = math.random(1, #State.MusicQueue) end
+        playTrack(n)
+    elseif State.CurrentTrack < #State.MusicQueue then
+        playTrack(State.CurrentTrack + 1)
+    elseif State.Repeat == "All" then
+        playTrack(1)
+    else
+        MusicSound:Stop()
+    end
+end
+
+local function previousTrack()
+    if MusicSound.TimePosition > 3 then
+        MusicSound.TimePosition = 0
+    elseif State.CurrentTrack > 1 then
+        playTrack(State.CurrentTrack - 1)
+    elseif State.Repeat == "All" and #State.MusicQueue > 0 then
+        playTrack(#State.MusicQueue)
+    end
+end
+
+MusicSound.Ended:Connect(function()
+    if State.Repeat == "One" then
+        playTrack(State.CurrentTrack)
+    else
+        nextTrack()
+    end
+end)
+
+--// Page builders
+local function buildHome()
+    clearPage()
+    label(PageHost, tr("控制中心", "Control Center"), 24, C.Text, true)
+    local c = card(PageHost, 100)
+    label(c, tr("欢迎使用 Dynamic Island Premium", "Welcome to Dynamic Island Premium"), 22, C.Text, true)
+    label(c, tr("完整功能面板 · 本地辅助工具", "Full-featured panel · local utility tools"), 18, C.SubText, false)
+    local perf = card(PageHost, 112)
+    label(perf, "FPS  " .. State.FPS .. "     Ping  " .. State.Ping .. " ms", 24, accent(), true)
+    label(perf, tr("内存", "Memory") .. "  " .. State.Memory .. " MB", 18, C.SubText)
+    label(perf, tr("本次游戏时长", "Session time") .. "  " .. formatTime(os.clock() - State.SessionStartedAt), 18, C.SubText)
+    local actions = card(PageHost, 190)
+    label(actions, tr("快捷操作", "Quick Actions"), 18, C.Text, true)
+    button(actions, tr("打开音乐播放器", "Open Music Player"), function()
+        _G.DynamicIslandNavigate("Music")
+    end)
+    button(actions, tr("查看通知中心", "Open Notifications"), function()
+        _G.DynamicIslandNavigate("Notifications")
+    end)
+    button(actions, State.FocusMode and tr("专注模式：开启（点击关闭）", "Focus Mode: On (tap to disable)") or tr("开启专注模式", "Enable Focus Mode"), function()
+        State.FocusMode = not State.FocusMode
+        notify("Focus Mode", State.FocusMode and "专注模式已开启" or "专注模式已关闭", "Info")
+        _G.DynamicIslandNavigate("Home")
+    end)
+    button(actions, tr("刷新性能数据", "Refresh Performance Stats"), function()
+        notify("Performance", tr("性能数据将在下一次采样更新。", "Performance values update on the next sample."), "Info")
+        _G.DynamicIslandNavigate("Performance")
+    end)
+end
+
+local function buildMusic()
+    clearPage()
+    label(PageHost, tr("Premium 音乐播放器", "Premium Music Player"), 24, C.Text, true)
+
+    local hero = card(PageHost, 176, false)
+    local cover = make("Frame", {
+        Size = UDim2.fromOffset(112, 112),
+        Position = UDim2.fromOffset(10, 10),
+        BackgroundColor3 = accent(),
+        BorderSizePixel = 0,
+    }, hero)
+    corner(cover, 18)
+    local coverIcon = make("TextLabel", {
+        BackgroundTransparency = 1,
+        Size = UDim2.fromScale(1, 1),
+        Text = "MUSIC",
+        TextColor3 = Color3.new(1,1,1),
+        Font = Enum.Font.GothamBold,
+        TextSize = 54,
+    }, cover)
+    local track = currentTrack()
+    local heroTitle = label(hero, track and track.Name or tr("尚未播放歌曲", "No track selected"), 24, C.Text, true)
+    heroTitle.Position = UDim2.fromOffset(136, 16)
+    heroTitle.Size = UDim2.new(1, -156, 0, 32)
+    heroTitle.TextTruncate = Enum.TextTruncate.AtEnd
+    local heroId = label(hero, track and ("ID: " .. track.Id) or tr("添加音乐 ID 开始播放", "Add a music ID to begin"), 20, C.SubText)
+    heroId.Position = UDim2.fromOffset(136, 51)
+    heroId.Size = UDim2.new(1, -156, 0, 22)
+    heroId.TextTruncate = Enum.TextTruncate.AtEnd
+    local heroStatus = label(hero, MusicSound.IsPlaying and tr("正在播放", "Now Playing") or tr("已暂停 / 未播放", "Paused / Idle"), 20, accent())
+    heroStatus.Position = UDim2.fromOffset(136, 78)
+    heroStatus.Size = UDim2.new(1, -156, 0, 22)
+    heroStatus.TextWrapped = false
+    heroStatus.TextTruncate = Enum.TextTruncate.AtEnd
+    local heroHint = label(hero, tr("播放资源需获当前体验授权", "Audio must be permitted in this experience"), 34, C.SubText)
+    heroHint.Position = UDim2.fromOffset(136, 106)
+    heroHint.Size = UDim2.new(1, -156, 0, 48)
+    heroHint.TextWrapped = true
+
+    local seekCard = card(PageHost, 82)
+    local timeLabel = label(seekCard, formatTime(MusicSound.TimePosition) .. " / " .. formatTime(MusicSound.TimeLength), 18, C.SubText)
+    slider(seekCard, tr("播放进度", "Seek"), 0, math.max(1, MusicSound.TimeLength), MusicSound.TimePosition, function(v)
+        if MusicSound.TimeLength > 0 then
+            pcall(function() MusicSound.TimePosition = math.clamp(v, 0, MusicSound.TimeLength) end)
+        end
+    end)
+
+    local controls = card(PageHost, 92)
+    local row = make("Frame", {Size = UDim2.new(1,0,0,38), BackgroundTransparency = 1}, controls)
+    local horizontal = make("UIListLayout", {
+        FillDirection = Enum.FillDirection.Horizontal,
+        HorizontalAlignment = Enum.HorizontalAlignment.Center,
+        VerticalAlignment = Enum.VerticalAlignment.Center,
+        Padding = UDim.new(0, 7),
+    }, row)
+    button(row, "PREV", previousTrack, 0.16)
+    button(row, MusicSound.IsPlaying and "PAUSE" or "PLAY", function()
+        if MusicSound.IsPlaying then MusicSound:Pause()
+        elseif currentTrack() then
+            if MusicSound.SoundId == "rbxassetid://" .. currentTrack().Id then MusicSound:Play()
+            else playTrack(State.CurrentTrack) end
+        else notify("音乐播放器", "请先添加音乐 ID。", "Warning") end
+        _G.DynamicIslandNavigate("Music")
+    end, 0.18)
+    button(row, "NEXT", nextTrack, 0.16)
+    button(row, State.Shuffle and "随机:开" or "随机:关", function()
+        State.Shuffle = not State.Shuffle
+        _G.DynamicIslandNavigate("Music")
+    end, 0.2)
+    button(row, "循环:" .. State.Repeat, function()
+        State.Repeat = State.Repeat == "Off" and "All" or (State.Repeat == "All" and "One" or "Off")
+        _G.DynamicIslandNavigate("Music")
+    end, 0.2)
+
+    local volumeCard = card(PageHost, 72)
+    slider(volumeCard, tr("音量", "Volume"), 0, 1, State.MusicVolume, function(v)
+        State.MusicVolume = v
+        MusicSound.Volume = v
+    end)
+
+    local addCard = card(PageHost, 122)
+    label(addCard, tr("添加音乐", "Add Music"), 18, C.Text, true)
+    local idBox = textBox(addCard, "Music ID / rbxassetid://...", "", 34)
+    button(addCard, tr("添加到播放列表", "Add to Playlist"), function()
+        local id = validAssetId(idBox.Text)
+        if not id then
+            notify("无效音乐 ID", "请输入数字 ID 或 rbxassetid://数字。", "Warning")
+            return
+        end
+        table.insert(State.MusicQueue, {Id = id, Name = "Audio " .. id})
+        if #State.MusicQueue == 1 then State.CurrentTrack = 1 end
+        notify("已添加", "音乐已加入播放列表。", "Success")
+        _G.DynamicIslandNavigate("Music")
+    end)
+
+    local queue = card(PageHost, math.max(86, 44 + #State.MusicQueue * 48))
+    label(queue, tr("播放列表", "Playlist") .. "  (" .. #State.MusicQueue .. ")", 18, C.Text, true)
+    if #State.MusicQueue == 0 then
+        label(queue, tr("列表为空。输入音乐 ID 添加歌曲。", "Queue is empty. Add a music ID above."), 32, C.SubText)
+    else
+        for i, item in ipairs(State.MusicQueue) do
+            local line = make("Frame", {Size = UDim2.new(1,0,0,38), BackgroundColor3 = i == State.CurrentTrack and C.Card2 or C.Panel, BorderSizePixel = 0}, queue)
+            corner(line, 9)
+            local name = make("TextButton", {
+                BackgroundTransparency = 1,
+                Position = UDim2.fromOffset(8,0),
+                Size = UDim2.new(1,-65,1,0),
+                Text = (i == State.CurrentTrack and ">  " or "   ") .. item.Name .. "  [" .. item.Id .. "]",
+                TextColor3 = C.Text,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                Font = Enum.Font.Gotham,
+                TextSize = 10,
+            }, line)
+            name.MouseButton1Click:Connect(function() playTrack(i); _G.DynamicIslandNavigate("Music") end)
+            local removeButton = button(line, "X", function()
+                table.remove(State.MusicQueue, i)
+                if #State.MusicQueue == 0 then
+                    State.CurrentTrack = 1
+                    MusicSound:Stop()
+                elseif i < State.CurrentTrack then
+                    State.CurrentTrack -= 1
+                elseif i == State.CurrentTrack then
+                    State.CurrentTrack = math.min(i, #State.MusicQueue)
+                    playTrack(State.CurrentTrack)
+                end
+                _G.DynamicIslandNavigate("Music")
+            end, 0.16)
+            removeButton.AnchorPoint = Vector2.new(1, 0.5)
+            removeButton.Position = UDim2.new(1, -5, 0.5, 0)
+            removeButton.Size = UDim2.fromOffset(34, 30)
+        end
+    end
+    button(queue, tr("清空播放列表（确认）", "Clear Playlist (Confirm)"), function()
+        local confirm = button(queue, tr("再次点击确认清空", "Click again to confirm"), function()
+            State.MusicQueue = {}
+            State.CurrentTrack = 1
+            MusicSound:Stop()
+            _G.DynamicIslandNavigate("Music")
+        end)
+        confirm.BackgroundColor3 = C.Bad
+    end)
+
+    local recent = card(PageHost, math.max(60, 36 + #State.RecentTracks * 24))
+    label(recent, tr("最近播放", "Recently Played"), 18, C.Text, true)
+    if #State.RecentTracks == 0 then label(recent, tr("暂无记录", "No history yet"), 22, C.SubText)
+    else
+        for _, item in ipairs(State.RecentTracks) do
+            label(recent, item.Name .. "  [" .. item.Id .. "]", 20, C.SubText)
+        end
+    end
+end
+
+local function buildNotifications()
+    clearPage()
+    label(PageHost, tr("通知中心", "Notifications"), 24, C.Text, true)
+    label(PageHost, tr("未读", "Unread") .. ": " .. State.Unread, 20, accent())
+    button(PageHost, tr("全部标记为已读", "Mark All Read"), function()
+        for _, n in ipairs(State.Notifications) do n.Read = true end
+        State.Unread = 0
+        _G.DynamicIslandNavigate("Notifications")
+    end)
+    button(PageHost, tr("清空通知历史（确认）", "Clear Notification History (Confirm)"), function()
+        button(PageHost, tr("再次点击确认清空通知", "Click again to confirm"), function()
+            State.Notifications = {}
+            State.Unread = 0
+            _G.DynamicIslandNavigate("Notifications")
+        end)
+    end)
+    for _, n in ipairs(State.Notifications) do
+        local c = card(PageHost, 70)
+        label(c, "[" .. n.Category .. "] " .. n.Title .. "  ·  " .. n.Time, 20, n.Read and C.SubText or accent(), true)
+        label(c, n.Message, 34, C.Text)
+    end
+end
+
+local function buildDevice()
+    clearPage()
+    label(PageHost, tr("设备与玩家信息", "Device & Player Info"), 24, C.Text, true)
+    local viewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(0,0)
+    local platform = UserInputService.TouchEnabled and "Touch / Mobile" or (UserInputService.GamepadEnabled and "Gamepad" or "Keyboard / Mouse")
+    local rows = {
+        {"Player", LocalPlayer.Name},
+        {"Display Name", LocalPlayer.DisplayName},
+        {"UserId", tostring(LocalPlayer.UserId)},
+        {"Platform", platform},
+        {"Viewport", math.floor(viewport.X) .. " × " .. math.floor(viewport.Y)},
+        {"Touch Enabled", tostring(UserInputService.TouchEnabled)},
+        {"Keyboard Enabled", tostring(UserInputService.KeyboardEnabled)},
+        {"Gamepad Enabled", tostring(UserInputService.GamepadEnabled)},
+        {"CPU / GPU / IMEI / Serial", "Unavailable (Roblox API restriction)"},
+    }
+    for _, item in ipairs(rows) do
+        local c = card(PageHost, 48)
+        label(c, item[1], 16, C.SubText)
+        label(c, item[2], 22, C.Text, true)
+    end
+    button(PageHost, tr("刷新设备信息", "Refresh Device Info"), buildDevice)
+end
+
+local function buildPerformance()
+    clearPage()
+    label(PageHost, tr("性能监控", "Performance Monitor"), 24, C.Text, true)
+    local c = card(PageHost, 100)
+    label(c, "FPS: " .. State.FPS, 22, accent(), true)
+    label(c, "Ping: " .. State.Ping .. " ms", 22, C.Text)
+    label(c, tr("内存", "Memory") .. ": " .. State.Memory .. " MB", 22, C.Text)
+    label(c, "Diagnostics: " .. State.Diagnostics.LastSample .. " · Low-FPS samples: " .. State.Diagnostics.Warnings, 18, C.SubText)
+    label(PageHost, tr("最近性能采样", "Recent Performance Samples"), 18, C.Text, true)
+    for i = math.max(1, #State.PerformanceHistory - 19), #State.PerformanceHistory do
+        local p = State.PerformanceHistory[i]
+        if p then label(PageHost, string.format("%s  FPS %d  Ping %d ms  Mem %d MB", p.Time, p.FPS, p.Ping, p.Memory), 20, C.SubText) end
+    end
+end
+
+local function buildTime()
+    clearPage()
+    label(PageHost, tr("时间工具", "Time Tools"), 24, C.Text, true)
+    local clock = card(PageHost, 58)
+    label(clock, os.date("%Y-%m-%d  %H:%M:%S"), 30, accent(), true)
+
+    local sw = card(PageHost, 116)
+    local swText = label(sw, formatTime(State.StopwatchElapsed + (State.StopwatchRunning and (os.clock()-State.StopwatchStart) or 0)), 28, C.Text, true)
+    button(sw, State.StopwatchRunning and tr("暂停秒表", "Pause") or tr("启动秒表", "Start"), function()
+        if State.StopwatchRunning then
+            State.StopwatchElapsed += os.clock() - State.StopwatchStart
+            State.StopwatchRunning = false
+        else
+            State.StopwatchStart = os.clock()
+            State.StopwatchRunning = true
+        end
+        _G.DynamicIslandNavigate("Time")
+    end)
+    button(sw, tr("记录圈速", "Record Lap"), function()
+        local elapsed = State.StopwatchElapsed + (State.StopwatchRunning and (os.clock()-State.StopwatchStart) or 0)
+        table.insert(State.Laps, elapsed)
+        _G.DynamicIslandNavigate("Time")
+    end)
+    button(sw, tr("重置秒表", "Reset Stopwatch"), function()
+        State.StopwatchRunning = false
+        State.StopwatchElapsed = 0
+        State.Laps = {}
+        _G.DynamicIslandNavigate("Time")
+    end)
+    local laps = card(PageHost, math.max(48, 28 + #State.Laps * 22))
+    label(laps, tr("圈速记录", "Lap Records"), 18, C.Text, true)
+    for i, lap in ipairs(State.Laps) do label(laps, "Lap " .. i .. "  " .. formatTime(lap), 18, C.SubText) end
+
+    local timerCard = card(PageHost, 130)
+    label(timerCard, tr("添加倒计时（秒）", "Add Countdown (seconds)"), 18, C.Text, true)
+    local timerBox = textBox(timerCard, "60", "60", 34)
+    button(timerCard, tr("创建倒计时", "Create Timer"), function()
+        local seconds = tonumber(timerBox.Text)
+        if not seconds or seconds <= 0 then
+            notify("倒计时", "请输入大于 0 的秒数。", "Warning")
+            return
+        end
+        table.insert(State.Timers, {Ends = os.clock() + seconds, Duration = seconds, Done = false})
+        notify("倒计时已创建", tostring(seconds) .. " 秒", "Success")
+        _G.DynamicIslandNavigate("Time")
+    end)
+    for i, timer in ipairs(State.Timers) do
+        local remain = math.max(0, timer.Ends - os.clock())
+        local t = card(PageHost, 48)
+        label(t, "Timer " .. i .. "  ·  " .. formatTime(remain) .. (timer.Done and "  ✓" or ""), 22, timer.Done and C.Good or C.Text, true)
+    end
+end
+
+local function buildAntiFling()
+    clearPage()
+    label(PageHost, "V7.7 · Protection Center", 24, C.Text, true)
+    local status = card(PageHost, 92)
+    label(status, tr("本地防护状态", "Local Protection Status"), 18, C.SubText)
+    label(status, State.AntiFlingEnabled and tr("已启用", "Enabled") or tr("已关闭", "Disabled"), 26, State.AntiFlingEnabled and C.Good or C.Warn, true)
+    label(status, tr("触发次数", "Triggers") .. ": " .. State.AntiFlingStats.Triggers, 18, C.Text)
+    label(status, tr("最近事件", "Last Event") .. ": " .. State.AntiFlingStats.LastEvent, 18, C.SubText)
+    button(PageHost, State.AntiFlingEnabled and tr("关闭防护", "Disable Protection") or tr("启用防护", "Enable Protection"), function()
+        State.AntiFlingEnabled = not State.AntiFlingEnabled
+        _G.DynamicIslandNavigate("AntiFling")
+    end)
+    button(PageHost, tr("灵敏度：", "Sensitivity: ") .. State.AntiFlingSensitivity, function()
+        State.AntiFlingSensitivity = State.AntiFlingSensitivity == "Low" and "Medium" or (State.AntiFlingSensitivity == "Medium" and "High" or "Low")
+        _G.DynamicIslandNavigate("AntiFling")
+    end)
+    button(PageHost, State.AntiFlingRecover and tr("冲击缓解：开启", "Impact Damping: On") or tr("冲击缓解：关闭", "Impact Damping: Off"), function()
+        State.AntiFlingRecover = not State.AntiFlingRecover
+        _G.DynamicIslandNavigate("AntiFling")
+    end)
+
+    local parts = card(PageHost, 150)
+    label(parts, tr("指定部位碰撞保护", "Selected Body-Part Collision Guard"), 18, C.Text, true)
+    label(parts, tr("只管理手、脚、前臂和小腿等非核心部位；不修改 HumanoidRootPart、躯干或头部。关闭时恢复记录的原始 CanCollide。", "Targets hands, feet, lower arms and lower legs only. Root, torso and head are never changed. Turning it off restores saved CanCollide values."), 48, C.SubText)
+    local partGroups = {
+        {"Hands", {"LeftHand", "RightHand"}},
+        {"Feet", {"LeftFoot", "RightFoot"}},
+        {"Lower arms", {"LeftLowerArm", "RightLowerArm"}},
+        {"Lower legs", {"LeftLowerLeg", "RightLowerLeg"}},
+        {"R6 arms", {"Left Arm", "Right Arm"}},
+        {"R6 legs", {"Left Leg", "Right Leg"}},
+    }
+    for _, group in ipairs(partGroups) do
+        local allOn = true
+        for _, partName in ipairs(group[2]) do if not State.ProtectedPartNames[partName] then allOn = false end end
+        button(parts, (allOn and "✓  " or "○  ") .. group[1], function()
+            for _, partName in ipairs(group[2]) do State.ProtectedPartNames[partName] = not allOn end
+            if State.PartProtectionEnabled and _G.DynamicIslandApplyPartGuard then _G.DynamicIslandApplyPartGuard() end
+            _G.DynamicIslandNavigate("AntiFling")
+        end)
+    end
+    button(parts, State.PartProtectionEnabled and tr("关闭指定部位保护并恢复", "Disable Part Guard & Restore") or tr("启用指定部位保护", "Enable Selected-Part Guard"), function()
+        State.PartProtectionEnabled = not State.PartProtectionEnabled
+        if _G.DynamicIslandApplyPartGuard then _G.DynamicIslandApplyPartGuard() end
+        notify("Part Guard", State.PartProtectionEnabled and "Selected limb collision flags applied locally." or "Saved collision flags restored.", "Protection")
+        _G.DynamicIslandNavigate("AntiFling")
+    end)
+    label(parts, tr("重要：这是客户端本地属性管理，不等于服务器碰撞组，也不能保证阻止其他玩家的服务器权威物理。可靠防护需在自己的游戏服务端配置 Collision Groups。", "Important: this only manages local part properties. It is not a server collision group and cannot guarantee blocking server-authoritative physics. Reliable protection requires server-side Collision Groups in your own experience."), 52, C.Warn)
+
+    local info = card(PageHost, 128)
+    label(info, tr("防护说明", "Protection Notes"), 18, C.Text, true)
+    label(info, tr("检测水平速度、角速度、加速度和位置突变；连续样本判定后才尝试缓解。不会传送回旧位置，不会修改其他玩家，也不会自动举报或处罚。", "Checks horizontal speed, spin, acceleration and displacement; mitigation requires repeated suspicious samples. No stale-position teleport, no changes to other players, and no automatic reports or punishments."), 76, C.SubText)
+end
+
+local function buildPlayerWatch()
+    clearPage()
+    label(PageHost, tr("玩家监测", "Player Monitor"), 24, C.Text, true)
+    local summary = card(PageHost, 84)
+    label(summary, tr("可疑碰撞事件", "Suspicious proximity / impact events") .. ": " .. #State.PlayerEvents, 20, accent(), true)
+    label(summary, tr("监测仅记录附近玩家线索，不代表对方作弊或恶意。请人工判断。", "Nearby-player context is logged only; it does not prove cheating or malicious intent. Review manually."), 44, C.SubText)
+    local watch = card(PageHost, 84)
+    label(watch, tr("手动观察名单", "Manual Watchlist"), 18, C.Text, true)
+    local idBox = textBox(watch, "Player name or UserId", "", 34)
+    button(watch, tr("添加 / 移除观察名单", "Add / Remove Watchlist"), function()
+        local query = string.lower(idBox.Text:gsub("^%s+", ""):gsub("%s+$", ""))
+        if query == "" then return end
+        local target
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if string.lower(plr.Name) == query or tostring(plr.UserId) == query then target = plr break end
+        end
+        if not target then notify("Player Monitor", "Player not found in this server.", "Warning"); return end
+        State.Watchlist[target.UserId] = not State.Watchlist[target.UserId] or nil
+        notify("Player Monitor", target.Name .. (State.Watchlist[target.UserId] and " added to watchlist." or " removed from watchlist."), "Info")
+        _G.DynamicIslandNavigate("PlayerWatch")
+    end)
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer then
+            local entry = card(PageHost, 48)
+            label(entry, (State.Watchlist[plr.UserId] and "★  " or "•  ") .. plr.DisplayName .. "  (@" .. plr.Name .. ")", 20, State.Watchlist[plr.UserId] and C.Warn or C.Text, true)
+            label(entry, "UserId: " .. plr.UserId, 18, C.SubText)
+        end
+    end
+    label(PageHost, tr("最近事件记录", "Recent Event Log"), 18, C.Text, true)
+    if #State.PlayerEvents == 0 then label(PageHost, tr("暂无可疑事件。", "No suspicious events recorded."), 26, C.SubText)
+    else
+        for i = 1, math.min(20, #State.PlayerEvents) do
+            local e = State.PlayerEvents[i]
+            local entry = card(PageHost, 58)
+            label(entry, e.Time .. " · " .. e.Player, 20, C.Text, true)
+            label(entry, e.Detail, 36, C.SubText)
+        end
+    end
+end
+
+local function buildSettings()
+    clearPage()
+    label(PageHost, tr("设置中心", "Settings"), 24, C.Text, true)
+    button(PageHost, tr("界面语言：", "Interface Language: ") .. languageDisplayName() .. "  ›", function()
+        LanguageIndex = (LanguageIndex % #LanguageList) + 1
+        State.Language = LanguageList[LanguageIndex].name
+        _G.DynamicIslandNavigate("Settings")
+    end)
+    button(PageHost, tr("切换主题色", "Cycle Accent Color"), function()
+        local colors = {
+            Color3.fromRGB(105,170,255),
+            Color3.fromRGB(183,130,255),
+            Color3.fromRGB(92,220,190),
+            Color3.fromRGB(255,145,125),
+            Color3.fromRGB(255,205,100),
+        }
+        local nextIndex = 1
+        for i, color in ipairs(colors) do
+            if math.abs(color.R-State.Accent.R)<0.01 and math.abs(color.G-State.Accent.G)<0.01 then nextIndex = (i % #colors)+1 end
+        end
+        State.Accent = colors[nextIndex]
+        _G.DynamicIslandApplyTheme()
+    end)
+    local hex = textBox(PageHost, "#69AAFF", "#69AAFF", 36)
+    button(PageHost, tr("应用 HEX 颜色", "Apply HEX Color"), function()
+        local h = hex.Text:gsub("#","")
+        if #h == 6 and h:match("^%x+$") then
+            local r = tonumber(h:sub(1,2),16)
+            local g = tonumber(h:sub(3,4),16)
+            local b = tonumber(h:sub(5,6),16)
+            State.Accent = Color3.fromRGB(r,g,b)
+            _G.DynamicIslandApplyTheme()
+        else
+            notify("颜色格式错误", "请输入类似 #69AAFF 的 HEX 颜色。", "Warning")
+        end
+    end)
+    slider(PageHost, tr("界面透明度", "UI Transparency"), 0, 0.45, State.Transparency, function(v)
+        State.Transparency = v
+        Main.BackgroundTransparency = v
+    end)
+    slider(PageHost, tr("UI 缩放", "UI Scale"), 0.75, 1.2, State.UIScale, function(v)
+        State.UIScale = v
+        Scale.Scale = v
+    end)
+    button(PageHost, State.ReducedMotion and tr("减少动画：开启", "Reduced Motion: On") or tr("减少动画：关闭", "Reduced Motion: Off"), function()
+        State.ReducedMotion = not State.ReducedMotion
+        _G.DynamicIslandNavigate("Settings")
+    end)
+    button(PageHost, State.HighContrast and tr("高对比度：开启", "High Contrast: On") or tr("高对比度：关闭", "High Contrast: Off"), function()
+        State.HighContrast = not State.HighContrast
+        _G.DynamicIslandApplyTheme()
+    end)
+    button(PageHost, State.Compact and tr("紧凑模式：开启", "Compact Mode: On") or tr("紧凑模式：关闭", "Compact Mode: Off"), function()
+        State.Compact = not State.Compact
+        _G.DynamicIslandNavigate("Settings")
+    end)
+    button(PageHost, State.FocusMode and tr("专注模式：开启", "Focus Mode: On") or tr("专注模式：关闭", "Focus Mode: Off"), function()
+        State.FocusMode = not State.FocusMode
+        notify("Focus Mode", State.FocusMode and "专注模式已开启" or "专注模式已关闭", "Info")
+        _G.DynamicIslandNavigate("Settings")
+    end)
+    button(PageHost, tr("灵动岛位置复位", "Reset Island Position"), function()
+        Main.Position = UDim2.new(0.5, 0, 0, 12)
+        notify("UI", tr("灵动岛已回到顶部中央。", "Island returned to top center."), "Success")
+    end)
+    button(PageHost, tr("恢复默认外观", "Reset Appearance"), function()
+        State.Accent = Color3.fromRGB(105,170,255)
+        State.Transparency = 0.12
+        State.UIScale = 1
+        State.Corner = 18
+        State.Compact = false
+        State.ReducedMotion = false
+        State.HighContrast = false
+        _G.DynamicIslandApplyTheme()
+        _G.DynamicIslandNavigate("Settings")
+    end)
+end
+
+--// Navigation
+local Pages = {
+    {"Home", "HOME", "首页"},
+    {"Music", "MUSIC", "音乐"},
+    {"Notifications", "BELL", "通知"},
+    {"Device", "DEVICE", "设备"},
+    {"Performance", "PERF", "性能"},
+    {"Time", "TIME", "时间"},
+    {"AntiFling", "SHIELD", "防甩飞"},
+    {"PlayerWatch", "DEVICE", "玩家监测"},
+    {"Settings", "SET", "设置"},
+}
+
+local function drawNavIcon(parent, kind)
+    -- All icons are assembled from native Roblox Frames/UIStrokes. No font glyphs,
+    -- emoji fonts, external image IDs or downloaded assets are required.
+    local root = make("Frame", {Name = "VectorIcon", Size = UDim2.fromOffset(22, 22), BackgroundTransparency = 1, ZIndex = 3}, parent)
+    local ink = C.Text
+    local function part(x, y, w, h, radius, rotation, filled)
+        local f = make("Frame", {
+            Position = UDim2.fromOffset(x, y), Size = UDim2.fromOffset(w, h),
+            BackgroundColor3 = ink, BackgroundTransparency = filled and 0 or 1,
+            BorderSizePixel = 0, Rotation = rotation or 0, ZIndex = 4,
+        }, root)
+        if radius then corner(f, radius) end
+        if not filled then stroke(f, ink, 0, 1.5) end
+        return f
+    end
+    if kind == "HOME" then
+        part(3, 3, 11, 2, 1,  -38, true); part(11, 3, 11, 2, 1, 38, true)
+        part(5, 9, 12, 10, 2, 0, false); part(10, 13, 4, 6, 1, 0, true)
+    elseif kind == "MUSIC" then
+        part(13, 2, 2, 13, 1, -8, true); part(13, 2, 7, 2, 1, -8, true)
+        local a = make("Frame", {Position=UDim2.fromOffset(5,13), Size=UDim2.fromOffset(7,6), BackgroundColor3=ink, BorderSizePixel=0}, root); corner(a, 4)
+        local b = make("Frame", {Position=UDim2.fromOffset(13,12), Size=UDim2.fromOffset(7,6), BackgroundColor3=ink, BorderSizePixel=0}, root); corner(b, 4)
+    elseif kind == "BELL" then
+        part(5, 4, 12, 13, 7, 0, false); part(3, 15, 16, 2, 1, 0, true); part(9, 18, 4, 2, 1, 0, true)
+    elseif kind == "DEVICE" then
+        part(4, 1, 14, 17, 3, 0, false); part(9, 15, 4, 1, 1, 0, true); part(8, 19, 6, 1, 1, 0, true)
+    elseif kind == "PERF" then
+        part(3, 12, 4, 8, 1, 0, true); part(9, 7, 4, 13, 1, 0, true); part(15, 3, 4, 17, 1, 0, true)
+    elseif kind == "TIME" then
+        part(2, 2, 18, 18, 10, 0, false); part(10, 5, 2, 7, 1, 0, true); part(11, 11, 6, 2, 1, 0, true)
+    elseif kind == "SHIELD" then
+        part(5, 2, 12, 16, 2, 0, false); part(8, 10, 5, 2, 1, 35, true); part(11, 8, 7, 2, 1, -45, true)
+    elseif kind == "SET" then
+        part(4, 4, 14, 14, 8, 0, false); part(9, 9, 4, 4, 3, 0, false)
+        part(10, 0, 2, 4, 1, 0, true); part(10, 18, 2, 4, 1, 0, true)
+        part(0, 10, 4, 2, 1, 0, true); part(18, 10, 4, 2, 1, 0, true)
+    end
+    return root
+end
+
+local Builders = {
+    Home = buildHome,
+    Music = buildMusic,
+    Notifications = buildNotifications,
+    Device = buildDevice,
+    Performance = buildPerformance,
+    Time = buildTime,
+    AntiFling = buildAntiFling,
+    PlayerWatch = buildPlayerWatch,
+    Settings = buildSettings,
+}
+
+local function navigate(page)
+    State.CurrentPage = page
+    local navLabels = {
+        ["简体中文"]={"首页","音乐","通知","设备","性能","时间","防甩飞","玩家","设置"},
+        ["繁體中文"]={"首頁","音樂","通知","裝置","效能","時間","防甩飛","玩家","設定"},
+        ["English"]={"Home","Music","Alerts","Device","Stats","Time","Safety","Players","Settings"},
+        ["日本語"]={"ホーム","音楽","通知","端末","性能","時間","保護","プレイヤー","設定"},
+        ["한국어"]={"홈","음악","알림","기기","성능","시간","보호","플레이어","설정"},
+        ["Deutsch"]={"Start","Musik","Hinweise","Gerät","Leistung","Zeit","Schutz","Spieler","Setup"},
+        ["Français"]={"Accueil","Musique","Alertes","Appareil","Stats","Temps","Protection","Joueurs","Réglages"},
+        ["Español"]={"Inicio","Música","Avisos","Dispositivo","Rendimiento","Tiempo","Protección","Jugadores","Ajustes"},
+        ["Português"]={"Início","Música","Avisos","Dispositivo","Desempenho","Tempo","Proteção","Jogadores","Ajustes"},
+        ["Русский"]={"Главная","Музыка","Уведомл.","Устройство","Статус","Время","Защита","Игроки","Настройки"},
+    }
+    for index, info in ipairs(Pages) do
+        local child = Sidebar:FindFirstChild(info[1])
+        if child and child:IsA("TextButton") then
+            child.BackgroundColor3 = child.Name == page and accent() or C.Card
+            local navText = child:FindFirstChild("NavText")
+            if navText then navText.Text = (navLabels[State.Language] or navLabels["简体中文"])[index] or info[3] end
+        end
+    end
+    local builder = Builders[page]
+    if builder then builder() end
+end
+_G.DynamicIslandNavigate = navigate
+
+local function applyTheme()
+    Main.BackgroundTransparency = State.Transparency
+    Scale.Scale = State.UIScale
+    for _, child in ipairs(Sidebar:GetChildren()) do
+        if child:IsA("TextButton") then
+            child.BackgroundColor3 = child.Name == State.CurrentPage and accent() or C.Card
+        end
+    end
+    local s = Main:FindFirstChildOfClass("UIStroke")
+    if s then s.Color = Color3.fromRGB(54, 54, 58) end
+    MainGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(0,0,0)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(0,0,0)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(5,5,6)),
+    })
+    navigate(State.CurrentPage)
+end
+_G.DynamicIslandApplyTheme = applyTheme
+
+for pageIndex, info in ipairs(Pages) do
+    local b = make("TextButton", {
+        Name = info[1],
+        Size = UDim2.new(1,0,0,35),
+        BackgroundColor3 = C.Card,
+        BorderSizePixel = 0,
+        Text = "",
+        TextColor3 = C.Text,
+        Font = Enum.Font.GothamBold,
+        TextSize = 11,
+        AutoButtonColor = false,
+    }, Sidebar)
+    corner(b, 10)
+    drawNavIcon(b, info[2]).Position = UDim2.fromOffset(6, 6)
+    local navLabels = {
+        ["简体中文"]={"首页","音乐","通知","设备","性能","时间","防甩飞","玩家","设置"},
+        ["繁體中文"]={"首頁","音樂","通知","裝置","效能","時間","防甩飛","玩家","設定"},
+        ["English"]={"Home","Music","Alerts","Device","Stats","Time","Safety","Players","Settings"},
+        ["日本語"]={"ホーム","音楽","通知","端末","性能","時間","保護","プレイヤー","設定"},
+        ["한국어"]={"홈","음악","알림","기기","성능","시간","보호","플레이어","설정"},
+        ["Deutsch"]={"Start","Musik","Hinweise","Gerät","Leistung","Zeit","Schutz","Spieler","Setup"},
+        ["Français"]={"Accueil","Musique","Alertes","Appareil","Stats","Temps","Protection","Joueurs","Réglages"},
+        ["Español"]={"Inicio","Música","Avisos","Dispositivo","Rendimiento","Tiempo","Protección","Jugadores","Ajustes"},
+        ["Português"]={"Início","Música","Avisos","Dispositivo","Desempenho","Tempo","Proteção","Jogadores","Ajustes"},
+        ["Русский"]={"Главная","Музыка","Уведомл.","Устройство","Статус","Время","Защита","Игроки","Настройки"},
+    }
+    local navText = make("TextLabel", {
+        Name = "NavText", BackgroundTransparency = 1,
+        Position = UDim2.fromOffset(32, 0), Size = UDim2.new(1, -35, 1, 0),
+        Font = Enum.Font.GothamMedium, Text = (navLabels[State.Language] or navLabels["简体中文"])[pageIndex] or info[3], TextSize = 10,
+        TextColor3 = C.Text, TextXAlignment = Enum.TextXAlignment.Left,
+        TextTruncate = Enum.TextTruncate.AtEnd,
+    }, b)
+    b.MouseButton1Click:Connect(function() navigate(info[1]) end)
+    b.MouseEnter:Connect(function()
+        if State.CurrentPage ~= info[1] then tween(b, TweenInfo.new(0.12), {BackgroundColor3 = C.Card2}) end
+    end)
+    b.MouseLeave:Connect(function()
+        if State.CurrentPage ~= info[1] then tween(b, TweenInfo.new(0.12), {BackgroundColor3 = C.Card}) end
+    end)
+end
+
+--// Expand / collapse
+local expandedSize = UDim2.fromOffset(390, 520)
+local collapsedSize = UDim2.fromOffset(132, 36)
+local updateResponsive
+local function setExpanded(value)
+    State.Expanded = value
+    Body.Visible = value
+    ExpandButton.Text = value and "×" or "•••"
+    IslandTitle.Visible = value
+    IslandSub.Visible = value
+    IslandDot.Size = value and UDim2.fromOffset(22, 22) or UDim2.fromOffset(8, 8)
+    IslandDot.Position = value and UDim2.fromOffset(15, 15) or UDim2.fromOffset(13, 15)
+    Waveform.Visible = not value
+    local camera = workspace.CurrentCamera
+    local viewport = camera and camera.ViewportSize or Vector2.new(900,700)
+    local width = math.min(value and 390 or 132, math.max(value and 300 or 132, viewport.X - 20))
+    local height = math.min(value and 520 or 38, math.max(240, viewport.Y - 36))
+    tween(Main, TweenInfo.new(State.ReducedMotion and 0 or 0.25, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+        Size = value and UDim2.fromOffset(width,height) or UDim2.fromOffset(width,36)
+    })
+    if value then
+        task.delay(0.03, function()
+            Body.Visible = true
+            updateResponsive()
+        end)
+    end
+end
+ExpandButton.MouseButton1Click:Connect(function() setExpanded(not State.Expanded) end)
+TopBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        local start = input.Position
+        local startPos = Main.Position
+        local moveConnection
+        moveConnection = UserInputService.InputChanged:Connect(function(changed)
+            if changed.UserInputType == Enum.UserInputType.MouseMovement or changed.UserInputType == Enum.UserInputType.Touch then
+                local delta = changed.Position - start
+                local camera = workspace.CurrentCamera
+                local viewport = camera and camera.ViewportSize or Vector2.new(900, 700)
+                local halfW = Main.AbsoluteSize.X * 0.5
+                local maxOffsetX = math.max(0, viewport.X * 0.5 - halfW - 8)
+                local minOffsetX = -maxOffsetX
+                local nextX = math.clamp(startPos.X.Offset + delta.X, minOffsetX, maxOffsetX)
+                local nextY = math.clamp(startPos.Y.Offset + delta.Y, 8, math.max(8, viewport.Y - Main.AbsoluteSize.Y - 8))
+                Main.Position = UDim2.new(0.5, nextX, 0, nextY)
+            end
+        end)
+        local endConnection
+        endConnection = UserInputService.InputEnded:Connect(function(ended)
+            if ended.UserInputType == Enum.UserInputType.MouseButton1 or ended.UserInputType == Enum.UserInputType.Touch then
+                if moveConnection then moveConnection:Disconnect() end
+                if endConnection then endConnection:Disconnect() end
+            end
+        end)
+    end
+end)
+
+--// Optional notification BindableEvent exposed under PlayerGui for local scripts
+local notifyEvent = PlayerGui:FindFirstChild("IslandNotify")
+if not notifyEvent then
+    notifyEvent = Instance.new("BindableEvent")
+    notifyEvent.Name = "IslandNotify"
+    notifyEvent.Parent = PlayerGui
+end
+notifyEvent.Event:Connect(function(title, message, category)
+    notify(title, message, category)
+end)
+
+--// Anti-Fling V4.0: multi-sample detection + cautious local damping; never stale-teleport.
+-- A LocalScript cannot override server-authoritative physics. The safest client response
+-- is to reduce extreme horizontal spin/velocity when this client owns the assembly.
+local anti = {
+    LastPosition = nil,
+    LastVelocity = Vector3.zero,
+    LastSampleAt = 0,
+    LastTriggerAt = 0,
+    Suspicion = 0,
+    Character = nil,
+    LastNoticeAt = 0,
+}
+local function getCharacterParts()
+    local character = LocalPlayer.Character
+    if not character then return end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    local root = character:FindFirstChild("HumanoidRootPart")
+    if humanoid and root then return character, humanoid, root end
+end
+
+local function isExpectedMovement(humanoid, velocity)
+    local state = humanoid:GetState()
+    if humanoid.SeatPart or state == Enum.HumanoidStateType.Seated
+        or state == Enum.HumanoidStateType.Swimming
+        or state == Enum.HumanoidStateType.Climbing
+        or state == Enum.HumanoidStateType.Dead then
+        return true
+    end
+    -- Normal jumps/falls are not ignored wholesale. Only modest vertical-only motion
+    -- is treated as expected; strong horizontal launches remain detectable in mid-air.
+    local horizontal = Vector3.new(velocity.X, 0, velocity.Z).Magnitude
+    local vertical = math.abs(velocity.Y)
+    return (state == Enum.HumanoidStateType.Jumping or state == Enum.HumanoidStateType.Freefall)
+        and horizontal < 42 and vertical < 105
+end
+
+local savedPartCollision = setmetatable({}, {__mode = "k"})
+local guardedPartNames = State.ProtectedPartNames
+local function applyPartGuard()
+    local character = LocalPlayer.Character
+    if not character then return end
+    for _, part in ipairs(character:GetDescendants()) do
+        if part:IsA("BasePart") then
+            if State.PartProtectionEnabled and guardedPartNames[part.Name] then
+                if savedPartCollision[part] == nil then savedPartCollision[part] = part.CanCollide end
+                part.CanCollide = false
+            elseif savedPartCollision[part] ~= nil then
+                part.CanCollide = savedPartCollision[part]
+                savedPartCollision[part] = nil
+            end
+        end
+    end
+end
+_G.DynamicIslandApplyPartGuard = applyPartGuard
+
+local function nearestOtherPlayer(maxDistance)
+    local _, _, root = getCharacterParts()
+    if not root then return nil end
+    local best, bestDistance
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character then
+            local otherRoot = plr.Character:FindFirstChild("HumanoidRootPart")
+            if otherRoot then
+                local distance = (otherRoot.Position - root.Position).Magnitude
+                if distance <= maxDistance and (not bestDistance or distance < bestDistance) then
+                    best, bestDistance = plr, distance
+                end
+            end
+        end
+    end
+    return best, bestDistance
+end
+
+local function antiFlingStep(dt)
+    if not State.AntiFlingEnabled then
+        anti.LastPosition = nil
+        anti.Suspicion = 0
+        return
+    end
+    local character, humanoid, root = getCharacterParts()
+    if not character then return end
+    if anti.Character ~= character then
+        anti.Character = character
+        anti.LastPosition = nil
+        anti.LastVelocity = Vector3.zero
+        anti.LastSampleAt = 0
+        anti.Suspicion = 0
+    end
+
+    local now = os.clock()
+    local velocity = root.AssemblyLinearVelocity
+    local angular = root.AssemblyAngularVelocity
+    local position = root.Position
+    if not anti.LastPosition then
+        anti.LastPosition = position
+        anti.LastVelocity = velocity
+        anti.LastSampleAt = now
+        return
+    end
+
+    local elapsed = math.max(0.025, now - anti.LastSampleAt)
+    local acceleration = (velocity - anti.LastVelocity).Magnitude / elapsed
+    local horizontalSpeed = Vector3.new(velocity.X, 0, velocity.Z).Magnitude
+    local horizontalDelta = Vector3.new(position.X - anti.LastPosition.X, 0, position.Z - anti.LastPosition.Z).Magnitude / elapsed
+    local sensitivity = State.AntiFlingSensitivity
+    local thresholds = {
+        Low = {speed=125, angular=38, accel=700, displacement=135},
+        Medium = {speed=95, angular=27, accel=480, displacement=105},
+        High = {speed=72, angular=20, accel=340, displacement=82},
+    }
+    local t = thresholds[sensitivity] or thresholds.Medium
+    local suspicious = horizontalSpeed > t.speed
+        or angular.Magnitude > t.angular
+        or acceleration > t.accel
+        or horizontalDelta > t.displacement
+
+    if isExpectedMovement(humanoid, velocity) and horizontalSpeed < t.speed * 1.25
+        and angular.Magnitude < t.angular * 1.4 then
+        suspicious = false
+    end
+
+    if suspicious then
+        anti.Suspicion = math.min(anti.Suspicion + 1, 6)
+    else
+        anti.Suspicion = math.max(0, anti.Suspicion - 1)
+    end
+
+    local needed = sensitivity == "High" and 2 or 3
+    local triggered = anti.Suspicion >= needed and (now - anti.LastTriggerAt) > 0.8
+    if triggered and humanoid.Health > 0 then
+        anti.LastTriggerAt = now
+        anti.Suspicion = 0
+        State.AntiFlingStats.Triggers += 1
+        State.AntiFlingStats.LastEvent = os.date("%H:%M:%S") .. " · 异常运动"
+        local nearbyPlayer, nearbyDistance = nearestOtherPlayer(18)
+        local clue = nearbyPlayer and (nearbyPlayer.Name .. " (" .. math.floor(nearbyDistance) .. " studs)") or "No nearby player"
+        table.insert(State.PlayerEvents, 1, {Time=os.date("%H:%M:%S"), Player=clue, Detail="Local movement anomaly · " .. string.format("HSpeed %.1f / Spin %.1f / Accel %.1f", horizontalSpeed, angular.Magnitude, acceleration)})
+        while #State.PlayerEvents > 40 do table.remove(State.PlayerEvents) end
+        if now - anti.LastNoticeAt > 4 then
+            anti.LastNoticeAt = now
+            notify("防甩飞检测到异常运动", "正在尝试减弱水平冲击；不会传送到旧位置，避免落点不安全。", "Protection")
+        end
+
+        local canControl = false
+        pcall(function() canControl = root:CanSetNetworkOwnership() end)
+        if canControl and State.AntiFlingRecover then
+            pcall(function()
+                -- Dampen only after repeated abnormal samples. Never move the character
+                -- to a remembered CFrame: stale recovery points can be cliffs or voids.
+                local current = root.AssemblyLinearVelocity
+                local h = Vector3.new(current.X, 0, current.Z)
+                local horizontalLimit = 42
+                if h.Magnitude > horizontalLimit then
+                    h = h.Unit * horizontalLimit
+                end
+                -- Limit extreme launch/fall speed without zeroing Y or cancelling gravity.
+                local vertical = math.clamp(current.Y, -85, 85)
+                root.AssemblyLinearVelocity = Vector3.new(h.X, vertical, h.Z)
+
+                local spin = root.AssemblyAngularVelocity
+                if spin.Magnitude > 10 then
+                    root.AssemblyAngularVelocity = spin.Unit * 10
+                end
+            end)
+        end
+    end
+
+    anti.LastPosition = position
+    anti.LastVelocity = velocity
+    anti.LastSampleAt = now
+end
+
+--// Runtime monitoring
+local frameCount = 0
+local fpsElapsed = 0
+local sampleElapsed = 0
+local updateElapsed = 0
+local connections = {}
+
+table.insert(connections, RunService.RenderStepped:Connect(function(dt)
+    frameCount += 1
+    fpsElapsed += dt
+    sampleElapsed += dt
+    updateElapsed += dt
+    if fpsElapsed >= 1 then
+        State.FPS = math.floor(frameCount / fpsElapsed + 0.5)
+        frameCount = 0
+        fpsElapsed = 0
+    end
+    if sampleElapsed >= 2 then
+        sampleElapsed = 0
+        local ping = 0
+        local memory = 0
+        pcall(function()
+            local item = Stats.Network.ServerStatsItem["Data Ping"]
+            ping = math.floor(item:GetValue())
+        end)
+        pcall(function()
+            memory = math.floor(Stats:GetTotalMemoryUsageMb())
+        end)
+        State.Ping = ping
+        State.Memory = memory
+        State.Diagnostics.LastSample = os.date("%H:%M:%S")
+        if State.FPS > 0 and State.FPS < 20 then State.Diagnostics.Warnings += 1 end
+        table.insert(State.PerformanceHistory, {
+            Time = os.date("%H:%M:%S"),
+            FPS = State.FPS,
+            Ping = State.Ping,
+            Memory = State.Memory,
+        })
+        while #State.PerformanceHistory > 60 do table.remove(State.PerformanceHistory, 1) end
+    end
+    if updateElapsed >= 0.5 then
+        updateElapsed = 0
+        if State.CurrentPage == "Home" then
+            -- Keep the compact top-line status current without rebuilding the page.
+            IslandSub.Text = MusicSound.IsPlaying and ("MUSIC  " .. (currentTrack() and currentTrack().Name or "Playing")) or ("FPS " .. State.FPS .. " · Ping " .. State.Ping .. " ms")
+        end
+        if State.CurrentPage == "Time" then
+            -- Re-rendering the page is intentionally avoided every frame to prevent UI churn.
+        end
+    end
+    antiFlingStep(dt)
+end))
+
+--// Character reset tracking
+table.insert(connections, LocalPlayer.CharacterAdded:Connect(function()
+    anti.LastPosition = nil
+    anti.LastVelocity = Vector3.zero
+    anti.SafeCFrame = nil
+    anti.Suspicion = 0
+    task.wait(0.5)
+    if State.PartProtectionEnabled then applyPartGuard() end
+end))
+
+--// Responsive viewport
+updateResponsive = function()
+    local camera = workspace.CurrentCamera
+    if not camera then return end
+    local viewport = camera.ViewportSize
+    local maxWidth = math.max(260, viewport.X - 16)
+    local targetWidth = math.min(State.Expanded and 390 or 132, maxWidth)
+    if State.Expanded then
+        Main.Size = UDim2.fromOffset(targetWidth, math.min(520, math.max(280, viewport.Y - 28)))
+        local compactWidth = targetWidth < 390
+        Sidebar.Size = UDim2.new(0, compactWidth and 66 or 92, 1, -12)
+        Sidebar.Position = UDim2.fromOffset(6, 4)
+        Sidebar.UIPadding.PaddingLeft = UDim.new(0, compactWidth and 4 or 7)
+        Sidebar.UIPadding.PaddingRight = UDim.new(0, compactWidth and 4 or 7)
+        local sideLayout = Sidebar:FindFirstChildOfClass("UIListLayout")
+        if sideLayout then sideLayout.Padding = UDim.new(0, compactWidth and 3 or 5) end
+        for _, navButton in ipairs(Sidebar:GetChildren()) do
+            if navButton:IsA("TextButton") then
+                navButton.Size = UDim2.new(1, 0, 0, compactWidth and 30 or 35)
+                navButton.TextSize = compactWidth and 13 or 15
+                local navText = navButton:FindFirstChild("NavText")
+                local navIcon = navButton:FindFirstChild("VectorIcon")
+                if navText then navText.Visible = not compactWidth end
+                if navIcon then navIcon.Position = compactWidth and UDim2.fromOffset(22, 6) or UDim2.fromOffset(6, 6) end
+            end
+        end
+        PageHost.Position = UDim2.fromOffset(compactWidth and 78 or 108, 4)
+        PageHost.Size = UDim2.new(1, -(compactWidth and 86 or 116), 1, -12)
+    else
+        Main.Size = UDim2.fromOffset(targetWidth, 36)
+    end
+end
+if workspace.CurrentCamera then
+    table.insert(connections, workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(updateResponsive))
+end
+updateResponsive()
+
+--// Notifications refresh hook
+_G.DynamicIslandRefreshNotifications = function()
+    if State.CurrentPage == "Notifications" then navigate("Notifications") end
+end
+
+--// Initial render
+navigate("Home")
+setExpanded(false)
+
+--// Cleanup
+Gui.Destroying:Connect(function()
+    for _, connection in ipairs(connections) do
+        pcall(function() connection:Disconnect() end)
+    end
+    if _G.DynamicIslandNavigate == navigate then _G.DynamicIslandNavigate = nil end
+    if _G.DynamicIslandApplyTheme == applyTheme then _G.DynamicIslandApplyTheme = nil end
+    if _G.DynamicIslandRefreshNotifications then _G.DynamicIslandRefreshNotifications = nil end
+    if _G.DynamicIslandApplyPartGuard == applyPartGuard then _G.DynamicIslandApplyPartGuard = nil end
+    if State.PartProtectionEnabled then
+        State.PartProtectionEnabled = false
+        applyPartGuard()
+    end
+end)
+
+notify("Dynamic Island Premium", "V7.7 Protection-First 已启动。原有工具已保留，新增指定部位本地属性管理与玩家事件线索记录。", "Success")
