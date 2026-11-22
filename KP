@@ -1,499 +1,580 @@
--- ============================================================
--- Roblox 灵动岛 + Spotify + ID输入 + 设备信息 (紧凑优化版)
--- 位置: StarterPlayerScripts 中的 LocalScript
--- ============================================================
 
-local Players          = game:GetService("Players")
-local TweenService     = game:GetService("TweenService")
+--==================================================
+-- APPLE DYNAMIC ISLAND FOR ROBLOX
+-- Version 2.0
+-- PC + MOBILE
+-- LocalScript
+-- StarterPlayer > StarterPlayerScripts
+--==================================================
+
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
-local SoundService     = game:GetService("SoundService")
-local RunService       = game:GetService("RunService")
+local RunService = game:GetService("RunService")
+local SoundService = game:GetService("SoundService")
+local Stats = game:GetService("Stats")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local player    = Players.LocalPlayer
-local playerGui = player:WaitForChild("PlayerGui")
-local camera    = workspace.CurrentCamera
-while not camera do task.wait() camera = workspace.CurrentCamera end
+local Player = Players.LocalPlayer
+local PlayerGui = Player:WaitForChild("PlayerGui")
 
--- ============================================================
--- 1. 默认音乐数据 (★ 请替换成你自己的ID ★)
--- ============================================================
-local playlist = {
-    { title = "Starboy", artist = "The Weeknd", id = "rbxassetid://1234567890" },
-    { title = "Blinding Lights", artist = "The Weeknd", id = "rbxassetid://0987654321" },
+--==================================================
+-- CONFIG
+--==================================================
+
+local CONFIG = {
+    MusicId = "rbxassetid://0",
+    MusicName = "Now Playing",
+    ArtistName = "Apple Music",
+
+    CompactWidth = 138,
+    CompactHeight = 38,
+
+    ExpandedWidth = 320,
+    ExpandedHeight = 205,
+
+    TopOffset = 8,
+    AnimationTime = 0.35,
+    AutoCloseTime = 4,
+
+    ShowClock = true,
+    ShowPing = true,
+    ShowBattery = true,
 }
-local currentIndex = 1
-local isPlaying = false
-local isExpanded = false
 
--- ============================================================
--- 2. 尺寸常量 (缩小了尺寸，适应紧凑布局)
--- ============================================================
-local IDLE_SIZE     = UDim2.new(0, 90, 0, 26)
-local EXPANDED_SIZE = UDim2.new(0, 270, 0, 56) 
-local CORNER_IDLE   = UDim.new(1, 0)
-local CORNER_EXPAND = UDim.new(0, 16)
+--==================================================
+-- CLEAN OLD GUI
+--==================================================
 
-local SPOTIFY_GREEN  = Color3.fromRGB(29, 185, 84)
-local SPOTIFY_BG     = Color3.fromRGB(18, 18, 18)
-local SPOTIFY_SECOND = Color3.fromRGB(179, 179, 179)
-local SPOTIFY_CARD   = Color3.fromRGB(28, 28, 30)
+local old = PlayerGui:FindFirstChild("AppleDynamicIsland")
+if old then
+    old:Destroy()
+end
 
--- FPS 计算
-local frameCount = 0
-local currentFPS = 60
-RunService.RenderStepped:Connect(function(dt)
-    frameCount = frameCount + 1
-    if frameCount >= 10 then
-        currentFPS = math.floor(1 / math.max(dt, 0.001))
-        frameCount = 0
+--==================================================
+-- COLORS
+--==================================================
+
+local BLACK = Color3.fromRGB(0, 0, 0)
+local WHITE = Color3.fromRGB(255, 255, 255)
+local GRAY = Color3.fromRGB(155, 155, 155)
+local GREEN = Color3.fromRGB(48, 220, 110)
+local DARK = Color3.fromRGB(32, 32, 32)
+
+--==================================================
+-- GUI
+--==================================================
+
+local GUI = Instance.new("ScreenGui")
+GUI.Name = "AppleDynamicIsland"
+GUI.ResetOnSpawn = false
+GUI.IgnoreGuiInset = true
+GUI.DisplayOrder = 999
+GUI.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+GUI.Parent = PlayerGui
+
+local Main = Instance.new("Frame")
+Main.Name = "Island"
+Main.AnchorPoint = Vector2.new(0.5, 0)
+Main.Position = UDim2.new(0.5, 0, 0, CONFIG.TopOffset)
+Main.Size = UDim2.fromOffset(
+    CONFIG.CompactWidth,
+    CONFIG.CompactHeight
+)
+Main.BackgroundColor3 = BLACK
+Main.BorderSizePixel = 0
+Main.ClipsDescendants = true
+Main.ZIndex = 10
+Main.Parent = GUI
+
+local Corner = Instance.new("UICorner")
+Corner.CornerRadius = UDim.new(1, 0)
+Corner.Parent = Main
+
+local Stroke = Instance.new("UIStroke")
+Stroke.Color = Color3.fromRGB(45, 45, 45)
+Stroke.Thickness = 1
+Stroke.Transparency = 0.2
+Stroke.Parent = Main
+
+local UIScale = Instance.new("UIScale")
+UIScale.Parent = Main
+
+--==================================================
+-- HELPER
+--==================================================
+
+local function Label(parent, name, text, x, y, w, h, size, color)
+    local obj = Instance.new("TextLabel")
+    obj.Name = name
+    obj.BackgroundTransparency = 1
+    obj.Position = UDim2.fromOffset(x, y)
+    obj.Size = UDim2.fromOffset(w, h)
+    obj.Font = Enum.Font.GothamMedium
+    obj.Text = text
+    obj.TextColor3 = color or WHITE
+    obj.TextSize = size
+    obj.TextXAlignment = Enum.TextXAlignment.Left
+    obj.TextTruncate = Enum.TextTruncate.AtEnd
+    obj.ZIndex = 13
+    obj.Parent = parent
+    return obj
+end
+
+--==================================================
+-- COMPACT
+--==================================================
+
+local Compact = Instance.new("Frame")
+Compact.Name = "Compact"
+Compact.BackgroundTransparency = 1
+Compact.Size = UDim2.new(1, 0, 0, CONFIG.CompactHeight)
+Compact.ZIndex = 11
+Compact.Parent = Main
+
+local MusicIcon = Label(
+    Compact, "MusicIcon", "♪",
+    12, 0, 30, 38, 23, WHITE
+)
+
+local MiniStatus = Label(
+    Compact, "MiniStatus", "● ●",
+    80, 0, 48, 38, 10, GREEN
+)
+MiniStatus.TextXAlignment = Enum.TextXAlignment.Right
+
+local ClickArea = Instance.new("TextButton")
+ClickArea.Name = "ClickArea"
+ClickArea.Size = UDim2.fromScale(1, 1)
+ClickArea.BackgroundTransparency = 1
+ClickArea.Text = ""
+ClickArea.AutoButtonColor = false
+ClickArea.ZIndex = 20
+ClickArea.Parent = Compact
+
+--==================================================
+-- EXPANDED
+--==================================================
+
+local Expanded = Instance.new("Frame")
+Expanded.Name = "Expanded"
+Expanded.BackgroundTransparency = 1
+Expanded.Position = UDim2.fromOffset(0, 42)
+Expanded.Size = UDim2.new(1, 0, 1, -42)
+Expanded.Visible = false
+Expanded.ZIndex = 12
+Expanded.Parent = Main
+
+local Title = Label(
+    Expanded, "Title",
+    CONFIG.MusicName,
+    18, 2, 280, 24, 15, WHITE
+)
+
+local Artist = Label(
+    Expanded, "Artist",
+    CONFIG.ArtistName,
+    18, 26, 280, 18, 11, GRAY
+)
+
+local Divider = Instance.new("Frame")
+Divider.Position = UDim2.fromOffset(18, 51)
+Divider.Size = UDim2.new(1, -36, 0, 1)
+Divider.BackgroundColor3 = DARK
+Divider.BorderSizePixel = 0
+Divider.ZIndex = 13
+Divider.Parent = Expanded
+
+--==================================================
+-- MUSIC BUTTON
+--==================================================
+
+local PlayButton = Instance.new("TextButton")
+PlayButton.Name = "PlayButton"
+PlayButton.Position = UDim2.fromOffset(18, 63)
+PlayButton.Size = UDim2.fromOffset(45, 40)
+PlayButton.BackgroundColor3 = DARK
+PlayButton.Text = "▶"
+PlayButton.TextColor3 = WHITE
+PlayButton.TextSize = 17
+PlayButton.Font = Enum.Font.GothamBold
+PlayButton.ZIndex = 14
+PlayButton.Parent = Expanded
+
+local PlayCorner = Instance.new("UICorner")
+PlayCorner.CornerRadius = UDim.new(0, 12)
+PlayCorner.Parent = PlayButton
+
+local ClockLabel = Label(
+    Expanded, "Clock",
+    "--:--",
+    76, 63, 110, 20, 14, WHITE
+)
+
+local PingLabel = Label(
+    Expanded, "Ping",
+    "Ping: --",
+    76, 84, 180, 18, 11, GREEN
+)
+
+local BatteryLabel = Label(
+    Expanded, "Battery",
+    "Battery: N/A",
+    18, 116, 280, 19, 11, GREEN
+)
+
+local NetworkLabel = Label(
+    Expanded, "Network",
+    "Network: Connected",
+    18, 138, 280, 18, 11, GRAY
+)
+
+local NotificationLabel = Label(
+    Expanded, "Notification",
+    "Dynamic Island Ready",
+    18, 164, 280, 22, 11, WHITE
+)
+
+--==================================================
+-- SOUND
+--==================================================
+
+local Music = Instance.new("Sound")
+Music.Name = "DynamicIslandMusic"
+Music.SoundId = CONFIG.MusicId
+Music.Volume = 0.5
+Music.Looped = true
+Music.Parent = SoundService
+
+local Playing = false
+
+PlayButton.Activated:Connect(function()
+
+    if CONFIG.MusicId == "rbxassetid://0" then
+        NotificationLabel.Text = "Please configure MusicId"
+        return
     end
-end)
 
--- ============================================================
--- 3. GUI 基础容器
--- ============================================================
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "DynamicIslandGui"
-screenGui.ResetOnSpawn = false
-screenGui.IgnoreGuiInset = true
-screenGui.DisplayOrder = 9999
-screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-screenGui.Parent = playerGui
-
--- ============================================================
--- 4. 全局遮罩层 (点击空白处关闭悬浮窗)
--- ============================================================
-local dimmer = Instance.new("TextButton")
-dimmer.Size = UDim2.new(1, 0, 1, 0)
-dimmer.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-dimmer.BackgroundTransparency = 0.6
-dimmer.Text = ""
-dimmer.AutoButtonColor = false
-dimmer.Visible = false
-dimmer.ZIndex = 10
-dimmer.Parent = screenGui
-
--- ============================================================
--- 5. 灵动岛主框架
--- ============================================================
-local island = Instance.new("Frame")
-island.Name = "Island"
-island.AnchorPoint = Vector2.new(0.5, 0)
-island.Position = UDim2.new(0.5, 0, 0, 12)
-island.Size = IDLE_SIZE
-island.BackgroundColor3 = SPOTIFY_BG
-island.BorderSizePixel = 0
-island.ClipsDescendants = true
-island.ZIndex = 20
-island.Parent = screenGui
-
-local islandCorner = Instance.new("UICorner")
-islandCorner.CornerRadius = CORNER_IDLE
-islandCorner.Parent = island
-
-local stroke = Instance.new("UIStroke")
-stroke.Color = Color3.fromRGB(55, 55, 55)
-stroke.Thickness = 1.5
-stroke.Transparency = 0.4
-stroke.Parent = island
-
--- ============================================================
--- 6. 跨平台自适应缩放
--- ============================================================
-local uiScale = Instance.new("UIScale")
-uiScale.Parent = island
-
-local function updateScale()
-    local viewport = camera.ViewportSize
-    local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
-    local base = isMobile and 440 or 600 
-    uiScale.Scale = math.clamp(viewport.X / base, 0.8, 1.2)
-end
-camera:GetPropertyChangedSignal("ViewportSize"):Connect(updateScale)
-updateScale()
-
--- ============================================================
--- 7. 空闲图标
--- ============================================================
-local idleIcon = Instance.new("TextLabel")
-idleIcon.Size = UDim2.new(1, 0, 1, 0)
-idleIcon.BackgroundTransparency = 1
-idleIcon.Text = "♫"
-idleIcon.TextColor3 = SPOTIFY_GREEN
-idleIcon.TextScaled = true
-idleIcon.Font = Enum.Font.GothamBold
-idleIcon.Parent = island
-
-local idlePad = Instance.new("UIPadding")
-idlePad.PaddingTop = UDim.new(0, 5)
-idlePad.PaddingBottom = UDim.new(0, 5)
-idlePad.Parent = idleIcon
-
--- ============================================================
--- 8. 展开内容容器
--- ============================================================
-local expandedContent = Instance.new("CanvasGroup")
-expandedContent.Size = UDim2.new(1, 0, 1, 0)
-expandedContent.BackgroundTransparency = 1
-expandedContent.GroupTransparency = 1
-expandedContent.Visible = false
-expandedContent.ZIndex = 21
-expandedContent.Parent = island
-
--- 8.1 左侧封面
-local coverContainer = Instance.new("Frame")
-coverContainer.Size = UDim2.new(0, 38, 0, 38)
-coverContainer.Position = UDim2.new(0, 10, 0.5, 0)
-coverContainer.AnchorPoint = Vector2.new(0, 0.5)
-coverContainer.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-coverContainer.Parent = expandedContent
-Instance.new("UICorner", coverContainer).CornerRadius = UDim.new(0, 6)
-
-local coverLabel = Instance.new("TextLabel")
-coverLabel.Size = UDim2.new(1, 0, 1, 0)
-coverLabel.BackgroundTransparency = 1
-coverLabel.Text = "♫"
-coverLabel.TextColor3 = SPOTIFY_GREEN
-coverLabel.TextScaled = true
-coverLabel.Parent = coverContainer
-
--- 8.2 中间信息 (拓宽区域)
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Size = UDim2.new(1, -160, 0, 16)
-titleLabel.Position = UDim2.new(0, 56, 0, 8)
-titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "歌曲名"
-titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-titleLabel.TextSize = 13
-titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-titleLabel.Font = Enum.Font.GothamBold
-titleLabel.TextTruncate = Enum.TextTruncate.AtEnd
-titleLabel.Parent = expandedContent
-
-local artistLabel = Instance.new("TextLabel")
-artistLabel.Size = UDim2.new(1, -160, 0, 12)
-artistLabel.Position = UDim2.new(0, 56, 0, 24)
-artistLabel.BackgroundTransparency = 1
-artistLabel.Text = "歌手名"
-artistLabel.TextColor3 = SPOTIFY_SECOND
-artistLabel.TextSize = 10
-artistLabel.TextXAlignment = Enum.TextXAlignment.Left
-artistLabel.Font = Enum.Font.Gotham
-artistLabel.TextTruncate = Enum.TextTruncate.AtEnd
-artistLabel.Parent = expandedContent
-
-local progressBg = Instance.new("Frame")
-progressBg.Size = UDim2.new(1, -160, 0, 3)
-progressBg.Position = UDim2.new(0, 56, 0, 42)
-progressBg.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
-progressBg.Parent = expandedContent
-Instance.new("UICorner", progressBg).CornerRadius = UDim.new(1, 0)
-
-local progressFill = Instance.new("Frame")
-progressFill.Size = UDim2.new(0, 0, 1, 0)
-progressFill.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-progressFill.Parent = progressBg
-Instance.new("UICorner", progressFill).CornerRadius = UDim.new(1, 0)
-
--- 8.3 右侧按钮组 (紧凑排列)
-local btnContainer = Instance.new("Frame")
-btnContainer.Size = UDim2.new(0, 90, 1, 0)
-btnContainer.Position = UDim2.new(1, -100, 0, 0)
-btnContainer.BackgroundTransparency = 1
-btnContainer.Parent = expandedContent
-
-local playBtn = Instance.new("TextButton")
-playBtn.Size = UDim2.new(0, 28, 0, 28)
-playBtn.Position = UDim2.new(0, 0, 0.5, 0)
-playBtn.AnchorPoint = Vector2.new(0, 0.5)
-playBtn.BackgroundColor3 = SPOTIFY_GREEN
-playBtn.Text = "▶"
-playBtn.TextColor3 = Color3.fromRGB(0, 0, 0)
-playBtn.TextSize = 12
-playBtn.Font = Enum.Font.GothamBold
-playBtn.Parent = btnContainer
-Instance.new("UICorner", playBtn).CornerRadius = UDim.new(1, 0)
-
-local nextBtn = Instance.new("TextButton")
-nextBtn.Size = UDim2.new(0, 28, 0, 28)
-nextBtn.Position = UDim2.new(0, 32, 0.5, 0)
-nextBtn.AnchorPoint = Vector2.new(0, 0.5)
-nextBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-nextBtn.Text = "⏭"
-nextBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-nextBtn.TextSize = 12
-nextBtn.Font = Enum.Font.GothamBold
-nextBtn.Parent = btnContainer
-Instance.new("UICorner", nextBtn).CornerRadius = UDim.new(1, 0)
-
-local addBtn = Instance.new("TextButton")
-addBtn.Size = UDim2.new(0, 22, 0, 22)
-addBtn.Position = UDim2.new(0, 64, 0.5, -13)
-addBtn.AnchorPoint = Vector2.new(0, 0.5)
-addBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-addBtn.Text = "+"
-addBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-addBtn.TextSize = 12
-addBtn.Font = Enum.Font.GothamBold
-addBtn.Parent = btnContainer
-Instance.new("UICorner", addBtn).CornerRadius = UDim.new(1, 0)
-
-local infoBtn = Instance.new("TextButton")
-infoBtn.Size = UDim2.new(0, 22, 0, 22)
-infoBtn.Position = UDim2.new(0, 64, 0.5, 13)
-infoBtn.AnchorPoint = Vector2.new(0, 0.5)
-infoBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-infoBtn.Text = "i"
-infoBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-infoBtn.TextSize = 11
-infoBtn.Font = Enum.Font.GothamBold
-infoBtn.Parent = btnContainer
-Instance.new("UICorner", infoBtn).CornerRadius = UDim.new(1, 0)
-
--- ============================================================
--- 9. 优化后的悬浮窗 (尺寸变小，毛玻璃质感)
--- ============================================================
--- 9.1 音乐 ID 输入面板
-local idPanel = Instance.new("Frame")
-idPanel.Size = UDim2.new(0, 220, 0, 44) -- 缩减尺寸
-idPanel.Position = UDim2.new(0.5, 0, 0, 88) -- 下移一段距离
-idPanel.AnchorPoint = Vector2.new(0.5, 0)
-idPanel.BackgroundColor3 = SPOTIFY_CARD
-idPanel.Visible = false
-idPanel.ZIndex = 30
-idPanel.Parent = screenGui
-Instance.new("UICorner", idPanel).CornerRadius = UDim.new(0, 12)
-local idStroke = Instance.new("UIStroke", idPanel)
-idStroke.Color = Color3.fromRGB(80, 80, 80)
-idStroke.Thickness = 1
-idStroke.Transparency = 0.5
-
-local idBox = Instance.new("TextBox")
-idBox.Size = UDim2.new(1, -16, 1, -16)
-idBox.Position = UDim2.new(0.5, 0, 0.5, 0)
-idBox.AnchorPoint = Vector2.new(0.5, 0.5)
-idBox.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
-idBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-idBox.PlaceholderText = "粘贴音频ID，回车播放"
-idBox.PlaceholderColor3 = Color3.fromRGB(140, 140, 140)
-idBox.TextSize = 12
-idBox.Font = Enum.Font.Gotham
-idBox.ClearTextOnFocus = false
-idBox.ZIndex = 31
-idBox.Parent = idPanel
-Instance.new("UICorner", idBox).CornerRadius = UDim.new(0, 8)
-
--- 9.2 设备信息面板
-local infoPanel = Instance.new("Frame")
-infoPanel.Size = UDim2.new(0, 220, 0, 84) -- 缩减尺寸
-infoPanel.Position = UDim2.new(0.5, 0, 0, 88)
-infoPanel.AnchorPoint = Vector2.new(0.5, 0)
-infoPanel.BackgroundColor3 = SPOTIFY_CARD
-infoPanel.Visible = false
-infoPanel.ZIndex = 30
-infoPanel.Parent = screenGui
-Instance.new("UICorner", infoPanel).CornerRadius = UDim.new(0, 12)
-local infoStroke = Instance.new("UIStroke", infoPanel)
-infoStroke.Color = Color3.fromRGB(80, 80, 80)
-infoStroke.Thickness = 1
-infoStroke.Transparency = 0.5
-
-local infoText = Instance.new("TextLabel")
-infoText.Size = UDim2.new(1, -20, 1, -16)
-infoText.Position = UDim2.new(0.5, 0, 0.5, 0)
-infoText.AnchorPoint = Vector2.new(0.5, 0.5)
-infoText.BackgroundTransparency = 1
-infoText.TextColor3 = Color3.fromRGB(200, 200, 200)
-infoText.TextSize = 11
-infoText.Font = Enum.Font.Code
-infoText.TextXAlignment = Enum.TextXAlignment.Left
-infoText.TextYAlignment = Enum.TextYAlignment.Center
-infoText.TextWrapped = true
-infoText.ZIndex = 31
-infoText.Parent = infoPanel
-
--- ============================================================
--- 10. 音乐与逻辑控制
--- ============================================================
-local musicSound = Instance.new("Sound")
-musicSound.Volume = 0.5
-musicSound.Parent = SoundService
-
-local function updatePlayIcon()
-    playBtn.Text = isPlaying and "⏸" or "▶"
-end
-
-local function playCurrentTrack()
-    local track = playlist[currentIndex]
-    if musicSound.SoundId ~= track.id then
-        musicSound.SoundId = track.id
-    end
-    musicSound:Play()
-    isPlaying = true
-    titleLabel.Text = track.title
-    artistLabel.Text = track.artist
-    updatePlayIcon()
-end
-
-local function togglePlay()
-    if isPlaying then
-        musicSound:Pause()
-        isPlaying = false
+    if Playing then
+        Music:Pause()
+        Playing = false
+        PlayButton.Text = "▶"
+        MusicIcon.Text = "♪"
     else
-        if musicSound.SoundId == "" then playCurrentTrack()
-        else musicSound:Resume() isPlaying = true end
+        Music:Play()
+        Playing = true
+        PlayButton.Text = "Ⅱ"
+        MusicIcon.Text = "♫"
     end
-    updatePlayIcon()
-end
 
-local function nextTrack()
-    currentIndex = currentIndex % #playlist + 1
-    playCurrentTrack()
-end
-musicSound.Ended:Connect(nextTrack)
-
--- 进度条拖动/点击
-local function seek(input)
-    local ratio = math.clamp((input.Position.X - progressBg.AbsolutePosition.X) / progressBg.AbsoluteSize.X, 0, 1)
-    if musicSound.TimeLength > 0 then
-        musicSound.TimePosition = ratio * musicSound.TimeLength
-    end
-end
-progressBg.InputBegan:Connect(function(i) 
-    if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then seek(i) end 
-end)
-progressBg.InputChanged:Connect(function(i) 
-    if (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) and i.UserInputState == Enum.UserInputState.Change then seek(i) end 
 end)
 
--- ============================================================
--- 11. 悬浮窗与面板控制逻辑
--- ============================================================
-local function hidePanels()
-    idPanel.Visible = false
-    infoPanel.Visible = false
-    dimmer.Visible = false
+--==================================================
+-- EXPAND / COLLAPSE
+--==================================================
+
+local ExpandedState = false
+local Animating = false
+
+local function Expand()
+
+    if ExpandedState or Animating then
+        return
+    end
+
+    Animating = true
+    ExpandedState = true
+
+    Expanded.Visible = true
+
+    local tween = TweenService:Create(
+        Main,
+        TweenInfo.new(
+            CONFIG.AnimationTime,
+            Enum.EasingStyle.Back,
+            Enum.EasingDirection.Out
+        ),
+        {
+            Size = UDim2.fromOffset(
+                CONFIG.ExpandedWidth,
+                CONFIG.ExpandedHeight
+            )
+        }
+    )
+
+    tween:Play()
+    tween.Completed:Wait()
+
+    Animating = false
 end
 
-dimmer.MouseButton1Click:Connect(hidePanels)
+local function Collapse()
 
-addBtn.MouseButton1Click:Connect(function()
-    infoPanel.Visible = false
-    if not idPanel.Visible then
-        dimmer.Visible = true
-        idPanel.Visible = true
-        idBox:CaptureFocus()
+    if not ExpandedState or Animating then
+        return
+    end
+
+    Animating = true
+
+    local tween = TweenService:Create(
+        Main,
+        TweenInfo.new(
+            CONFIG.AnimationTime,
+            Enum.EasingStyle.Back,
+            Enum.EasingDirection.In
+        ),
+        {
+            Size = UDim2.fromOffset(
+                CONFIG.CompactWidth,
+                CONFIG.CompactHeight
+            )
+        }
+    )
+
+    tween:Play()
+    tween.Completed:Wait()
+
+    Expanded.Visible = false
+    ExpandedState = false
+    Animating = false
+end
+
+local function Toggle()
+
+    if ExpandedState then
+        Collapse()
     else
-        hidePanels()
+        Expand()
     end
-end)
 
-infoBtn.MouseButton1Click:Connect(function()
-    idPanel.Visible = false
-    if not infoPanel.Visible then
-        dimmer.Visible = true
-        infoPanel.Visible = true
-        local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
-        local platform = isMobile and "移动端 (手机/平板)" or "PC端 (键鼠)"
-        
-        infoText.Text = string.format(
-            " 平台: %s\n 屏幕: %d x %d\n 帧率: %d FPS\n 网络延迟: %d ms",
-            platform,
-            camera.ViewportSize.X, camera.ViewportSize.Y,
-            currentFPS,
-            math.floor(player:GetNetworkPing() * 1000)
-        )
-    else
-        hidePanels()
-    end
-end)
+end
 
-idBox.FocusLost:Connect(function(enterPressed)
-    if enterPressed and idBox.Text ~= "" then
-        local pureId = string.match(idBox.Text, "(%d+)")
-        if pureId then
-            musicSound.SoundId = "rbxassetid://" .. pureId
-            musicSound:Play()
-            isPlaying = true
-            titleLabel.Text = "自定义音频"
-            artistLabel.Text = "ID: " .. pureId
-            updatePlayIcon()
+ClickArea.Activated:Connect(Toggle)
+
+--==================================================
+-- NOTIFICATION
+--==================================================
+
+local NotificationId = 0
+
+local function Notify(title, message)
+
+    NotificationId += 1
+    local currentId = NotificationId
+
+    Title.Text = tostring(title or "Notification")
+    Artist.Text = tostring(message or "")
+    NotificationLabel.Text = tostring(message or "")
+
+    Expand()
+
+    task.delay(CONFIG.AutoCloseTime, function()
+
+        if NotificationId == currentId then
+            Collapse()
         end
-    end
-    idBox.Text = ""
-    hidePanels()
+
+    end)
+
+end
+
+-- Local notification event
+
+local NotifyEvent = Instance.new("BindableEvent")
+NotifyEvent.Name = "DynamicIslandNotify"
+NotifyEvent.Parent = GUI
+
+NotifyEvent.Event:Connect(function(title, message)
+    Notify(title, message)
 end)
 
--- ============================================================
--- 12. 展开/收起动画
--- ============================================================
-local autoCollapse = nil
+-- Server notification event
 
-local function resetAutoCollapse()
-    if autoCollapse then task.cancel(autoCollapse) end
-    autoCollapse = task.delay(6, function()
-        if isExpanded and not dimmer.Visible then 
-            if not idBox:IsFocused() then
-                local collapse = _G.__collapseIsland
-                if collapse then collapse() end
+local Remote = ReplicatedStorage:FindFirstChild(
+    "DynamicIslandRemote"
+)
+
+if Remote and Remote:IsA("RemoteEvent") then
+
+    Remote.OnClientEvent:Connect(function(title, message)
+        Notify(title, message)
+    end)
+
+end
+
+--==================================================
+-- CLOCK
+--==================================================
+
+task.spawn(function()
+
+    while GUI.Parent do
+
+        if CONFIG.ShowClock then
+            ClockLabel.Text = os.date("%H:%M")
+        else
+            ClockLabel.Text = ""
+        end
+
+        task.wait(1)
+
+    end
+
+end)
+
+--==================================================
+-- NETWORK PING
+--==================================================
+
+task.spawn(function()
+
+    while GUI.Parent do
+
+        if CONFIG.ShowPing then
+
+            local success, result = pcall(function()
+
+                return Stats.Network.ServerStatsItem[
+                    "Data Ping"
+                ]:GetValueString()
+
+            end)
+
+            if success then
+
+                PingLabel.Text = "Ping: " .. tostring(result)
+                NetworkLabel.Text = "Network: Connected"
+                NetworkLabel.TextColor3 = GREEN
+
+            else
+
+                PingLabel.Text = "Ping: N/A"
+                NetworkLabel.Text = "Network: Unavailable"
+                NetworkLabel.TextColor3 = GRAY
+
             end
+
         end
-    end)
-end
 
-local function expandIsland()
-    if isExpanded then return end
-    isExpanded = true
-    idleIcon.Visible = false
-    expandedContent.Visible = true
-    
-    TweenService:Create(island, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-        Size = EXPANDED_SIZE, BackgroundColor3 = SPOTIFY_CARD
-    }):Play()
-    TweenService:Create(islandCorner, TweenInfo.new(0.4), { CornerRadius = CORNER_EXPAND }):Play()
-    TweenService:Create(expandedContent, TweenInfo.new(0.3), { GroupTransparency = 0 }):Play()
-    resetAutoCollapse()
-end
+        task.wait(2)
 
-local function collapseIsland()
-    if not isExpanded then return end
-    isExpanded = false
-    hidePanels()
-    
-    local fadeOut = TweenService:Create(expandedContent, TweenInfo.new(0.2), { GroupTransparency = 1 })
-    fadeOut:Play()
-    
-    TweenService:Create(island, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-        Size = IDLE_SIZE, BackgroundColor3 = SPOTIFY_BG
-    }):Play()
-    TweenService:Create(islandCorner, TweenInfo.new(0.35), { CornerRadius = CORNER_IDLE }):Play()
-    
-    fadeOut.Completed:Connect(function()
-        if not isExpanded then
-            expandedContent.Visible = false
-            idleIcon.Visible = true
+    end
+
+end)
+
+--==================================================
+-- BATTERY / CHARGING
+--==================================================
+
+task.spawn(function()
+
+    while GUI.Parent do
+
+        if CONFIG.ShowBattery then
+
+            local batterySuccess, battery = pcall(function()
+                return UserInputService:GetDeviceBatteryLevel()
+            end)
+
+            local chargeSuccess, charging = pcall(function()
+                return UserInputService:GetDeviceChargingState()
+            end)
+
+            if batterySuccess and typeof(battery) == "number" then
+
+                local percent = math.floor(battery * 100)
+
+                if chargeSuccess and
+                    tostring(charging):lower():find("charging") then
+
+                    BatteryLabel.Text =
+                        "⚡ Charging: " .. percent .. "%"
+
+                    BatteryLabel.TextColor3 = GREEN
+                    MiniStatus.TextColor3 = GREEN
+
+                else
+
+                    BatteryLabel.Text =
+                        "Battery: " .. percent .. "%"
+
+                    BatteryLabel.TextColor3 = WHITE
+
+                end
+
+            else
+
+                BatteryLabel.Text = "Battery: N/A"
+
+            end
+
         end
-    end)
+
+        task.wait(5)
+
+    end
+
+end)
+
+--==================================================
+-- RESPONSIVE SCALE
+--==================================================
+
+local function UpdateScale()
+
+    local camera = workspace.CurrentCamera
+
+    if not camera then
+        return
+    end
+
+    local width = camera.ViewportSize.X
+
+    if width < 400 then
+        UIScale.Scale = 0.82
+    elseif width < 600 then
+        UIScale.Scale = 0.90
+    elseif width < 900 then
+        UIScale.Scale = 0.95
+    else
+        UIScale.Scale = 1
+    end
+
 end
-_G.__collapseIsland = collapseIsland
 
--- ============================================================
--- 13. 事件绑定
--- ============================================================
-island.InputBegan:Connect(function(input)
-    if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) and not isExpanded then
-        expandIsland()
-    end
-end)
-playBtn.MouseButton1Click:Connect(function() togglePlay() resetAutoCollapse() end)
-nextBtn.MouseButton1Click:Connect(function() nextTrack() resetAutoCollapse() end)
+local function BindCamera(camera)
 
--- ============================================================
--- 14. 实时更新循环
--- ============================================================
-RunService.Heartbeat:Connect(function()
-    if isExpanded and musicSound.IsPlaying and musicSound.TimeLength > 0 then
-        local ratio = musicSound.TimePosition / musicSound.TimeLength
-        progressFill.Size = UDim2.new(math.clamp(ratio, 0, 1), 0, 1, 0)
+    if not camera then
+        return
     end
+
+    camera:GetPropertyChangedSignal(
+        "ViewportSize"
+    ):Connect(UpdateScale)
+
+    UpdateScale()
+
+end
+
+workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+    BindCamera(workspace.CurrentCamera)
 end)
+
+BindCamera(workspace.CurrentCamera)
+
+--==================================================
+-- PUBLIC NOTIFICATION TEST
+--==================================================
+
+-- Example:
+-- Notify("Welcome", "Welcome to my game!")
+
+--==================================================
+-- FINISHED
+--==================================================
+
+print("====================================")
+print("APPLE DYNAMIC ISLAND V2.0")
+print("PC + MOBILE READY")
+print("Successfully Loaded!")
+print("====================================")
