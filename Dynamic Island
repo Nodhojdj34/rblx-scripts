@@ -2242,28 +2242,3 @@ _G.DynamicIsland = {
 }
 
 print("[DynamicIsland] v3.3 loaded")
-```
-
----
-
-## 使用提示
-
-**新 API 示例**
-
-```lua
-local island = _G.DynamicIsland
-
--- 在时钟位显示自定义状态
-island.setStatus("金币 1,200")
-
--- 撤回，恢复时钟
-island.clearStatus()
-
--- 批量加入队列，播完自动下一首
-island.enqueue(1837879082)
-island.enqueue(9046869099)
-island.enqueue(1840838672)
-island.playMusic(1837879082)  -- 立刻播第一首，队列保留
-
--- 静音
-island.setMuted(true)
