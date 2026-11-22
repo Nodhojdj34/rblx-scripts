@@ -1,203 +1,110 @@
 
---========================================================
--- DYNAMIC ISLAND PREMIUM V6.1 - GLASS EDITION
--- Complete LocalScript
--- StarterPlayer > StarterPlayerScripts
---========================================================
+--[[
+    Roblox Dynamic Island Premium V7.0
+    Glass Edition | LocalScript
+    Location: StarterPlayer > StarterPlayerScripts
 
--- SERVICES
+    Features:
+    - Dynamic Island expand/collapse and draggable UI
+    - Music player, queue, shuffle, repeat, volume and seek
+    - Notifications, unread counter and notification history
+    - Device and player information
+    - FPS, Ping and memory monitoring
+    - Clock, stopwatch, laps and countdown
+    - Break reminders and session timer
+    - Anti-Fling local safety monitor
+    - Theme, transparency, compact mode and UI scale
+    - Quick actions and player information copy
+    - Responsive PC and mobile UI
+
+    Note:
+    Client-side device information is limited by Roblox APIs.
+    Anti-Fling is a local best-effort feature, not server protection.
+]]
+
+--// SERVICES
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
-local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 local SoundService = game:GetService("SoundService")
 local Stats = game:GetService("Stats")
+local Lighting = game:GetService("Lighting")
+local HttpService = game:GetService("HttpService")
 
 local Player = Players.LocalPlayer
 local PlayerGui = Player:WaitForChild("PlayerGui")
 
---========================================================
--- CONFIGURATION
---========================================================
-
+--// CONFIG
 local Config = {
-    Accent = Color3.fromRGB(105, 175, 255),
-    Background = Color3.fromRGB(10, 13, 21),
-    Transparency = 0.08,
-    Volume = 0.5,
+    Width = 620,
+    Height = 500,
+    CompactHeight = 390,
+    CollapsedWidth = 210,
+    CollapsedHeight = 54,
+
     Scale = 1,
+    Transparency = 0.08,
     Compact = false,
     ReducedMotion = false,
     HighContrast = false,
+
+    AccentIndex = 1,
     AntiFling = false,
-    NotificationSound = false,
-    Width = 620,
-    Height = 490,
+    BreakReminder = false,
+    BreakInterval = 45,
+    NotificationSound = true,
 }
 
-local ThemeColors = {
-    Color3.fromRGB(105, 175, 255),
-    Color3.fromRGB(180, 125, 255),
-    Color3.fromRGB(90, 220, 170),
-    Color3.fromRGB(255, 145, 125),
-    Color3.fromRGB(255, 205, 100),
-    Color3.fromRGB(245, 245, 255),
+local Accents = {
+    Color3.fromRGB(105, 170, 255),
+    Color3.fromRGB(170, 125, 255),
+    Color3.fromRGB(80, 220, 180),
+    Color3.fromRGB(255, 150, 100),
+    Color3.fromRGB(255, 110, 160),
+    Color3.fromRGB(255, 210, 100),
 }
 
-local ThemeIndex = 1
-local Destroyed = false
-local Connections = {}
-
-local function Connect(connection)
-    table.insert(Connections, connection)
-    return connection
+local function Accent()
+    return Accents[Config.AccentIndex]
 end
 
---========================================================
--- HELPERS
---========================================================
-
-local function New(className, props, parent)
-    local object = Instance.new(className)
-
-    for key, value in pairs(props or {}) do
-        object[key] = value
+local function Background()
+    if Config.HighContrast then
+        return Color3.fromRGB(5, 5, 8)
     end
-
-    object.Parent = parent
-    return object
+    return Color3.fromRGB(18, 20, 27)
 end
 
-local function Round(object, radius)
-    New("UICorner", {
-        CornerRadius = UDim.new(0, radius or 12)
-    }, object)
-end
+--// STATE
+local Expanded = false
+local CurrentPage = "Home"
+local Notifications = {}
+local Playlist = {}
+local CurrentTrack = 1
+local Shuffle = false
+local Repeat = false
+local MusicVolume = 0.5
 
-local function Stroke(object, color, transparency, thickness)
-    return New("UIStroke", {
-        Color = color or Config.Accent,
-        Transparency = transparency or 0.6,
-        Thickness = thickness or 1,
-    }, object)
-end
+local FPS = 0
+local Ping = 0
+local Memory = 0
+local SessionSeconds = 0
+local BreakSeconds = 0
 
-local function Tween(object, properties, duration)
-    if Config.ReducedMotion then
-        for key, value in pairs(properties) do
-            object[key] = value
-        end
-        return
-    end
+local StopwatchRunning = false
+local StopwatchSeconds = 0
+local Laps = {}
 
-    local animation = TweenService:Create(
-        object,
-        TweenInfo.new(
-            duration or 0.2,
-            Enum.EasingStyle.Quint,
-            Enum.EasingDirection.Out
-        ),
-        properties
-    )
+local CountdownRunning = false
+local CountdownSeconds = 0
 
-    animation:Play()
-    return animation
-end
-
-local function Text(parent, value, size, color, bold)
-    return New("TextLabel", {
-        BackgroundTransparency = 1,
-        Text = tostring(value or ""),
-        TextSize = size or 12,
-        TextColor3 = color or Color3.fromRGB(235, 240, 250),
-        Font = bold and Enum.Font.GothamBold or Enum.Font.GothamMedium,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        TextYAlignment = Enum.TextYAlignment.Center,
-        TextWrapped = true,
-    }, parent)
-end
-
-local function MakeButton(parent, value, callback, width, height)
-    local button = New("TextButton", {
-        Size = UDim2.fromOffset(width or 100, height or 34),
-        BackgroundColor3 = Color3.fromRGB(35, 43, 59),
-        Text = value,
-        TextColor3 = Color3.fromRGB(240, 244, 255),
-        TextSize = 11,
-        Font = Enum.Font.GothamBold,
-        AutoButtonColor = false,
-        BorderSizePixel = 0,
-    }, parent)
-
-    Round(button, 9)
-
-    button.MouseEnter:Connect(function()
-        Tween(button, {
-            BackgroundColor3 = Color3.fromRGB(54, 66, 87)
-        }, 0.12)
-    end)
-
-    button.MouseLeave:Connect(function()
-        Tween(button, {
-            BackgroundColor3 = Color3.fromRGB(35, 43, 59)
-        }, 0.12)
-    end)
-
-    button.MouseButton1Click:Connect(function()
-        if callback then
-            local success, err = pcall(callback)
-            if not success then
-                warn("[Island] Button:", err)
-            end
-        end
-    end)
-
-    return button
-end
-
-local function MakeCard(parent, height)
-    local card = New("Frame", {
-        Size = UDim2.new(1, 0, 0, height),
-        BackgroundColor3 = Color3.fromRGB(25, 31, 44),
-        BackgroundTransparency = 0.12,
-        BorderSizePixel = 0,
-    }, parent)
-
-    Round(card, 15)
-    Stroke(card, Color3.fromRGB(115, 145, 190), 0.82, 1)
-
-    return card
-end
-
-local function Heading(parent, value)
-    local label = Text(parent, value, 11, Config.Accent, true)
-    label.Size = UDim2.new(1, 0, 0, 25)
-    return label
-end
-
-local function MakeInput(parent, placeholder, default, width)
-    local input = New("TextBox", {
-        Size = UDim2.new(1, -(width or 20), 0, 35),
-        BackgroundColor3 = Color3.fromRGB(13, 17, 26),
-        Text = default or "",
-        PlaceholderText = placeholder,
-        PlaceholderColor3 = Color3.fromRGB(125, 137, 155),
-        TextColor3 = Color3.fromRGB(245, 247, 255),
-        TextSize = 11,
-        Font = Enum.Font.Gotham,
-        ClearTextOnFocus = false,
-        BorderSizePixel = 0,
-    }, parent)
-
-    Round(input, 9)
-    Stroke(input, Color3.fromRGB(90, 110, 145), 0.8)
-
-    return input
-end
+local AntiFlingCount = 0
+local LastFlingWarning = 0
+local CharacterConnections = {}
 
 local function FormatTime(seconds)
     seconds = math.max(0, math.floor(seconds))
-
     local h = math.floor(seconds / 3600)
     local m = math.floor((seconds % 3600) / 60)
     local s = seconds % 60
@@ -209,1660 +116,1250 @@ local function FormatTime(seconds)
     return string.format("%02d:%02d", m, s)
 end
 
-local function ValidNumber(value)
-    local number = tonumber(value)
+local function SafeCall(fn, ...)
+    local ok, result = pcall(fn, ...)
+    if ok then
+        return result
+    end
+    return nil
+end
 
-    if not number or number ~= number or number == math.huge then
-        return nil
+--// GUI HELPERS
+local function New(className, properties, parent)
+    local object = Instance.new(className)
+
+    for property, value in pairs(properties or {}) do
+        pcall(function()
+            object[property] = value
+        end)
     end
 
-    return number
+    object.Parent = parent
+    return object
 end
 
---========================================================
--- STATE
---========================================================
-
-local Playlist = {}
-local RecentTracks = {}
-local CurrentTrack = 1
-local Shuffle = false
-local RepeatMode = 0
--- 0 = Off, 1 = All, 2 = One
-
-local Notifications = {}
-local NotificationFilter = "All"
-
-local Timers = {}
-local TimerId = 0
-
-local StopwatchTime = 0
-local StopwatchRunning = false
-local Laps = {}
-
-local FPS = 0
-local Ping = 0
-local Memory = 0
-local PerformanceHistory = {}
-
-local SessionStart = os.clock()
-local AntiFlingCount = 0
-
-local Expanded = false
-local CurrentPage = "Music"
-
---========================================================
--- MUSIC ENGINE
---========================================================
-
-local Music = SoundService:FindFirstChild("DynamicIslandV61Music")
-
-if not Music then
-    Music = Instance.new("Sound")
-    Music.Name = "DynamicIslandV61Music"
-    Music.Volume = Config.Volume
-    Music.Parent = SoundService
+local function Corner(parent, radius)
+    return New("UICorner", {
+        CornerRadius = UDim.new(0, radius or 12)
+    }, parent)
 end
 
-Music.Volume = Config.Volume
+local function Stroke(parent, color, transparency)
+    return New("UIStroke", {
+        Color = color or Accent(),
+        Transparency = transparency or 0.45,
+        Thickness = 1
+    }, parent)
+end
 
-local function AddRecent(id)
-    for i = #RecentTracks, 1, -1 do
-        if RecentTracks[i] == id then
-            table.remove(RecentTracks, i)
+local function Label(parent, text, size, position, textSize, color)
+    return New("TextLabel", {
+        BackgroundTransparency = 1,
+        Position = position or UDim2.new(),
+        Size = size or UDim2.new(1, 0, 0, 28),
+        Font = Enum.Font.Gotham,
+        Text = text or "",
+        TextSize = textSize or 13,
+        TextColor3 = color or Color3.fromRGB(240, 242, 250),
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextYAlignment = Enum.TextYAlignment.Center
+    }, parent)
+end
+
+local function Button(parent, text, size, position, callback)
+    local button = New("TextButton", {
+        Size = size or UDim2.fromOffset(100, 34),
+        Position = position or UDim2.new(),
+        BackgroundColor3 = Color3.fromRGB(38, 42, 53),
+        Text = text,
+        TextColor3 = Color3.fromRGB(245, 245, 250),
+        TextSize = 12,
+        Font = Enum.Font.GothamMedium,
+        AutoButtonColor = true
+    }, parent)
+
+    Corner(button, 9)
+    button.Activated:Connect(function()
+        if callback then
+            callback()
+        end
+    end)
+
+    return button
+end
+
+local function Card(parent, title, height)
+    local frame = New("Frame", {
+        BackgroundColor3 = Background(),
+        BackgroundTransparency = Config.Transparency,
+        Size = UDim2.new(1, 0, 0, height or 90)
+    }, parent)
+
+    Corner(frame, 13)
+    Stroke(frame, Accent(), 0.75)
+
+    Label(frame, title, UDim2.new(1, -20, 0, 25),
+        UDim2.fromOffset(12, 7), 13, Accent())
+
+    return frame
+end
+
+local function AddLayout(parent, padding)
+    New("UIPadding", {
+        PaddingTop = UDim.new(0, padding or 8),
+        PaddingBottom = UDim.new(0, padding or 8),
+        PaddingLeft = UDim.new(0, padding or 8),
+        PaddingRight = UDim.new(0, padding or 8)
+    }, parent)
+
+    New("UIListLayout", {
+        Padding = UDim.new(0, 9),
+        SortOrder = Enum.SortOrder.LayoutOrder
+    }, parent)
+end
+
+--// CLEAN OLD GUI
+local Old = PlayerGui:FindFirstChild("DynamicIslandPremiumV7")
+if Old then
+    Old:Destroy()
+end
+
+--// SCREEN GUI
+local Gui = New("ScreenGui", {
+    Name = "DynamicIslandPremiumV7",
+    ResetOnSpawn = false,
+    IgnoreGuiInset = false,
+    ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+}, PlayerGui)
+
+--// MAIN ISLAND
+local Main = New("Frame", {
+    Name = "Island",
+    AnchorPoint = Vector2.new(0.5, 0),
+    Position = UDim2.new(0.5, 0, 0, 8),
+    Size = UDim2.fromOffset(Config.CollapsedWidth, Config.CollapsedHeight),
+    BackgroundColor3 = Color3.fromRGB(12, 14, 20),
+    BackgroundTransparency = 0.03,
+    ClipsDescendants = true,
+    Active = true
+}, Gui)
+
+Corner(Main, 22)
+Stroke(Main, Accent(), 0.35)
+
+New("UIGradient", {
+    Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(28, 32, 44)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(8, 9, 14))
+    }),
+    Rotation = 35
+}, Main)
+
+--// HEADER
+local Header = New("Frame", {
+    BackgroundTransparency = 1,
+    Size = UDim2.new(1, 0, 0, 54)
+}, Main)
+
+local IslandDot = New("Frame", {
+    Size = UDim2.fromOffset(9, 9),
+    Position = UDim2.fromOffset(16, 22),
+    BackgroundColor3 = Accent()
+}, Header)
+Corner(IslandDot, 20)
+
+local HeaderTitle = Label(
+    Header,
+    "DYNAMIC ISLAND",
+    UDim2.fromOffset(145, 28),
+    UDim2.fromOffset(32, 13),
+    11
+)
+
+local HeaderStatus = Label(
+    Header,
+    "V7.0",
+    UDim2.fromOffset(45, 25),
+    UDim2.new(1, -62, 0, 14),
+    10,
+    Accent()
+)
+HeaderStatus.TextXAlignment = Enum.TextXAlignment.Right
+
+--// EXPANDED PANEL
+local Panel = New("Frame", {
+    Name = "Panel",
+    Position = UDim2.fromOffset(0, 54),
+    Size = UDim2.new(1, 0, 1, -54),
+    BackgroundTransparency = 1,
+    Visible = false
+}, Main)
+
+--// SIDEBAR
+local Sidebar = New("Frame", {
+    Size = UDim2.new(0, 112, 1, 0),
+    BackgroundColor3 = Color3.fromRGB(10, 12, 18),
+    BackgroundTransparency = 0.15
+}, Panel)
+
+local SideLayout = New("UIListLayout", {
+    Padding = UDim.new(0, 5),
+    SortOrder = Enum.SortOrder.LayoutOrder
+}, Sidebar)
+
+New("UIPadding", {
+    PaddingTop = UDim.new(0, 10),
+    PaddingLeft = UDim.new(0, 7),
+    PaddingRight = UDim.new(0, 7)
+}, Sidebar)
+
+--// PAGE AREA
+local PageArea = New("Frame", {
+    Position = UDim2.fromOffset(122, 0),
+    Size = UDim2.new(1, -130, 1, 0),
+    BackgroundTransparency = 1
+}, Panel)
+
+local PageScroll = New("ScrollingFrame", {
+    Size = UDim2.new(1, 0, 1, 0),
+    BackgroundTransparency = 1,
+    BorderSizePixel = 0,
+    ScrollBarThickness = 3,
+    ScrollBarImageColor3 = Accent(),
+    CanvasSize = UDim2.new()
+}, PageArea)
+
+AddLayout(PageScroll, 10)
+
+local PageButtons = {}
+local Pages = {}
+
+local function ClearPage()
+    for _, child in ipairs(PageScroll:GetChildren()) do
+        if child:IsA("GuiObject") then
+            child:Destroy()
         end
     end
-
-    table.insert(RecentTracks, 1, id)
-
-    while #RecentTracks > 10 do
-        table.remove(RecentTracks)
-    end
 end
+
+local function RefreshCanvas()
+    task.defer(function()
+        local layout = PageScroll:FindFirstChildOfClass("UIListLayout")
+        if layout then
+            PageScroll.CanvasSize = UDim2.fromOffset(
+                0,
+                layout.AbsoluteContentSize.Y + 25
+            )
+        end
+    end)
+end
+
+local function CreatePage(name)
+    ClearPage()
+    Pages[name]()
+    RefreshCanvas()
+end
+
+--// NOTIFICATIONS
+local function Notify(title, message, category)
+    table.insert(Notifications, 1, {
+        Title = tostring(title),
+        Message = tostring(message),
+        Category = category or "System",
+        Time = os.date("%H:%M:%S"),
+        Read = false
+    })
+
+    while #Notifications > 100 do
+        table.remove(Notifications)
+    end
+
+    if Config.NotificationSound then
+        -- No external audio is required for notification storage.
+    end
+
+    HeaderStatus.Text = "NEW"
+    HeaderStatus.TextColor3 = Accent()
+end
+
+local NotifyEvent = New("BindableEvent", {
+    Name = "IslandNotify"
+}, Gui)
+
+NotifyEvent.Event:Connect(function(title, message, category)
+    Notify(title or "Notification", message or "", category or "System")
+end)
+
+--// MUSIC PLAYER
+local Music = SoundService:FindFirstChild("DynamicIslandV7Music")
+
+if not Music then
+    Music = New("Sound", {
+        Name = "DynamicIslandV7Music",
+        Volume = MusicVolume,
+        Looped = false
+    }, SoundService)
+end
+
+Music.Volume = MusicVolume
 
 local function PlayTrack(index)
     if #Playlist == 0 then
+        Notify("Music", "Playlist is empty", "Music")
         return
     end
 
     CurrentTrack = math.clamp(index, 1, #Playlist)
-
-    local id = Playlist[CurrentTrack]
+    local track = Playlist[CurrentTrack]
 
     Music:Stop()
-    Music.SoundId = "rbxassetid://" .. id
+    Music.SoundId = "rbxassetid://" .. track.Id
     Music.TimePosition = 0
-    Music.Volume = Config.Volume
+    Music.Volume = MusicVolume
     Music:Play()
 
-    AddRecent(id)
+    Notify("Now Playing", "Audio ID: " .. track.Id, "Music")
 end
 
 local function NextTrack()
-    if #Playlist == 0 then return end
+    if #Playlist == 0 then
+        return
+    end
+
+    local nextIndex
 
     if Shuffle and #Playlist > 1 then
-        local nextIndex = CurrentTrack
-
-        repeat
-            nextIndex = math.random(1, #Playlist)
-        until nextIndex ~= CurrentTrack
-
-        PlayTrack(nextIndex)
-    elseif CurrentTrack < #Playlist then
-        PlayTrack(CurrentTrack + 1)
-    elseif RepeatMode == 1 then
-        PlayTrack(1)
+        nextIndex = math.random(1, #Playlist)
+        if nextIndex == CurrentTrack then
+            nextIndex = (nextIndex % #Playlist) + 1
+        end
+    else
+        nextIndex = CurrentTrack + 1
     end
+
+    if nextIndex > #Playlist then
+        if Repeat then
+            nextIndex = 1
+        else
+            return
+        end
+    end
+
+    PlayTrack(nextIndex)
 end
 
 local function PreviousTrack()
-    if #Playlist == 0 then return end
+    if #Playlist == 0 then
+        return
+    end
 
     if Music.TimePosition > 3 then
         Music.TimePosition = 0
         return
     end
 
-    if CurrentTrack > 1 then
-        PlayTrack(CurrentTrack - 1)
-    elseif RepeatMode == 1 then
-        PlayTrack(#Playlist)
-    else
-        Music.TimePosition = 0
+    local index = CurrentTrack - 1
+
+    if index < 1 then
+        index = #Playlist
     end
+
+    PlayTrack(index)
 end
 
-Connect(Music.Ended:Connect(function()
-    if Destroyed then return end
-
-    if RepeatMode == 2 then
-        Music.TimePosition = 0
-        Music:Play()
+Music.Ended:Connect(function()
+    if Repeat and #Playlist > 0 then
+        PlayTrack(CurrentTrack)
     else
         NextTrack()
     end
-end))
-
---========================================================
--- NOTIFICATIONS
---========================================================
-
-local function Notify(title, message, category)
-    table.insert(Notifications, {
-        Title = tostring(title or "Notification"),
-        Message = tostring(message or ""),
-        Category = tostring(category or "General"),
-        Time = os.date("%H:%M:%S"),
-        Read = false,
-    })
-
-    while #Notifications > 60 do
-        table.remove(Notifications, 1)
-    end
-end
-
---========================================================
--- CLEAN OLD GUI
---========================================================
-
-local Old = PlayerGui:FindFirstChild("DynamicIslandPremiumV61")
-
-if Old then
-    Old:Destroy()
-end
-
-local Gui = New("ScreenGui", {
-    Name = "DynamicIslandPremiumV61",
-    ResetOnSpawn = false,
-    IgnoreGuiInset = true,
-    ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-}, PlayerGui)
-
-local UIScale = New("UIScale", {
-    Scale = Config.Scale
-}, Gui)
-
---========================================================
--- MAIN ISLAND
---========================================================
-
-local Main = New("Frame", {
-    Name = "MainIsland",
-    AnchorPoint = Vector2.new(0.5, 0),
-    Position = UDim2.new(0.5, 0, 0, 12),
-    Size = UDim2.fromOffset(210, 54),
-    BackgroundColor3 = Config.Background,
-    BackgroundTransparency = Config.Transparency,
-    BorderSizePixel = 0,
-    ClipsDescendants = true,
-}, Gui)
-
-Round(Main, 25)
-Stroke(Main, Color3.fromRGB(135, 155, 195), 0.35, 1.2)
-
-New("UIGradient", {
-    Rotation = 135,
-    Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(39, 49, 69)),
-        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(19, 24, 36)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(8, 11, 18)),
-    }),
-}, Main)
-
--- Soft glass highlight
-local Highlight = New("Frame", {
-    Position = UDim2.new(0, 12, 0, 2),
-    Size = UDim2.new(1, -24, 0, 1),
-    BackgroundColor3 = Color3.fromRGB(220, 235, 255),
-    BackgroundTransparency = 0.72,
-    BorderSizePixel = 0,
-}, Main)
-
-Round(Highlight, 2)
-
---========================================================
--- COLLAPSED ISLAND CONTENT
---========================================================
-
-local MiniIcon = Text(Main, "M", 15, Config.Accent, true)
-MiniIcon.Position = UDim2.new(0, 15, 0, 4)
-MiniIcon.Size = UDim2.fromOffset(32, 43)
-MiniIcon.TextXAlignment = Enum.TextXAlignment.Center
-
-local MiniTitle = Text(Main, "DYNAMIC ISLAND", 10, Color3.new(1, 1, 1), true)
-MiniTitle.Position = UDim2.new(0, 53, 0, 7)
-MiniTitle.Size = UDim2.new(1, -105, 0, 18)
-
-local MiniStatus = Text(Main, "Premium Glass", 9, Color3.fromRGB(155, 170, 195))
-MiniStatus.Position = UDim2.new(0, 53, 0, 26)
-MiniStatus.Size = UDim2.new(1, -105, 0, 15)
-
-local MiniDot = New("Frame", {
-    AnchorPoint = Vector2.new(1, 0.5),
-    Position = UDim2.new(1, -17, 0.5, 0),
-    Size = UDim2.fromOffset(8, 8),
-    BackgroundColor3 = Color3.fromRGB(90, 225, 160),
-    BorderSizePixel = 0,
-}, Main)
-
-Round(MiniDot, 10)
-
-local Toggle = New("TextButton", {
-    Size = UDim2.fromScale(1, 1),
-    BackgroundTransparency = 1,
-    Text = "",
-    AutoButtonColor = false,
-}, Main)
-
---========================================================
--- EXPANDED PANEL
---========================================================
-
-local Panel = New("Frame", {
-    Position = UDim2.new(0, 0, 0, 54),
-    Size = UDim2.new(1, 0, 1, -54),
-    BackgroundTransparency = 1,
-}, Main)
-
-local Sidebar = New("Frame", {
-    Position = UDim2.new(0, 12, 0, 10),
-    Size = UDim2.new(0, 122, 1, -20),
-    BackgroundColor3 = Color3.fromRGB(15, 20, 30),
-    BackgroundTransparency = 0.08,
-    BorderSizePixel = 0,
-}, Panel)
-
-Round(Sidebar, 15)
-Stroke(Sidebar, Color3.fromRGB(100, 120, 155), 0.87)
-
-New("UIPadding", {
-    PaddingTop = UDim.new(0, 9),
-    PaddingLeft = UDim.new(0, 7),
-    PaddingRight = UDim.new(0, 7),
-}, Sidebar)
-
-New("UIListLayout", {
-    Padding = UDim.new(0, 6),
-    SortOrder = Enum.SortOrder.LayoutOrder,
-}, Sidebar)
-
-local Content = New("Frame", {
-    Position = UDim2.new(0, 146, 0, 10),
-    Size = UDim2.new(1, -158, 1, -20),
-    BackgroundTransparency = 1,
-    ClipsDescendants = true,
-}, Panel)
-
-local Pages = {}
-local NavButtons = {}
-
-local function CreatePage(name)
-    local page = New("ScrollingFrame", {
-        Name = name,
-        Size = UDim2.fromScale(1, 1),
-        BackgroundTransparency = 1,
-        BorderSizePixel = 0,
-        ScrollBarThickness = 3,
-        ScrollBarImageColor3 = Config.Accent,
-        AutomaticCanvasSize = Enum.AutomaticSize.Y,
-        CanvasSize = UDim2.new(),
-        Visible = false,
-    }, Content)
-
-    New("UIPadding", {
-        PaddingRight = UDim.new(0, 6),
-        PaddingBottom = UDim.new(0, 12),
-    }, page)
-
-    New("UIListLayout", {
-        Padding = UDim.new(0, 9),
-        SortOrder = Enum.SortOrder.LayoutOrder,
-    }, page)
-
-    Pages[name] = page
-    return page
-end
-
-local function OpenPage(name)
-    if not Pages[name] then return end
-
-    CurrentPage = name
-
-    for pageName, page in pairs(Pages) do
-        page.Visible = pageName == name
-    end
-
-    for pageName, button in pairs(NavButtons) do
-        local selected = pageName == name
-
-        button.BackgroundColor3 = selected
-            and Color3.fromRGB(45, 63, 88)
-            or Color3.fromRGB(23, 29, 41)
-
-        button.TextColor3 = selected
-            and Config.Accent
-            or Color3.fromRGB(190, 200, 215)
-    end
-
-    MiniTitle.Text = "DYNAMIC ISLAND"
-    MiniStatus.Text = name .. "  /  V6.1"
-end
-
-local function AddNavigation(name, symbol)
-    local button = New("TextButton", {
-        Size = UDim2.new(1, 0, 0, 38),
-        BackgroundColor3 = Color3.fromRGB(23, 29, 41),
-        Text = symbol .. "    " .. name,
-        TextColor3 = Color3.fromRGB(190, 200, 215),
-        TextSize = 11,
-        Font = Enum.Font.GothamBold,
-        AutoButtonColor = false,
-        BorderSizePixel = 0,
-    }, Sidebar)
-
-    Round(button, 10)
-
-    button.MouseButton1Click:Connect(function()
-        OpenPage(name)
-    end)
-
-    NavButtons[name] = button
-end
-
-local MusicPage = CreatePage("Music")
-local NotificationsPage = CreatePage("Notifications")
-local DevicePage = CreatePage("Device")
-local TimePage = CreatePage("Time")
-local NetworkPage = CreatePage("Network")
-local SettingsPage = CreatePage("Settings")
-
--- Simple glyphs plus text labels: no emoji dependency.
-AddNavigation("Music", "M")
-AddNavigation("Notifications", "N")
-AddNavigation("Device", "D")
-AddNavigation("Time", "T")
-AddNavigation("Network", "P")
-AddNavigation("Settings", "S")
-
---========================================================
--- MUSIC PAGE - PREMIUM PLAYER
---========================================================
-
-Heading(MusicPage, "MUSIC PLAYER")
-
-local PlayerCard = MakeCard(MusicPage, 174)
-
-local Album = New("Frame", {
-    Position = UDim2.new(0, 13, 0, 13),
-    Size = UDim2.fromOffset(105, 105),
-    BackgroundColor3 = Color3.fromRGB(45, 61, 88),
-    BorderSizePixel = 0,
-}, PlayerCard)
-
-Round(Album, 15)
-
-New("UIGradient", {
-    Rotation = 45,
-    Color = ColorSequence.new(
-        Config.Accent,
-        Color3.fromRGB(35, 42, 75)
-    ),
-}, Album)
-
-local AlbumSymbol = Text(Album, "MUSIC", 16, Color3.new(1, 1, 1), true)
-AlbumSymbol.Size = UDim2.fromScale(1, 1)
-AlbumSymbol.TextXAlignment = Enum.TextXAlignment.Center
-
-local SongName = Text(PlayerCard, "No song selected", 13, Color3.new(1, 1, 1), true)
-SongName.Position = UDim2.new(0, 130, 0, 12)
-SongName.Size = UDim2.new(1, -142, 0, 24)
-
-local SongState = Text(PlayerCard, "Add an Audio ID to begin", 9, Color3.fromRGB(160, 175, 195))
-SongState.Position = UDim2.new(0, 130, 0, 37)
-SongState.Size = UDim2.new(1, -142, 0, 20)
-
-local ProgressBack = New("Frame", {
-    Position = UDim2.new(0, 130, 0, 72),
-    Size = UDim2.new(1, -145, 0, 6),
-    BackgroundColor3 = Color3.fromRGB(63, 73, 91),
-    BorderSizePixel = 0,
-}, PlayerCard)
-
-Round(ProgressBack, 6)
-
-local ProgressFill = New("Frame", {
-    Size = UDim2.new(0, 0, 1, 0),
-    BackgroundColor3 = Config.Accent,
-    BorderSizePixel = 0,
-}, ProgressBack)
-
-Round(ProgressFill, 6)
-
-local TimeCurrent = Text(PlayerCard, "00:00", 9, Color3.fromRGB(170, 185, 205))
-TimeCurrent.Position = UDim2.new(0, 130, 0, 82)
-TimeCurrent.Size = UDim2.fromOffset(55, 16)
-
-local TimeTotal = Text(PlayerCard, "00:00", 9, Color3.fromRGB(170, 185, 205))
-TimeTotal.Position = UDim2.new(1, -65, 0, 82)
-TimeTotal.Size = UDim2.fromOffset(55, 16)
-TimeTotal.TextXAlignment = Enum.TextXAlignment.Right
-
-local function SeekTo(position)
-    if not Music.IsLoaded or Music.TimeLength <= 0 then return end
-
-    local percent = math.clamp(
-        (position.X - ProgressBack.AbsolutePosition.X)
-        / math.max(1, ProgressBack.AbsoluteSize.X),
-        0,
-        1
-    )
-
-    Music.TimePosition = Music.TimeLength * percent
-end
-
-ProgressBack.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1
-        or input.UserInputType == Enum.UserInputType.Touch then
-        SeekTo(input.Position)
-    end
 end)
 
-local SeekMove
-local SeekEnd
+--// PAGE: HOME
+Pages.Home = function()
+    local welcome = Card(PageScroll, "WELCOME BACK", 92)
+    Label(welcome, Player.DisplayName .. "  @" .. Player.Name,
+        UDim2.new(1, -24, 0, 24), UDim2.fromOffset(12, 37), 13)
 
-ProgressBack.InputBegan:Connect(function(input)
-    if input.UserInputType ~= Enum.UserInputType.MouseButton1
-        and input.UserInputType ~= Enum.UserInputType.Touch then
-        return
-    end
+    local status = Card(PageScroll, "LIVE STATUS", 110)
+    local statusText = Label(status, "FPS: --   |   Ping: --",
+        UDim2.new(1, -24, 0, 25), UDim2.fromOffset(12, 38), 12)
 
-    SeekMove = UserInputService.InputChanged:Connect(function(changed)
-        if changed.UserInputType == Enum.UserInputType.MouseMovement
-            or changed.UserInputType == Enum.UserInputType.Touch then
-            SeekTo(changed.Position)
-        end
-    end)
+    local musicCard = Card(PageScroll, "MUSIC PLAYER", 112)
+    local musicStatus = Label(musicCard, "No track playing",
+        UDim2.new(1, -24, 0, 22), UDim2.fromOffset(12, 35), 12)
 
-    SeekEnd = UserInputService.InputEnded:Connect(function(ended)
-        if ended.UserInputType == Enum.UserInputType.MouseButton1
-            or ended.UserInputType == Enum.UserInputType.Touch then
-
-            if SeekMove then SeekMove:Disconnect() end
-            if SeekEnd then SeekEnd:Disconnect() end
-        end
-    end)
-end)
-
-local Previous = MakeButton(PlayerCard, "|<", PreviousTrack, 43, 30)
-Previous.Position = UDim2.new(0, 130, 0, 119)
-
-local PlayPause
-PlayPause = MakeButton(PlayerCard, "PLAY", function()
-    if Music.IsPlaying then
-        Music:Pause()
-    elseif Music.SoundId ~= "" then
-        Music:Resume()
-    else
-        Notify("Music", "Add a song first", "Music")
-    end
-end, 72, 30)
-
-PlayPause.Position = UDim2.new(0, 179, 0, 119)
-
-local Next = MakeButton(PlayerCard, ">|", NextTrack, 43, 30)
-Next.Position = UDim2.new(0, 257, 0, 119)
-
-local ShuffleButton
-ShuffleButton = MakeButton(PlayerCard, "SHUFFLE OFF", function()
-    Shuffle = not Shuffle
-    ShuffleButton.Text = Shuffle and "SHUFFLE ON" or "SHUFFLE OFF"
-end, 94, 30)
-
-ShuffleButton.Position = UDim2.new(1, -105, 0, 119)
-
-local RepeatButton
-RepeatButton = MakeButton(PlayerCard, "REPEAT OFF", function()
-    RepeatMode = (RepeatMode + 1) % 3
-
-    local names = {
-        "REPEAT OFF",
-        "REPEAT ALL",
-        "REPEAT ONE",
-    }
-
-    RepeatButton.Text = names[RepeatMode + 1]
-end, 94, 30)
-
-RepeatButton.Position = UDim2.new(1, -105, 0, 151)
-
-local AddCard = MakeCard(MusicPage, 91)
-
-Heading(AddCard, "ADD MUSIC ID").Position = UDim2.new(0, 11, 0, 4)
-
-local AudioInput = MakeInput(AddCard, "Roblox Audio ID", "", 130)
-AudioInput.Position = UDim2.new(0, 11, 0, 37)
-AudioInput.Size = UDim2.new(1, -135, 0, 35)
-
-local function AddSong()
-    local id = AudioInput.Text:gsub("%s+", "")
-
-    if not id:match("^%d+$") then
-        Notify("Music", "Please enter a valid numeric Audio ID", "Music")
-        return
-    end
-
-    table.insert(Playlist, id)
-    AudioInput.Text = ""
-
-    Notify("Music", "Track added to queue", "Music")
-
-    if #Playlist == 1 then
-        PlayTrack(1)
-    end
-end
-
-MakeButton(AddCard, "ADD", AddSong, 75).Position =
-    UDim2.new(1, -86, 0, 37)
-
-local VolumeCard = MakeCard(MusicPage, 65)
-
-Heading(VolumeCard, "VOLUME").Position = UDim2.new(0, 11, 0, 3)
-
-local VolumeBack = New("Frame", {
-    Position = UDim2.new(0, 11, 0, 39),
-    Size = UDim2.new(1, -22, 0, 9),
-    BackgroundColor3 = Color3.fromRGB(62, 72, 91),
-    BorderSizePixel = 0,
-}, VolumeCard)
-
-Round(VolumeBack, 8)
-
-local VolumeFill = New("Frame", {
-    Size = UDim2.new(Config.Volume, 0, 1, 0),
-    BackgroundColor3 = Config.Accent,
-    BorderSizePixel = 0,
-}, VolumeBack)
-
-Round(VolumeFill, 8)
-
-local function SetVolumeFromPosition(position)
-    local percent = math.clamp(
-        (position.X - VolumeBack.AbsolutePosition.X)
-        / math.max(1, VolumeBack.AbsoluteSize.X),
-        0,
-        1
-    )
-
-    Config.Volume = percent
-    Music.Volume = percent
-    VolumeFill.Size = UDim2.new(percent, 0, 1, 0)
-end
-
-VolumeBack.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1
-        or input.UserInputType == Enum.UserInputType.Touch then
-
-        SetVolumeFromPosition(input.Position)
-    end
-end)
-
-local QueueCard = MakeCard(MusicPage, 205)
-
-Heading(QueueCard, "PLAY QUEUE").Position = UDim2.new(0, 11, 0, 5)
-
-local QueueList = New("ScrollingFrame", {
-    Position = UDim2.new(0, 9, 0, 32),
-    Size = UDim2.new(1, -18, 1, -42),
-    BackgroundTransparency = 1,
-    BorderSizePixel = 0,
-    ScrollBarThickness = 3,
-    AutomaticCanvasSize = Enum.AutomaticSize.Y,
-    CanvasSize = UDim2.new(),
-}, QueueCard)
-
-New("UIListLayout", {
-    Padding = UDim.new(0, 5),
-    SortOrder = Enum.SortOrder.LayoutOrder,
-}, QueueList)
-
-local QueueRows = {}
-
-local function RefreshQueue()
-    for _, row in ipairs(QueueRows) do
-        row:Destroy()
-    end
-
-    table.clear(QueueRows)
-
-    for index, id in ipairs(Playlist) do
-        local row = New("Frame", {
-            Size = UDim2.new(1, -5, 0, 32),
-            BackgroundColor3 = index == CurrentTrack
-                and Color3.fromRGB(42, 57, 79)
-                or Color3.fromRGB(19, 25, 36),
-            BorderSizePixel = 0,
-        }, QueueList)
-
-        Round(row, 8)
-
-        local play = New("TextButton", {
-            Position = UDim2.new(0, 7, 0, 0),
-            Size = UDim2.new(1, -65, 1, 0),
-            BackgroundTransparency = 1,
-            Text = (index == CurrentTrack and "> " or "") .. "Track " .. index .. "  |  " .. id,
-            TextColor3 = Color3.fromRGB(230, 237, 248),
-            TextSize = 10,
-            Font = Enum.Font.GothamMedium,
-            TextXAlignment = Enum.TextXAlignment.Left,
-        }, row)
-
-        play.MouseButton1Click:Connect(function()
-            PlayTrack(index)
-        end)
-
-        local remove = New("TextButton", {
-            AnchorPoint = Vector2.new(1, 0.5),
-            Position = UDim2.new(1, -5, 0.5, 0),
-            Size = UDim2.fromOffset(42, 25),
-            BackgroundColor3 = Color3.fromRGB(100, 47, 55),
-            Text = "DEL",
-            TextColor3 = Color3.new(1, 1, 1),
-            TextSize = 9,
-            Font = Enum.Font.GothamBold,
-            BorderSizePixel = 0,
-        }, row)
-
-        Round(remove, 7)
-
-        remove.MouseButton1Click:Connect(function()
-            table.remove(Playlist, index)
-
-            if #Playlist == 0 then
-                CurrentTrack = 1
-                Music:Stop()
-            elseif index < CurrentTrack then
-                CurrentTrack -= 1
-            elseif index == CurrentTrack then
-                CurrentTrack = math.min(CurrentTrack, #Playlist)
-                PlayTrack(CurrentTrack)
+    Button(musicCard, "PLAY / PAUSE", UDim2.fromOffset(112, 30),
+        UDim2.fromOffset(12, 68), function()
+            if Music.IsPlaying then
+                Music:Pause()
+            elseif #Playlist > 0 then
+                if Music.SoundId == "" then
+                    PlayTrack(CurrentTrack)
+                else
+                    Music:Resume()
+                end
+            else
+                Notify("Music", "Add an audio ID first", "Music")
             end
-
-            RefreshQueue()
         end)
 
-        table.insert(QueueRows, row)
-    end
-
-    if #Playlist == 0 then
-        local empty = Text(QueueList, "Queue is empty. Add an Audio ID above.", 10,
-            Color3.fromRGB(150, 165, 185))
-        empty.Size = UDim2.new(1, -8, 0, 32)
-        table.insert(QueueRows, empty)
-    end
-end
-
-local QueueActions = MakeCard(MusicPage, 48)
-
-MakeButton(QueueActions, "CLEAR QUEUE", function()
-    table.clear(Playlist)
-    CurrentTrack = 1
-    Music:Stop()
-    RefreshQueue()
-end, 115).Position = UDim2.new(0, 10, 0, 7)
-
-MakeButton(QueueActions, "PLAY FIRST", function()
-    if #Playlist > 0 then
-        PlayTrack(1)
-    end
-end, 105).Position = UDim2.new(0, 135, 0, 7)
-
-local RecentCard = MakeCard(MusicPage, 105)
-
-Heading(RecentCard, "RECENTLY PLAYED").Position = UDim2.new(0, 11, 0, 5)
-
-local RecentText = Text(RecentCard, "No recent tracks", 10)
-RecentText.Position = UDim2.new(0, 11, 0, 32)
-RecentText.Size = UDim2.new(1, -22, 0, 65)
-RecentText.TextYAlignment = Enum.TextYAlignment.Top
-
---========================================================
--- NOTIFICATIONS PAGE
---========================================================
-
-Heading(NotificationsPage, "NOTIFICATION CENTER")
-
-local NotificationSummary = MakeCard(NotificationsPage, 75)
-
-local NotificationCount = Text(NotificationSummary, "0 Notifications", 17,
-    Color3.new(1, 1, 1), true)
-NotificationCount.Position = UDim2.new(0, 12, 0, 7)
-
-local UnreadCount = Text(NotificationSummary, "Unread: 0", 10, Config.Accent)
-UnreadCount.Position = UDim2.new(0, 12, 0, 39)
-
-MakeButton(NotificationSummary, "CLEAR ALL", function()
-    table.clear(Notifications)
-end, 90).Position = UDim2.new(1, -101, 0, 20)
-
-local FilterCard = MakeCard(NotificationsPage, 48)
-
-local FilterButton
-FilterButton = MakeButton(FilterCard, "FILTER: ALL", function()
-    if NotificationFilter == "All" then
-        NotificationFilter = "Music"
-    elseif NotificationFilter == "Music" then
-        NotificationFilter = "System"
-    else
-        NotificationFilter = "All"
-    end
-
-    FilterButton.Text = "FILTER: " .. NotificationFilter:upper()
-end, 130)
-
-FilterButton.Position = UDim2.new(0, 10, 0, 7)
-
-local NotificationCard = MakeCard(NotificationsPage, 290)
-
-local NotificationList = New("ScrollingFrame", {
-    Position = UDim2.new(0, 10, 0, 9),
-    Size = UDim2.new(1, -20, 1, -18),
-    BackgroundTransparency = 1,
-    BorderSizePixel = 0,
-    ScrollBarThickness = 3,
-    AutomaticCanvasSize = Enum.AutomaticSize.Y,
-    CanvasSize = UDim2.new(),
-}, NotificationCard)
-
-New("UIListLayout", {
-    Padding = UDim.new(0, 6),
-}, NotificationList)
-
---========================================================
--- DEVICE PAGE
---========================================================
-
-Heading(DevicePage, "DEVICE INFORMATION")
-
-local DeviceCard = MakeCard(DevicePage, 340)
-
-local DeviceText = Text(DeviceCard, "Loading...", 11)
-DeviceText.Position = UDim2.new(0, 12, 0, 12)
-DeviceText.Size = UDim2.new(1, -24, 1, -55)
-DeviceText.TextYAlignment = Enum.TextYAlignment.Top
-
-local function RefreshDevice()
-    local resolution = "Unavailable"
-
-    if workspace.CurrentCamera then
-        local v = workspace.CurrentCamera.ViewportSize
-        resolution = math.floor(v.X) .. " x " .. math.floor(v.Y)
-    end
-
-    local input = "Keyboard / Mouse"
-
-    if UserInputService.TouchEnabled then
-        input = "Touch"
-    end
-
-    if UserInputService.GamepadEnabled then
-        input = input .. " + Gamepad"
-    end
-
-    DeviceText.Text =
-        "PLAYER INFORMATION\n\n" ..
-        "Name: " .. Player.Name .. "\n" ..
-        "Display Name: " .. Player.DisplayName .. "\n" ..
-        "User ID: " .. Player.UserId .. "\n\n" ..
-        "DEVICE INFORMATION\n\n" ..
-        "Platform: " .. tostring(UserInputService:GetPlatform()) .. "\n" ..
-        "Input: " .. input .. "\n" ..
-        "Resolution: " .. resolution .. "\n" ..
-        "Touch Enabled: " .. tostring(UserInputService.TouchEnabled) .. "\n" ..
-        "Keyboard Enabled: " .. tostring(UserInputService.KeyboardEnabled) .. "\n" ..
-        "Gamepad Enabled: " .. tostring(UserInputService.GamepadEnabled) .. "\n\n" ..
-        "HARDWARE INFORMATION\n\n" ..
-        "CPU Model: Unavailable\n" ..
-        "GPU Model: Unavailable\n" ..
-        "IMEI: Unavailable\n" ..
-        "Serial Number: Unavailable\n" ..
-        "Battery: Unavailable\n\n" ..
-        "Hardware identifiers are not exposed by Roblox."
-end
-
-MakeButton(DeviceCard, "REFRESH INFO", RefreshDevice, 120)
-    .Position = UDim2.new(0, 12, 1, -43)
-
-RefreshDevice()
-
---========================================================
--- TIME PAGE
---========================================================
-
-Heading(TimePage, "CLOCK")
-
-local ClockCard = MakeCard(TimePage, 83)
-
-local ClockText = Text(ClockCard, "--:--:--", 25, Color3.new(1, 1, 1), true)
-ClockText.Position = UDim2.new(0, 12, 0, 5)
-
-local DateText = Text(ClockCard, "", 10, Color3.fromRGB(160, 175, 195))
-DateText.Position = UDim2.new(0, 12, 0, 48)
-
-Heading(TimePage, "STOPWATCH")
-
-local StopwatchCard = MakeCard(TimePage, 130)
-
-local StopwatchText = Text(StopwatchCard, "00:00", 25, Color3.new(1, 1, 1), true)
-StopwatchText.Position = UDim2.new(0, 12, 0, 5)
-
-local StopwatchButton
-StopwatchButton = MakeButton(StopwatchCard, "START", function()
-    StopwatchRunning = not StopwatchRunning
-    StopwatchButton.Text = StopwatchRunning and "PAUSE" or "RESUME"
-end, 80)
-
-StopwatchButton.Position = UDim2.new(0, 12, 0, 52)
-
-MakeButton(StopwatchCard, "RESET", function()
-    StopwatchRunning = false
-    StopwatchTime = 0
-    table.clear(Laps)
-    StopwatchButton.Text = "START"
-end, 75).Position = UDim2.new(0, 100, 0, 52)
-
-MakeButton(StopwatchCard, "LAP", function()
-    if StopwatchRunning then
-        table.insert(Laps, StopwatchTime)
-
-        while #Laps > 8 do
-            table.remove(Laps, 1)
-        end
-    end
-end, 65).Position = UDim2.new(0, 183, 0, 52)
-
-local LapText = Text(StopwatchCard, "Laps: 0", 9, Config.Accent)
-LapText.Position = UDim2.new(0, 12, 0, 95)
-
-Heading(TimePage, "MULTIPLE COUNTDOWNS")
-
-local TimerInputCard = MakeCard(TimePage, 83)
-
-local TimerInput = MakeInput(TimerInputCard, "Seconds", "60", 130)
-TimerInput.Position = UDim2.new(0, 10, 0, 10)
-TimerInput.Size = UDim2.new(0, 115, 0, 34)
-
-MakeButton(TimerInputCard, "ADD TIMER", function()
-    local value = ValidNumber(TimerInput.Text)
-
-    if not value or value <= 0 or value > 86400 then
-        Notify("Timer", "Enter a number between 1 and 86400", "System")
-        return
-    end
-
-    TimerId += 1
-
-    table.insert(Timers, {
-        Id = TimerId,
-        Remaining = math.floor(value),
-        Running = true,
-    })
-
-    TimerInput.Text = "60"
-end, 105).Position = UDim2.new(0, 135, 0, 10)
-
-local TimerListCard = MakeCard(TimePage, 230)
-
-local TimerList = New("ScrollingFrame", {
-    Position = UDim2.new(0, 9, 0, 9),
-    Size = UDim2.new(1, -18, 1, -18),
-    BackgroundTransparency = 1,
-    BorderSizePixel = 0,
-    ScrollBarThickness = 3,
-    AutomaticCanvasSize = Enum.AutomaticSize.Y,
-    CanvasSize = UDim2.new(),
-}, TimerListCard)
-
-New("UIListLayout", {
-    Padding = UDim.new(0, 6),
-}, TimerList)
-
-local TimerRows = {}
-
-local function RefreshTimers()
-    for _, row in ipairs(TimerRows) do
-        row:Destroy()
-    end
-
-    table.clear(TimerRows)
-
-    for index, timer in ipairs(Timers) do
-        local row = New("Frame", {
-            Size = UDim2.new(1, -4, 0, 40),
-            BackgroundColor3 = Color3.fromRGB(20, 26, 38),
-            BorderSizePixel = 0,
-        }, TimerList)
-
-        Round(row, 9)
-
-        local info = Text(row,
-            "#" .. timer.Id .. "  " .. FormatTime(timer.Remaining),
-            10, Color3.new(1, 1, 1), true)
-
-        info.Position = UDim2.new(0, 8, 0, 0)
-        info.Size = UDim2.new(1, -135, 1, 0)
-
-        local toggle = MakeButton(row,
-            timer.Running and "PAUSE" or "RESUME",
-            function()
-                timer.Running = not timer.Running
-                RefreshTimers()
-            end, 62, 27)
-
-        toggle.Position = UDim2.new(1, -128, 0.5, -13)
-
-        local delete = MakeButton(row, "DEL", function()
-            table.remove(Timers, index)
-            RefreshTimers()
-        end, 48, 27)
-
-        delete.Position = UDim2.new(1, -58, 0.5, -13)
-
-        table.insert(TimerRows, row)
-    end
-
-    if #Timers == 0 then
-        local empty = Text(TimerList, "No active countdowns", 10,
-            Color3.fromRGB(150, 165, 185))
-        empty.Size = UDim2.new(1, -5, 0, 35)
-        table.insert(TimerRows, empty)
-    end
-end
-
-local SessionCard = MakeCard(TimePage, 53)
-
-local SessionText = Text(SessionCard, "SESSION: 00:00", 13, Config.Accent, true)
-SessionText.Position = UDim2.new(0, 12, 0, 8)
-
---========================================================
--- NETWORK PAGE
---========================================================
-
-Heading(NetworkPage, "LIVE PERFORMANCE")
-
-local PerformanceCard = MakeCard(NetworkPage, 160)
-
-local PerformanceText = Text(PerformanceCard, "Loading...", 12)
-PerformanceText.Position = UDim2.new(0, 12, 0, 10)
-PerformanceText.Size = UDim2.new(1, -24, 1, -20)
-PerformanceText.TextYAlignment = Enum.TextYAlignment.Top
-
-local HistoryCard = MakeCard(NetworkPage, 170)
-
-Heading(HistoryCard, "PERFORMANCE HISTORY").Position =
-    UDim2.new(0, 12, 0, 5)
-
-local HistoryText = Text(HistoryCard, "Collecting performance data...", 10)
-HistoryText.Position = UDim2.new(0, 12, 0, 32)
-HistoryText.Size = UDim2.new(1, -24, 1, -40)
-HistoryText.TextYAlignment = Enum.TextYAlignment.Top
-
-local WarningCard = MakeCard(NetworkPage, 57)
-
-local WarningText = Text(WarningCard, "Monitoring active", 11, Config.Accent, true)
-WarningText.Position = UDim2.new(0, 12, 0, 10)
-
---========================================================
--- SETTINGS PAGE
---========================================================
-
-Heading(SettingsPage, "APPEARANCE")
-
-local AppearanceCard = MakeCard(SettingsPage, 155)
-
-local ThemeLabel = Text(AppearanceCard, "Theme Color", 11, Config.Accent, true)
-ThemeLabel.Position = UDim2.new(0, 12, 0, 5)
-
-MakeButton(AppearanceCard, "NEXT THEME", function()
-    ThemeIndex = ThemeIndex % #ThemeColors + 1
-    Config.Accent = ThemeColors[ThemeIndex]
-
-    ThemeLabel.TextColor3 = Config.Accent
-    ProgressFill.BackgroundColor3 = Config.Accent
-    VolumeFill.BackgroundColor3 = Config.Accent
-    MiniIcon.TextColor3 = Config.Accent
-
-    Notify("Settings", "Theme changed", "System")
-end, 115).Position = UDim2.new(0, 12, 0, 34)
-
-MakeButton(AppearanceCard, "MORE TRANSPARENT", function()
-    Config.Transparency = math.clamp(Config.Transparency + 0.05, 0, 0.7)
-    Main.BackgroundTransparency = Config.Transparency
-end, 145).Position = UDim2.new(0, 137, 0, 34)
-
-MakeButton(AppearanceCard, "LESS TRANSPARENT", function()
-    Config.Transparency = math.clamp(Config.Transparency - 0.05, 0, 0.7)
-    Main.BackgroundTransparency = Config.Transparency
-end, 145).Position = UDim2.new(0, 12, 0, 77)
-
-local CompactButton
-CompactButton = MakeButton(AppearanceCard, "COMPACT OFF", function()
-    Config.Compact = not Config.Compact
-    CompactButton.Text = Config.Compact and "COMPACT ON" or "COMPACT OFF"
-
-    if Expanded then
-        Main.Size = UDim2.fromOffset(
-            Config.Width,
-            Config.Compact and 380 or Config.Height
-        )
-    end
-end, 125)
-
-CompactButton.Position = UDim2.new(0, 167, 0, 77)
-
-Heading(SettingsPage, "INTERFACE")
-
-local InterfaceCard = MakeCard(SettingsPage, 155)
-
-local MotionButton
-MotionButton = MakeButton(InterfaceCard, "REDUCED MOTION OFF", function()
-    Config.ReducedMotion = not Config.ReducedMotion
-    MotionButton.Text = Config.ReducedMotion
-        and "REDUCED MOTION ON"
-        or "REDUCED MOTION OFF"
-end, 175)
-
-MotionButton.Position = UDim2.new(0, 12, 0, 10)
-
-local ContrastButton
-ContrastButton = MakeButton(InterfaceCard, "HIGH CONTRAST OFF", function()
-    Config.HighContrast = not Config.HighContrast
-
-    ContrastButton.Text = Config.HighContrast
-        and "HIGH CONTRAST ON"
-        or "HIGH CONTRAST OFF"
-
-    Main.BackgroundColor3 = Config.HighContrast
-        and Color3.fromRGB(0, 0, 0)
-        or Config.Background
-end, 175)
-
-ContrastButton.Position = UDim2.new(0, 12, 0, 52)
-
-MakeButton(InterfaceCard, "SCALE +", function()
-    Config.Scale = math.clamp(Config.Scale + 0.05, 0.7, 1.3)
-    UIScale.Scale = Config.Scale
-end, 75).Position = UDim2.new(0, 12, 0, 96)
-
-MakeButton(InterfaceCard, "SCALE -", function()
-    Config.Scale = math.clamp(Config.Scale - 0.05, 0.7, 1.3)
-    UIScale.Scale = Config.Scale
-end, 75).Position = UDim2.new(0, 95, 0, 96)
-
-Heading(SettingsPage, "ANTI-FLING")
-
-local AntiFlingCard = MakeCard(SettingsPage, 100)
-
-local AntiFlingStatus = Text(AntiFlingCard, "Protection: OFF", 11, Config.Accent, true)
-AntiFlingStatus.Position = UDim2.new(0, 12, 0, 5)
-
-local AntiFlingButton
-AntiFlingButton = MakeButton(AntiFlingCard, "ENABLE", function()
-    Config.AntiFling = not Config.AntiFling
-
-    AntiFlingButton.Text = Config.AntiFling and "DISABLE" or "ENABLE"
-    AntiFlingStatus.Text = Config.AntiFling
-        and "Protection: ON"
-        or "Protection: OFF"
-
-    Notify("Anti-Fling",
-        Config.AntiFling and "Protection enabled" or "Protection disabled",
-        "System")
-end, 100)
-
-AntiFlingButton.Position = UDim2.new(0, 12, 0, 35)
-
-local AntiFlingCountText = Text(AntiFlingCard, "Detections: 0", 10, Config.Accent)
-AntiFlingCountText.Position = UDim2.new(0, 125, 0, 43)
-
-Heading(SettingsPage, "RESET")
-
-local ResetCard = MakeCard(SettingsPage, 55)
-
-MakeButton(ResetCard, "RESTORE DEFAULT SETTINGS", function()
-    Config.Accent = ThemeColors[1]
-    Config.Background = Color3.fromRGB(10, 13, 21)
-    Config.Transparency = 0.08
-    Config.Volume = 0.5
-    Config.Scale = 1
-    Config.Compact = false
-    Config.ReducedMotion = false
-    Config.HighContrast = false
-
-    ThemeIndex = 1
-
-    Main.BackgroundColor3 = Config.Background
-    Main.BackgroundTransparency = Config.Transparency
-    UIScale.Scale = 1
-    Music.Volume = Config.Volume
-
-    VolumeFill.Size = UDim2.new(Config.Volume, 0, 1, 0)
-    VolumeFill.BackgroundColor3 = Config.Accent
-    ProgressFill.BackgroundColor3 = Config.Accent
-    MiniIcon.TextColor3 = Config.Accent
-    ThemeLabel.TextColor3 = Config.Accent
-
-    CompactButton.Text = "COMPACT OFF"
-    MotionButton.Text = "REDUCED MOTION OFF"
-    ContrastButton.Text = "HIGH CONTRAST OFF"
-
-    Notify("Settings", "Defaults restored", "System")
-end, 205).Position = UDim2.new(0, 12, 0, 10)
-
---========================================================
--- EXPAND / COLLAPSE
---========================================================
-
-local function SetExpanded(value)
-    Expanded = value
-
-    if Expanded then
-        Main.Size = UDim2.fromOffset(
-            Config.Width,
-            Config.Compact and 380 or Config.Height
-        )
-
-        Panel.Visible = true
-    else
-        Main.Size = UDim2.fromOffset(210, 54)
-    end
-end
-
-Toggle.MouseButton1Click:Connect(function()
-    SetExpanded(not Expanded)
-end)
-
---========================================================
--- DRAG SUPPORT
---========================================================
-
-local Dragging = false
-local DragStart
-local StartPosition
-
-Main.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1
-        or input.UserInputType == Enum.UserInputType.Touch then
-
-        if input.Position.Y <= Main.AbsolutePosition.Y + 54 then
-            Dragging = true
-            DragStart = input.Position
-            StartPosition = Main.Position
-        end
-    end
-end)
-
-Connect(UserInputService.InputChanged:Connect(function(input)
-    if not Dragging then return end
-
-    if input.UserInputType == Enum.UserInputType.MouseMovement
-        or input.UserInputType == Enum.UserInputType.Touch then
-
-        local delta = input.Position - DragStart
-
-        Main.Position = UDim2.new(
-            StartPosition.X.Scale,
-            StartPosition.X.Offset + delta.X,
-            StartPosition.Y.Scale,
-            StartPosition.Y.Offset + delta.Y
-        )
-    end
-end))
-
-Connect(UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1
-        or input.UserInputType == Enum.UserInputType.Touch then
-        Dragging = false
-    end
-end))
-
---========================================================
--- RESPONSIVE SIZE
---========================================================
-
-local function UpdateResponsive()
-    local camera = workspace.CurrentCamera
-    if not camera then return end
-
-    local width = camera.ViewportSize.X
-
-    if width < 560 then
-        Config.Width = math.max(330, width - 18)
-        Sidebar.Size = UDim2.new(0, 100, 1, -20)
-        Content.Position = UDim2.new(0, 122, 0, 10)
-        Content.Size = UDim2.new(1, -134, 1, -20)
-    else
-        Config.Width = 620
-        Sidebar.Size = UDim2.new(0, 122, 1, -20)
-        Content.Position = UDim2.new(0, 146, 0, 10)
-        Content.Size = UDim2.new(1, -158, 1, -20)
-    end
-
-    if Expanded then
-        Main.Size = UDim2.fromOffset(
-            Config.Width,
-            Config.Compact and 380 or Config.Height
-        )
-    end
-end
-
-local function BindCamera(camera)
-    if not camera then return end
-
-    Connect(camera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateResponsive))
-    UpdateResponsive()
-end
-
-BindCamera(workspace.CurrentCamera)
-
-Connect(workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
-    BindCamera(workspace.CurrentCamera)
-end))
-
---========================================================
--- PERFORMANCE MONITOR
---========================================================
-
-local frameCount = 0
-local frameTime = 0
-
-Connect(RunService.RenderStepped:Connect(function(dt)
-    frameCount += 1
-    frameTime += dt
-
-    if frameTime >= 1 then
-        FPS = math.floor(frameCount / frameTime + 0.5)
-        frameCount = 0
-        frameTime = 0
-    end
-end))
-
-local function ReadPing()
-    local success, value = pcall(function()
-        return Stats.Network.ServerStatsItem["Data Ping"]:GetValue()
-    end)
-
-    if success and type(value) == "number" then
-        return math.floor(value)
-    end
-
-    return 0
-end
-
-local function ReadMemory()
-    local success, value = pcall(function()
-        return Stats:GetTotalMemoryUsageMb()
-    end)
-
-    if success and type(value) == "number" then
-        return math.floor(value)
-    end
-
-    return 0
-end
-
---========================================================
--- ANTI-FLING
---========================================================
-
-local CurrentRoot
-local CharacterGeneration = 0
-local LastDetection = 0
-
-local function SetupCharacter(character)
-    CharacterGeneration += 1
-    local generation = CharacterGeneration
-    CurrentRoot = nil
+    Button(musicCard, "NEXT", UDim2.fromOffset(75, 30),
+        UDim2.fromOffset(132, 68), NextTrack)
+
+    Button(PageScroll, "OPEN MUSIC", UDim2.new(1, 0, 0, 35),
+        nil, function()
+            CreatePage("Music")
+        end)
+
+    Button(PageScroll, "OPEN PERFORMANCE", UDim2.new(1, 0, 0, 35),
+        nil, function()
+            CreatePage("Performance")
+        end)
 
     task.spawn(function()
-        local root = character:WaitForChild("HumanoidRootPart", 10)
+        while CurrentPage == "Home" and Gui.Parent do
+            statusText.Text = string.format(
+                "FPS: %d   |   Ping: %d ms",
+                FPS, Ping
+            )
 
-        if Destroyed or generation ~= CharacterGeneration then
-            return
-        end
+            if Music.IsPlaying then
+                musicStatus.Text = "Playing  •  " ..
+                    tostring(Playlist[CurrentTrack] and Playlist[CurrentTrack].Id or "")
+            else
+                musicStatus.Text = "Paused / Ready"
+            end
 
-        if root and root:IsA("BasePart") then
-            CurrentRoot = root
+            task.wait(1)
         end
     end)
 end
 
-Connect(Player.CharacterAdded:Connect(SetupCharacter))
+--// PAGE: MUSIC
+Pages.Music = function()
+    local addCard = Card(PageScroll, "ADD ROBLOX AUDIO ID", 112)
 
-Connect(Player.CharacterRemoving:Connect(function()
-    CharacterGeneration += 1
-    CurrentRoot = nil
-end))
+    local idBox = New("TextBox", {
+        Position = UDim2.fromOffset(12, 38),
+        Size = UDim2.new(1, -105, 0, 34),
+        BackgroundColor3 = Color3.fromRGB(35, 39, 49),
+        Text = "",
+        PlaceholderText = "Enter audio ID",
+        PlaceholderColor3 = Color3.fromRGB(150, 155, 170),
+        TextColor3 = Color3.fromRGB(255, 255, 255),
+        TextSize = 12,
+        Font = Enum.Font.Gotham,
+        ClearTextOnFocus = false
+    }, addCard)
+    Corner(idBox, 8)
 
-if Player.Character then
-    SetupCharacter(Player.Character)
-end
+    Button(addCard, "ADD", UDim2.fromOffset(70, 34),
+        UDim2.new(1, -82, 0, 38), function()
+            local id = idBox.Text:match("%d+")
 
-Connect(RunService.Heartbeat:Connect(function()
-    if not Config.AntiFling or not CurrentRoot then return end
-    if os.clock() - LastDetection < 0.2 then return end
+            if not id then
+                Notify("Music", "Enter a valid numeric audio ID", "Music")
+                return
+            end
 
-    LastDetection = os.clock()
+            table.insert(Playlist, {Id = id})
 
-    local character = Player.Character
-    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+            if #Playlist == 1 then
+                PlayTrack(1)
+            end
 
-    if not humanoid or humanoid.Health <= 0 or humanoid.SeatPart then
-        return
-    end
-
-    local root = CurrentRoot
-
-    if not root.Parent then
-        CurrentRoot = nil
-        return
-    end
-
-    local speed = root.AssemblyLinearVelocity.Magnitude
-    local angular = root.AssemblyAngularVelocity.Magnitude
-
-    if speed > 180 or angular > 100 then
-        AntiFlingCount += 1
-        AntiFlingCountText.Text = "Detections: " .. AntiFlingCount
-
-        Notify("Anti-Fling", "Abnormal movement detected", "System")
-
-        -- Local best-effort stabilization only.
-        pcall(function()
-            root.AssemblyLinearVelocity = Vector3.zero
-            root.AssemblyAngularVelocity = Vector3.zero
+            idBox.Text = ""
+            Notify("Music", "Added to playlist", "Music")
+            CreatePage("Music")
         end)
+
+    local control = Card(PageScroll, "PLAYBACK CONTROLS", 110)
+
+    Button(control, "PREV", UDim2.fromOffset(65, 32),
+        UDim2.fromOffset(12, 42), PreviousTrack)
+
+    Button(control, "PLAY / PAUSE", UDim2.fromOffset(105, 32),
+        UDim2.fromOffset(84, 42), function()
+            if Music.IsPlaying then
+                Music:Pause()
+            elseif #Playlist > 0 then
+                if Music.SoundId == "" then
+                    PlayTrack(CurrentTrack)
+                else
+                    Music:Resume()
+                end
+            end
+        end)
+
+    Button(control, "NEXT", UDim2.fromOffset(65, 32),
+        UDim2.fromOffset(198, 42), NextTrack)
+
+    Button(control, Shuffle and "SHUFFLE ON" or "SHUFFLE OFF",
+        UDim2.fromOffset(100, 27), UDim2.fromOffset(12, 77), function()
+            Shuffle = not Shuffle
+            CreatePage("Music")
+        end)
+
+    Button(control, Repeat and "REPEAT ON" or "REPEAT OFF",
+        UDim2.fromOffset(100, 27), UDim2.fromOffset(120, 77), function()
+            Repeat = not Repeat
+            CreatePage("Music")
+        end)
+
+    local volumeCard = Card(PageScroll, "VOLUME", 76)
+
+    local volumeText = Label(volumeCard,
+        "Volume: " .. math.floor(MusicVolume * 100) .. "%",
+        UDim2.new(1, -24, 0, 20),
+        UDim2.fromOffset(12, 34), 12)
+
+    local volumeDown = Button(volumeCard, "−",
+        UDim2.fromOffset(40, 26), UDim2.new(1, -96, 0, 32), function()
+            MusicVolume = math.max(0, MusicVolume - 0.05)
+            Music.Volume = MusicVolume
+            volumeText.Text = "Volume: " .. math.floor(MusicVolume * 100) .. "%"
+        end)
+
+    Button(volumeCard, "+", UDim2.fromOffset(40, 26),
+        UDim2.new(1, -48, 0, 32), function()
+            MusicVolume = math.min(1, MusicVolume + 0.05)
+            Music.Volume = MusicVolume
+            volumeText.Text = "Volume: " .. math.floor(MusicVolume * 100) .. "%"
+        end)
+
+    local progressCard = Card(PageScroll, "PLAYBACK PROGRESS", 70)
+    local progressText = Label(progressCard, "00:00 / 00:00",
+        UDim2.new(1, -24, 0, 25), UDim2.fromOffset(12, 34), 12)
+
+    local queueCard = Card(PageScroll, "PLAYLIST", math.max(75, #Playlist * 36 + 42))
+
+    for i, track in ipairs(Playlist) do
+        local row = New("Frame", {
+            BackgroundTransparency = 1,
+            Position = UDim2.fromOffset(10, 35 + (i - 1) * 35),
+            Size = UDim2.new(1, -20, 0, 30)
+        }, queueCard)
+
+        Button(row, (i == CurrentTrack and "▶ " or "") .. track.Id,
+            UDim2.new(1, -48, 1, 0), nil, function()
+                PlayTrack(i)
+            end)
+
+        Button(row, "×", UDim2.fromOffset(38, 30),
+            UDim2.new(1, -38, 0, 0), function()
+                table.remove(Playlist, i)
+
+                if #Playlist == 0 then
+                    Music:Stop()
+                    CurrentTrack = 1
+                else
+                    if i == CurrentTrack then
+                        CurrentTrack = math.min(CurrentTrack, #Playlist)
+                        PlayTrack(CurrentTrack)
+                    elseif i < CurrentTrack then
+                        CurrentTrack -= 1
+                    end
+                end
+
+                CreatePage("Music")
+            end)
     end
-end))
 
---========================================================
--- REFRESH FUNCTIONS
---========================================================
+    Button(PageScroll, "CLEAR PLAYLIST",
+        UDim2.new(1, 0, 0, 34), nil, function()
+            table.clear(Playlist)
+            CurrentTrack = 1
+            Music:Stop()
+            CreatePage("Music")
+        end)
 
-local function RefreshQueueText()
-    local lines = {}
+    task.spawn(function()
+        while CurrentPage == "Music" and Gui.Parent do
+            local length = Music.TimeLength
+            local position = Music.TimePosition
 
-    for i, id in ipairs(Playlist) do
-        table.insert(lines, i .. ". " .. id)
-    end
-
-    if #lines == 0 then
-        return "Queue is empty"
-    end
-
-    return table.concat(lines, "\n")
-end
-
-local function RefreshRecent()
-    local lines = {}
-
-    for i = 1, math.min(5, #RecentTracks) do
-        table.insert(lines, i .. ". " .. RecentTracks[i])
-    end
-
-    RecentText.Text = #lines > 0
-        and table.concat(lines, "\n")
-        or "No recent tracks"
-end
-
-local function RefreshNotifications()
-    for _, child in ipairs(NotificationList:GetChildren()) do
-        if child:IsA("Frame") or child:IsA("TextLabel") then
-            child:Destroy()
+            progressText.Text = FormatTime(position) .. " / " .. FormatTime(length)
+            task.wait(0.5)
         end
+    end)
+end
+
+--// PAGE: PERFORMANCE
+Pages.Performance = function()
+    local perf = Card(PageScroll, "REAL-TIME PERFORMANCE", 160)
+
+    local perfText = Label(perf,
+        "FPS: --\nPing: --\nMemory: --",
+        UDim2.new(1, -24, 0, 95),
+        UDim2.fromOffset(12, 38), 14)
+
+    local session = Card(PageScroll, "SESSION", 82)
+    local sessionText = Label(session, "Session: 00:00",
+        UDim2.new(1, -24, 0, 25),
+        UDim2.fromOffset(12, 36), 13)
+
+    local network = Card(PageScroll, "NETWORK STATUS", 80)
+    local networkText = Label(network, "Checking connection...",
+        UDim2.new(1, -24, 0, 25),
+        UDim2.fromOffset(12, 36), 12)
+
+    task.spawn(function()
+        while CurrentPage == "Performance" and Gui.Parent do
+            perfText.Text = string.format(
+                "FPS: %d\nPing: %d ms\nMemory: %.1f MB",
+                FPS, Ping, Memory
+            )
+
+            sessionText.Text = "Session: " .. FormatTime(SessionSeconds)
+
+            if Ping > 250 then
+                networkText.Text = "High latency detected"
+            elseif Ping > 0 then
+                networkText.Text = "Connection active"
+            else
+                networkText.Text = "Connection unavailable"
+            end
+
+            task.wait(1)
+        end
+    end)
+end
+
+--// PAGE: DEVICE
+Pages.Device = function()
+    local device = Card(PageScroll, "DEVICE INFORMATION", 250)
+
+    local camera = workspace.CurrentCamera
+    local viewport = camera and camera.ViewportSize or Vector2.new(0, 0)
+
+    local platform = "Unknown"
+
+    if UserInputService.TouchEnabled then
+        platform = "Touch / Mobile input"
+    elseif UserInputService.GamepadEnabled then
+        platform = "Gamepad input"
+    elseif UserInputService.KeyboardEnabled then
+        platform = "Keyboard / PC input"
     end
+
+    local lines = {
+        "Player: " .. Player.Name,
+        "Display name: " .. Player.DisplayName,
+        "User ID: " .. tostring(Player.UserId),
+        "Platform: " .. platform,
+        "Resolution: " .. math.floor(viewport.X) .. " x " .. math.floor(viewport.Y),
+        "Touch: " .. tostring(UserInputService.TouchEnabled),
+        "Keyboard: " .. tostring(UserInputService.KeyboardEnabled),
+        "Gamepad: " .. tostring(UserInputService.GamepadEnabled),
+        "CPU model: Unavailable",
+        "GPU model: Unavailable",
+        "IMEI / Serial: Unavailable",
+    }
+
+    Label(device, table.concat(lines, "\n"),
+        UDim2.new(1, -24, 0, 205),
+        UDim2.fromOffset(12, 36), 11)
+
+    Button(PageScroll, "COPY PLAYER USER ID",
+        UDim2.new(1, 0, 0, 35), nil, function()
+            if setclipboard then
+                pcall(setclipboard, tostring(Player.UserId))
+                Notify("Device", "User ID copied", "System")
+            else
+                Notify("Device", "Clipboard unavailable in this environment", "System")
+            end
+        end)
+
+    Button(PageScroll, "COPY PLAYER NAME",
+        UDim2.new(1, 0, 0, 35), nil, function()
+            if setclipboard then
+                pcall(setclipboard, Player.Name)
+                Notify("Device", "Player name copied", "System")
+            else
+                Notify("Device", "Clipboard unavailable in this environment", "System")
+            end
+        end)
+end
+
+--// PAGE: TIME
+Pages.Time = function()
+    local clock = Card(PageScroll, "LOCAL CLOCK", 90)
+    local clockText = Label(clock, os.date("%H:%M:%S"),
+        UDim2.new(1, -24, 0, 36),
+        UDim2.fromOffset(12, 35), 24, Accent())
+
+    local session = Card(PageScroll, "GAME SESSION", 75)
+    local sessionText = Label(session, "00:00",
+        UDim2.new(1, -24, 0, 25),
+        UDim2.fromOffset(12, 35), 17)
+
+    local stopwatch = Card(PageScroll, "STOPWATCH", 115)
+    local stopwatchText = Label(stopwatch, FormatTime(StopwatchSeconds),
+        UDim2.new(1, -24, 0, 25),
+        UDim2.fromOffset(12, 35), 18, Accent())
+
+    Button(stopwatch, "START / STOP",
+        UDim2.fromOffset(110, 28),
+        UDim2.fromOffset(12, 75), function()
+            StopwatchRunning = not StopwatchRunning
+        end)
+
+    Button(stopwatch, "LAP",
+        UDim2.fromOffset(55, 28),
+        UDim2.fromOffset(130, 75), function()
+            table.insert(Laps, StopwatchSeconds)
+            Notify("Stopwatch", "Lap " .. #Laps .. " recorded", "System")
+        end)
+
+    Button(stopwatch, "RESET",
+        UDim2.fromOffset(60, 28),
+        UDim2.fromOffset(194, 75), function()
+            StopwatchRunning = false
+            StopwatchSeconds = 0
+            table.clear(Laps)
+            CreatePage("Time")
+        end)
+
+    local timer = Card(PageScroll, "COUNTDOWN TIMER", 125)
+    local timerText = Label(timer, FormatTime(CountdownSeconds),
+        UDim2.new(1, -24, 0, 25),
+        UDim2.fromOffset(12, 34), 18, Accent())
+
+    local minuteBox = New("TextBox", {
+        Position = UDim2.fromOffset(12, 72),
+        Size = UDim2.fromOffset(75, 30),
+        BackgroundColor3 = Color3.fromRGB(38, 42, 53),
+        Text = "5",
+        PlaceholderText = "Minutes",
+        TextColor3 = Color3.new(1, 1, 1),
+        TextSize = 12,
+        Font = Enum.Font.Gotham
+    }, timer)
+    Corner(minuteBox, 7)
+
+    Button(timer, "SET",
+        UDim2.fromOffset(50, 30),
+        UDim2.fromOffset(95, 72), function()
+            local minutes = tonumber(minuteBox.Text)
+            if minutes and minutes > 0 then
+                CountdownSeconds = math.floor(minutes * 60)
+                CountdownRunning = false
+                CreatePage("Time")
+            end
+        end)
+
+    Button(timer, "START / STOP",
+        UDim2.fromOffset(105, 30),
+        UDim2.fromOffset(153, 72), function()
+            if CountdownSeconds > 0 then
+                CountdownRunning = not CountdownRunning
+            end
+        end)
+
+    task.spawn(function()
+        while CurrentPage == "Time" and Gui.Parent do
+            clockText.Text = os.date("%H:%M:%S")
+            sessionText.Text = FormatTime(SessionSeconds)
+            stopwatchText.Text = FormatTime(StopwatchSeconds)
+            timerText.Text = FormatTime(CountdownSeconds)
+            task.wait(0.25)
+        end
+    end)
+end
+
+--// PAGE: NOTIFICATIONS
+Pages.Notifications = function()
+    local summary = Card(PageScroll, "NOTIFICATION CENTER", 75)
 
     local unread = 0
-    local shown = 0
-
     for _, item in ipairs(Notifications) do
         if not item.Read then
             unread += 1
         end
     end
 
-    NotificationCount.Text = #Notifications .. " Notifications"
-    UnreadCount.Text = "Unread: " .. unread
+    Label(summary, #Notifications .. " total  •  " .. unread .. " unread",
+        UDim2.new(1, -24, 0, 25),
+        UDim2.fromOffset(12, 36), 12)
 
-    for i = #Notifications, 1, -1 do
-        local item = Notifications[i]
+    Button(PageScroll, "MARK ALL AS READ",
+        UDim2.new(1, 0, 0, 34), nil, function()
+            for _, item in ipairs(Notifications) do
+                item.Read = true
+            end
+            CreatePage("Notifications")
+        end)
 
-        if NotificationFilter == "All"
-            or item.Category == NotificationFilter then
+    Button(PageScroll, "CLEAR NOTIFICATIONS",
+        UDim2.new(1, 0, 0, 34), nil, function()
+            table.clear(Notifications)
+            CreatePage("Notifications")
+        end)
 
-            shown += 1
+    if #Notifications == 0 then
+        local empty = Card(PageScroll, "ALL CLEAR", 60)
+        Label(empty, "No notifications",
+            UDim2.new(1, -24, 0, 22),
+            UDim2.fromOffset(12, 32), 12)
+    end
 
-            if shown > 12 then break end
+    for _, item in ipairs(Notifications) do
+        local row = Card(PageScroll,
+            (item.Read and "○ " or "● ") .. item.Title, 75)
 
-            local row = New("Frame", {
-                Size = UDim2.new(1, -5, 0, 58),
-                BackgroundColor3 = Color3.fromRGB(20, 26, 38),
-                BorderSizePixel = 0,
-            }, NotificationList)
+        Label(row,
+            item.Message .. "  •  " .. item.Time,
+            UDim2.new(1, -24, 0, 30),
+            UDim2.fromOffset(12, 36), 11)
 
-            Round(row, 9)
+        row.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1
+                or input.UserInputType == Enum.UserInputType.Touch then
+                item.Read = true
+            end
+        end)
+    end
+end
 
-            local title = Text(row,
-                item.Title .. "  •  " .. item.Time,
-                10, Config.Accent, true)
+--// PAGE: SAFETY
+Pages.Safety = function()
+    local card = Card(PageScroll, "ANTI-FLING LOCAL MONITOR", 130)
 
-            title.Position = UDim2.new(0, 9, 0, 4)
-            title.Size = UDim2.new(1, -65, 0, 18)
+    Label(card,
+        "Detects extreme character velocity and attempts local stabilization.\nThis cannot override server-authoritative physics.",
+        UDim2.new(1, -24, 0, 55),
+        UDim2.fromOffset(12, 34), 11)
 
-            local message = Text(row, item.Message, 9)
-            message.Position = UDim2.new(0, 9, 0, 24)
-            message.Size = UDim2.new(1, -65, 0, 28)
+    Button(card, Config.AntiFling and "PROTECTION: ON" or "PROTECTION: OFF",
+        UDim2.new(1, -24, 0, 30),
+        UDim2.fromOffset(12, 91), function()
+            Config.AntiFling = not Config.AntiFling
+            CreatePage("Safety")
+            Notify("Anti-Fling",
+                Config.AntiFling and "Monitoring enabled" or "Monitoring disabled",
+                "System")
+        end)
 
-            local read = MakeButton(row,
-                item.Read and "READ" or "NEW",
-                function()
-                    item.Read = true
-                    RefreshNotifications()
-                end, 47, 25)
+    local count = Card(PageScroll, "PROTECTION HISTORY", 70)
 
-            read.Position = UDim2.new(1, -53, 0.5, -12)
+    Label(count, "Detected events: " .. AntiFlingCount,
+        UDim2.new(1, -24, 0, 24),
+        UDim2.fromOffset(12, 35), 12)
+
+    local note = Card(PageScroll, "LIMITATIONS", 90)
+
+    Label(note,
+        "Normal launches, vehicles and game abilities may resemble fling physics. Adjust thresholds only in your own game.",
+        UDim2.new(1, -24, 0, 48),
+        UDim2.fromOffset(12, 35), 11)
+end
+
+--// PAGE: QUICK ACTIONS
+Pages.Quick = function()
+    local card = Card(PageScroll, "QUICK CONTROLS", 200)
+
+    Button(card, "MUTE MUSIC",
+        UDim2.fromOffset(125, 32),
+        UDim2.fromOffset(12, 40), function()
+            MusicVolume = 0
+            Music.Volume = 0
+            Notify("Music", "Muted", "Music")
+        end)
+
+    Button(card, "RESTORE VOLUME",
+        UDim2.fromOffset(125, 32),
+        UDim2.fromOffset(145, 40), function()
+            MusicVolume = 0.5
+            Music.Volume = MusicVolume
+            Notify("Music", "Volume restored", "Music")
+        end)
+
+    Button(card, "TOGGLE ISLAND",
+        UDim2.fromOffset(125, 32),
+        UDim2.fromOffset(12, 82), function()
+            Expanded = not Expanded
+        end)
+
+    Button(card, "NEW TEST NOTICE",
+        UDim2.fromOffset(125, 32),
+        UDim2.fromOffset(145, 82), function()
+            Notify("Test", "Notification system is working", "System")
+        end)
+
+    Button(card, "RESET UI POSITION",
+        UDim2.fromOffset(125, 32),
+        UDim2.fromOffset(12, 124), function()
+            Main.Position = UDim2.new(0.5, 0, 0, 8)
+            Notify("Interface", "Position reset", "System")
+        end)
+end
+
+--// PAGE: SETTINGS
+Pages.Settings = function()
+    local appearance = Card(PageScroll, "APPEARANCE", 190)
+
+    Button(appearance, "NEXT THEME",
+        UDim2.fromOffset(110, 30),
+        UDim2.fromOffset(12, 40), function()
+            Config.AccentIndex = Config.AccentIndex % #Accents + 1
+            CreatePage("Settings")
+        end)
+
+    Button(appearance, "COMPACT MODE",
+        UDim2.fromOffset(110, 30),
+        UDim2.fromOffset(132, 40), function()
+            Config.Compact = not Config.Compact
+            Notify("Settings", "Compact mode updated", "System")
+        end)
+
+    Button(appearance, "REDUCE ANIMATION",
+        UDim2.fromOffset(140, 30),
+        UDim2.fromOffset(12, 80), function()
+            Config.ReducedMotion = not Config.ReducedMotion
+            Notify("Settings", "Animation preference updated", "System")
+        end)
+
+    Button(appearance, "HIGH CONTRAST",
+        UDim2.fromOffset(110, 30),
+        UDim2.fromOffset(160, 80), function()
+            Config.HighContrast = not Config.HighContrast
+            Notify("Settings", "Contrast updated", "System")
+        end)
+
+    Button(appearance, "TRANSPARENCY +",
+        UDim2.fromOffset(125, 30),
+        UDim2.fromOffset(12, 120), function()
+            Config.Transparency = math.max(0, Config.Transparency - 0.05)
+            Notify("Settings", "Transparency updated", "System")
+        end)
+
+    Button(appearance, "TRANSPARENCY −",
+        UDim2.fromOffset(125, 30),
+        UDim2.fromOffset(145, 120), function()
+            Config.Transparency = math.min(0.8, Config.Transparency + 0.05)
+            Notify("Settings", "Transparency updated", "System")
+        end)
+
+    local reminder = Card(PageScroll, "BREAK REMINDER", 105)
+
+    Button(reminder, Config.BreakReminder and "REMINDER ON" or "REMINDER OFF",
+        UDim2.fromOffset(125, 30),
+        UDim2.fromOffset(12, 42), function()
+            Config.BreakReminder = not Config.BreakReminder
+            BreakSeconds = 0
+            CreatePage("Settings")
+        end)
+
+    Button(reminder, "RESET SETTINGS",
+        UDim2.fromOffset(125, 30),
+        UDim2.fromOffset(145, 42), function()
+            Config.AccentIndex = 1
+            Config.Transparency = 0.08
+            Config.Compact = false
+            Config.ReducedMotion = false
+            Config.HighContrast = false
+            Config.Scale = 1
+            CreatePage("Settings")
+            Notify("Settings", "Settings reset", "System")
+        end)
+end
+
+--// NAVIGATION
+local Navigation = {
+    {"Home", "⌂"},
+    {"Music", "♫"},
+    {"Performance", "◈"},
+    {"Device", "▣"},
+    {"Time", "◷"},
+    {"Notifications", "●"},
+    {"Safety", "◆"},
+    {"Quick", "⚡"},
+    {"Settings", "⚙"}
+}
+
+for _, item in ipairs(Navigation) do
+    local name = item[1]
+    local icon = item[2]
+
+    local button = Button(
+        Sidebar,
+        icon .. "  " .. name,
+        UDim2.new(1, 0, 0, 32),
+        nil,
+        function()
+            CurrentPage = name
+            CreatePage(name)
         end
-    end
+    )
 
-    if shown == 0 then
-        local empty = Text(NotificationList, "No notifications", 10,
-            Color3.fromRGB(150, 165, 185))
+    button.TextXAlignment = Enum.TextXAlignment.Left
+    button.TextSize = 10
+    PageButtons[name] = button
+end
 
-        empty.Size = UDim2.new(1, -5, 0, 35)
+--// EXPAND / COLLAPSE
+local function SetExpanded(value)
+    Expanded = value
+    Panel.Visible = value
+
+    local width = value and Config.Width or Config.CollapsedWidth
+    local height = value and
+        (Config.Compact and Config.CompactHeight or Config.Height)
+        or Config.CollapsedHeight
+
+    local target = UDim2.fromOffset(width, height)
+
+    if Config.ReducedMotion then
+        Main.Size = target
+    else
+        TweenService:Create(
+            Main,
+            TweenInfo.new(0.25, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+            {Size = target}
+        ):Play()
     end
 end
 
-local function RefreshMusic()
-    RefreshQueue()
-    RefreshRecent()
-
-    if Music.IsPlaying then
-        PlayPause.Text = "PAUSE"
-        MiniIcon.Text = "♫"
-        MiniStatus.Text = "NOW PLAYING"
-
-        local id = Playlist[CurrentTrack]
-        SongName.Text = id and ("Audio ID: " .. id) or "Playing"
-        SongState.Text = "Playing"
-
-    else
-        PlayPause.Text = "PLAY"
-        MiniIcon.Text = "M"
-        MiniStatus.Text = "Premium Glass"
-
-        SongName.Text = Playlist[CurrentTrack]
-            and ("Audio ID: " .. Playlist[CurrentTrack])
-            or "No song selected"
-
-        SongState.Text = "Paused / Ready"
+Header.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+        SetExpanded(not Expanded)
     end
+end)
 
-    if Music.IsLoaded and Music.TimeLength > 0 then
-        local percent = math.clamp(Music.TimePosition / Music.TimeLength, 0, 1)
+--// DRAG SUPPORT
+local dragging = false
+local dragStart
+local startPosition
 
-        ProgressFill.Size = UDim2.new(percent, 0, 1, 0)
-        TimeCurrent.Text = FormatTime(Music.TimePosition)
-        TimeTotal.Text = FormatTime(Music.TimeLength)
-    else
-        ProgressFill.Size = UDim2.new(0, 0, 1, 0)
-        TimeCurrent.Text = "00:00"
-        TimeTotal.Text = "00:00"
+Header.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton2 then
+        dragging = true
+        dragStart = input.Position
+        startPosition = Main.Position
     end
-end
+end)
 
-local function RefreshPerformance()
-    PerformanceText.Text =
-        "FPS:       " .. FPS .. "\n\n" ..
-        "PING:      " .. Ping .. " ms\n\n" ..
-        "MEMORY:    " .. Memory .. " MB\n\n" ..
-        "SESSION:   " .. FormatTime(os.clock() - SessionStart)
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local delta = input.Position - dragStart
 
-    local lines = {}
-
-    for i = #PerformanceHistory,
-        math.max(1, #PerformanceHistory - 6), -1 do
-
-        local item = PerformanceHistory[i]
-
-        table.insert(lines,
-            "FPS " .. item.FPS ..
-            "   |   PING " .. item.Ping .. " ms"
+        Main.Position = UDim2.new(
+            startPosition.X.Scale,
+            startPosition.X.Offset + delta.X,
+            startPosition.Y.Scale,
+            startPosition.Y.Offset + delta.Y
         )
     end
+end)
 
-    HistoryText.Text = #lines > 0
-        and table.concat(lines, "\n")
-        or "Collecting data..."
-
-    if FPS > 0 and FPS < 25 then
-        WarningText.Text = "WARNING: LOW FPS"
-    elseif Ping > 250 then
-        WarningText.Text = "WARNING: HIGH PING"
-    else
-        WarningText.Text = "Performance monitoring active"
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton2 then
+        dragging = false
     end
+end)
+
+--// RESPONSIVE SCALE
+local function UpdateScale()
+    local camera = workspace.CurrentCamera
+    if not camera then
+        return
+    end
+
+    local width = camera.ViewportSize.X
+
+    if width < 520 then
+        Config.Width = math.max(320, width - 18)
+    else
+        Config.Width = 620
+    end
+
+    local scale = Main:FindFirstChildOfClass("UIScale")
+
+    if not scale then
+        scale = New("UIScale", {}, Main)
+    end
+
+    scale.Scale = Config.Scale
 end
 
---========================================================
--- UPDATE LOOP
---========================================================
+if workspace.CurrentCamera then
+    workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateScale)
+end
 
-local accumulator = 0
-local timerRefresh = 0
+UpdateScale()
 
-Connect(RunService.Heartbeat:Connect(function(dt)
-    if Destroyed then return end
+--// PERFORMANCE MONITOR
+local frameCount = 0
+local fpsElapsed = 0
 
-    if StopwatchRunning then
-        StopwatchTime += dt
-        StopwatchText.Text = FormatTime(StopwatchTime)
-        LapText.Text = "Laps: " .. #Laps
+RunService.RenderStepped:Connect(function(dt)
+    frameCount += 1
+    fpsElapsed += dt
+
+    if fpsElapsed >= 1 then
+        FPS = math.floor(frameCount / fpsElapsed + 0.5)
+        frameCount = 0
+        fpsElapsed = 0
     end
+end)
 
-    for _, timer in ipairs(Timers) do
-        if timer.Running then
-            timer.Remaining -= dt
+task.spawn(function()
+    while Gui.Parent do
+        SessionSeconds += 1
 
-            if timer.Remaining <= 0 then
-                timer.Remaining = 0
-                timer.Running = false
+        if Config.BreakReminder then
+            BreakSeconds += 1
 
-                Notify("Countdown", "Timer #" .. timer.Id .. " completed", "System")
+            if BreakSeconds >= Config.BreakInterval * 60 then
+                BreakSeconds = 0
+                Notify("Break Reminder", "Consider taking a short break", "System")
             end
         end
-    end
 
-    accumulator += dt
-    timerRefresh += dt
-
-    if accumulator >= 1 then
-        accumulator = 0
-
-        ClockText.Text = os.date("%H:%M:%S")
-        DateText.Text = os.date("%A, %B %d, %Y")
-
-        SessionText.Text = "SESSION: " ..
-            FormatTime(os.clock() - SessionStart)
-
-        Ping = ReadPing()
-        Memory = ReadMemory()
-
-        table.insert(PerformanceHistory, {
-            FPS = FPS,
-            Ping = Ping,
-        })
-
-        while #PerformanceHistory > 30 do
-            table.remove(PerformanceHistory, 1)
+        if StopwatchRunning then
+            StopwatchSeconds += 1
         end
 
-        RefreshPerformance()
-        RefreshNotifications()
-        RefreshMusic()
+        if CountdownRunning and CountdownSeconds > 0 then
+            CountdownSeconds -= 1
+
+            if CountdownSeconds <= 0 then
+                CountdownSeconds = 0
+                CountdownRunning = false
+                Notify("Timer", "Countdown finished", "System")
+            end
+        end
+
+        task.wait(1)
     end
-
-    if timerRefresh >= 0.25 then
-        timerRefresh = 0
-        RefreshTimers()
-    end
-end))
-
---========================================================
--- NOTIFICATION EVENT BRIDGE
---========================================================
-
-local NotifyEvent = New("BindableEvent", {
-    Name = "IslandNotify",
-}, Gui)
-
-NotifyEvent.Event:Connect(function(title, message, category)
-    Notify(title, message, category)
 end)
 
--- Example:
--- PlayerGui.DynamicIslandPremiumV61.IslandNotify:Fire(
---     "Quest", "Quest completed", "System"
--- )
+task.spawn(function()
+    while Gui.Parent do
+        local success, value = pcall(function()
+            return Stats.Network.ServerStatsItem["Data Ping"]:GetValue()
+        end)
 
---========================================================
--- CLEANUP
---========================================================
+        if success and type(value) == "number" then
+            Ping = math.floor(value + 0.5)
+        end
+
+        local memory = SafeCall(function()
+            return Stats:GetTotalMemoryUsageMb()
+        end)
+
+        if type(memory) == "number" then
+            Memory = memory
+        end
+
+        task.wait(2)
+    end
+end)
+
+--// ANTI-FLING LOCAL MONITOR
+local function BindCharacter(character)
+    local root = character:WaitForChild("HumanoidRootPart", 10)
+    if not root then
+        return
+    end
+
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then
+        return
+    end
+
+    local connection
+
+    connection = RunService.Heartbeat:Connect(function()
+        if not Gui.Parent or not root.Parent then
+            if connection then
+                connection:Disconnect()
+            end
+            return
+        end
+
+        if not Config.AntiFling then
+            return
+        end
+
+        if humanoid.SeatPart then
+            return
+        end
+
+        local speed = root.AssemblyLinearVelocity.Magnitude
+        local angular = root.AssemblyAngularVelocity.Magnitude
+
+        if (speed > 180 or angular > 100)
+            and os.clock() - LastFlingWarning > 3 then
+
+            LastFlingWarning = os.clock()
+            AntiFlingCount += 1
+
+            Notify(
+                "Anti-Fling Alert",
+                "Abnormal movement detected. Local stabilization attempted.",
+                "System"
+            )
+
+            pcall(function()
+                if speed > 180 then
+                    root.AssemblyLinearVelocity =
+                        root.AssemblyLinearVelocity.Unit * 80
+                end
+
+                if angular > 100 then
+                    root.AssemblyAngularVelocity = Vector3.zero
+                end
+            end)
+        end
+    end)
+
+    table.insert(CharacterConnections, connection)
+end
+
+Player.CharacterAdded:Connect(BindCharacter)
+
+if Player.Character then
+    task.spawn(BindCharacter, Player.Character)
+end
+
+--// REFRESH VISUAL SETTINGS
+task.spawn(function()
+    while Gui.Parent do
+        local color = Accent()
+
+        IslandDot.BackgroundColor3 = color
+        HeaderStatus.TextColor3 = color
+
+        for _, object in ipairs(Gui:GetDescendants()) do
+            if object:IsA("UIStroke") then
+                object.Color = color
+            elseif object:IsA("ScrollingFrame") then
+                object.ScrollBarImageColor3 = color
+            elseif object:IsA("Frame") and object ~= Main
+                and object.BackgroundColor3 == Background() then
+                object.BackgroundTransparency = Config.Transparency
+            end
+        end
+
+        task.wait(2)
+    end
+end)
+
+--// INITIALIZE
+CreatePage("Home")
+SetExpanded(false)
+
+Notify("Dynamic Island", "Premium V7.0 loaded successfully", "System")
 
 Gui.Destroying:Connect(function()
-    Destroyed = true
-
-    for _, connection in ipairs(Connections) do
-        if connection and connection.Connected then
+    for _, connection in ipairs(CharacterConnections) do
+        pcall(function()
             connection:Disconnect()
-        end
+        end)
     end
-
-    table.clear(Connections)
 end)
 
---========================================================
--- INITIALIZE
---========================================================
-
-RefreshQueue()
-RefreshNotifications()
-RefreshTimers()
-RefreshMusic()
-RefreshDevice()
-OpenPage("Music")
-SetExpanded(false)
-UpdateResponsive()
-
-Notify("Dynamic Island", "Premium V6.1 Glass Edition loaded", "System")
-
-print("Dynamic Island Premium V6.1 Glass Edition loaded.")
+print("[Dynamic Island Premium V7.0] Loaded")
