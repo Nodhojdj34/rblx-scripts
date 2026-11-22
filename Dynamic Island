@@ -1,7 +1,15 @@
 --!nonstrict
 --=============================================================
---  灵动岛 Dynamic Island · Roblox UI  v2.1 (Fixed)
---  - 修复 musicLayer 自引用 / 按钮点击拦截 / 幽灵点击
+--  灵动岛 Dynamic Island · Roblox UI
+--  兼容 PC / 移动端
+--
+--  安装位置：StarterPlayer > StarterPlayerScripts （LocalScript）
+--  或者：StarterGui（LocalScript）
+--
+--  调用方式（在其它脚本里）：
+--      _G.DynamicIsland:ShowMusic("歌名", "歌手", 0.35)
+--      _G.DynamicIsland:ShowNotification("新消息", "你收到了一条通知")
+--      _G.DynamicIsland:Hide()
 --=============================================================
 
 local Players          = game:GetService("Players")
@@ -12,35 +20,7 @@ local UserInputService = game:GetService("UserInputService")
 local player    = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
---==============================================================
---  配置
---==============================================================
-local CONFIG = {
-	Scale       = 1.0,
-	MobileScale = 0.82,
-	MaxWidthPct = 0.82,
-
-	TopOffset       = 12,
-	MobileTopOffset = 46,
-
-	Size = {
-		Idle  = Vector2.new(126, 36),
-		Music = Vector2.new(340, 132),
-		Notif = Vector2.new(340,  92),
-	},
-
-	AnimTime                 = 0.35,
-	MusicAutoCollapse        = 8,
-	NotificationAutoCollapse = 5,
-}
-
-local ICON = {
-	Prev  = "⏮",
-	Play  = "▶",
-	Pause = "❚❚",
-	Next  = "⏭",
-}
-
+--============================ 主题 ============================
 local THEME = {
 	Background = Color3.fromRGB(0, 0, 0),
 	TextColor  = Color3.fromRGB(255, 255, 255),
@@ -49,48 +29,48 @@ local THEME = {
 	Card       = Color3.fromRGB(28, 28, 32),
 	Track      = Color3.fromRGB(58, 58, 64),
 	Stroke     = Color3.fromRGB(72, 72, 78),
-	BtnBG      = Color3.fromRGB(44, 44, 50),
 }
 
---==============================================================
---  设备 & 缩放
---==============================================================
-local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+--======================== 基础尺寸（逻辑像素）====================
+local BASE = {
+	Idle  = Vector2.new(126, 36),
+	Music = Vector2.new(340, 104),
+	Notif = Vector2.new(340, 88),
+}
 
-local function computeScale()
+local ANIM_TIME = 0.42   -- 展开 / 收起动画时长
+
+--=========================== 自适应缩放 ==========================
+local function getScale()
 	local cam = workspace.CurrentCamera
-	local vp
-	if cam then vp = cam.ViewportSize end
-	if not vp or vp.X <= 0 or vp.Y <= 0 then
-		vp = Vector2.new(1280, 720)
-	end
-	local s = math.clamp(math.min(vp.X / 1100, vp.Y / 760), 0.6, 1.2) * CONFIG.Scale
-	if isMobile then
-		s = s * CONFIG.MobileScale
-	end
-	local w = CONFIG.Size.Music.X * s
-	local limit = vp.X * CONFIG.MaxWidthPct
-	if w > limit and w > 0 then
-		s = s * (limit / w)
-	end
-	return s
+	local vp  = cam and cam.ViewportSize or Vector2.new(1280, 720)
+	local s   = math.min(vp.X / 1100, vp.Y / 760)
+	return math.clamp(s, 0.6, 1.2)
 end
 
-local S = computeScale()
+local S = getScale()
 
-local function dim(x, y) return UDim2.fromOffset(math.round(x * S), math.round(y * S)) end
-local function num(x)    return math.round(x * S) end
+local function dim(x, y)          -- 尺寸（自动缩放）
+	return UDim2.fromOffset(math.round(x * S), math.round(y * S))
+end
+
+local function num(x)             -- 单个数值缩放
+	return math.round(x * S)
+end
 
 local function create(class, props, parent)
 	local obj = Instance.new(class)
-	for k, v in pairs(props) do obj[k] = v end
+	for k, v in pairs(props) do
+		obj[k] = v
+	end
 	obj.Parent = parent
 	return obj
 end
 
---==============================================================
---  根 GUI
---==============================================================
+--=========================== 设备判断 ==========================
+local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+
+--============================ 根 GUI ==========================
 local gui = create("ScreenGui", {
 	Name = "DynamicIsland",
 	ResetOnSpawn = false,
@@ -99,18 +79,19 @@ local gui = create("ScreenGui", {
 	DisplayOrder = 999,
 }, playerGui)
 
+--============================= 岛屿 ===========================
 local island = create("Frame", {
 	Name = "Island",
 	AnchorPoint = Vector2.new(0.5, 0),
-	Position = UDim2.new(0.5, 0, 0, isMobile and CONFIG.MobileTopOffset or CONFIG.TopOffset),
-	Size = dim(CONFIG.Size.Idle.X, CONFIG.Size.Idle.Y),
+	Position = UDim2.new(0.5, 0, 0, isMobile and 46 or 12),
+	Size = dim(BASE.Idle.X, BASE.Idle.Y),
 	BackgroundColor3 = THEME.Background,
 	BorderSizePixel = 0,
 	ClipsDescendants = true,
 }, gui)
 
 local corner = create("UICorner", {
-	CornerRadius = UDim.new(0, num(CONFIG.Size.Idle.Y / 2)),
+	CornerRadius = UDim.new(0, num(BASE.Idle.Y / 2)),
 }, island)
 
 create("UIStroke", {
@@ -120,8 +101,25 @@ create("UIStroke", {
 	ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
 }, island)
 
+--=========================== 文本辅助 ==========================
+local function makeText(parent, props)
+	local defaults = {
+		BackgroundTransparency = 1,
+		TextColor3 = THEME.TextColor,
+		Font = Enum.Font.Gotham,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Center,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		ZIndex = 3,
+	}
+	for k, v in pairs(props) do
+		defaults[k] = v
+	end
+	return create("TextLabel", defaults, parent)
+end
+
 --==============================================================
---  紧凑层
+--  紧凑态（收起）
 --==============================================================
 local compactLayer = create("Frame", {
 	Name = "CompactLayer",
@@ -143,7 +141,7 @@ local dot = create("Frame", {
 create("UICorner", { CornerRadius = UDim.new(1, 0) }, dot)
 
 --==============================================================
---  音乐层   （父级明确：island）
+--  音乐展开态
 --==============================================================
 local musicLayer = create("Frame", {
 	Name = "MusicLayer",
@@ -152,9 +150,10 @@ local musicLayer = create("Frame", {
 	ZIndex = 2,
 }, island)
 
+-- 封面
 local cover = create("Frame", {
 	Name = "Cover",
-	Position = UDim2.fromOffset(num(16), num(18)),
+	Position = UDim2.fromOffset(num(16), num(24)),
 	Size = dim(56, 56),
 	BackgroundColor3 = THEME.Card,
 	BorderSizePixel = 0,
@@ -165,6 +164,7 @@ local cover = create("Frame", {
 create("UICorner", { CornerRadius = UDim.new(0, num(12)) }, cover)
 
 local coverIcon = create("TextLabel", {
+	Name = "CoverIcon",
 	BackgroundTransparency = 1,
 	Size = UDim2.fromScale(1, 1),
 	Text = "♪",
@@ -174,110 +174,35 @@ local coverIcon = create("TextLabel", {
 	ZIndex = 4,
 }, cover)
 
-local musicTitle = create("TextLabel", {
-	Position = UDim2.fromOffset(num(84), num(20)),
+-- 歌曲标题
+local musicTitle = makeText(musicLayer, {
+	Name = "MusicTitle",
+	Position = UDim2.fromOffset(num(84), num(26)),
 	Size = UDim2.new(1, -num(100), 0, num(20)),
-	BackgroundTransparency = 1,
 	Text = "正在播放",
-	TextColor3 = THEME.TextColor,
 	TextSize = num(15),
 	Font = Enum.Font.GothamBold,
-	TextXAlignment = Enum.TextXAlignment.Left,
-	TextTruncate = Enum.TextTruncate.AtEnd,
-	ZIndex = 3,
-}, musicLayer)
+})
 
-local musicSubtitle = create("TextLabel", {
-	Position = UDim2.fromOffset(num(84), num(44)),
+-- 歌手
+local musicSubtitle = makeText(musicLayer, {
+	Name = "MusicSubtitle",
+	Position = UDim2.fromOffset(num(84), num(50)),
 	Size = UDim2.new(1, -num(100), 0, num(18)),
-	BackgroundTransparency = 1,
 	Text = "未知艺术家",
-	TextColor3 = THEME.SubText,
 	TextSize = num(13),
-	Font = Enum.Font.Gotham,
-	TextXAlignment = Enum.TextXAlignment.Left,
-	TextTruncate = Enum.TextTruncate.AtEnd,
-	ZIndex = 3,
-}, musicLayer)
-
--- 控制按钮容器
-local buttonsContainer = create("Frame", {
-	Name = "Buttons",
-	BackgroundTransparency = 1,
-	Position = UDim2.fromOffset(0, num(76)),
-	Size = UDim2.new(1, 0, 0, num(40)),
-	ZIndex = 3,
-}, musicLayer)
-
--- 关键修复：视觉用 Frame + TextLabel，只有 hit 是 Button
-local function makeControl(name, icon, centerX, visualSize, isRound)
-	local hit = create("TextButton", {
-		Name = name .. "_Hit",
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.new(0, num(centerX), 0.5, 0),
-		Size = dim(44, 44),
-		BackgroundTransparency = 1,
-		Text = "",
-		TextTransparency = 1,
-		AutoButtonColor = false,
-		Active = false,
-		ZIndex = 10,
-	}, buttonsContainer)
-
-	local visual = create("Frame", {
-		Name = name .. "_Visual",
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.5),
-		Size = dim(visualSize, visualSize),
-		BackgroundColor3 = isRound and THEME.TextColor or THEME.BtnBG,
-		BackgroundTransparency = 1,
-		BorderSizePixel = 0,
-		ZIndex = 11,
-	}, hit)
-
-	create("UICorner", { CornerRadius = UDim.new(1, 0) }, visual)
-
-	local label = create("TextLabel", {
-		BackgroundTransparency = 1,
-		Size = UDim2.fromScale(1, 1),
-		Text = icon,
-		TextColor3 = isRound and THEME.Background or THEME.TextColor,
-		TextTransparency = 1,
-		TextSize = num(isRound and 16 or 13),
-		Font = Enum.Font.GothamBold,
-		ZIndex = 12,
-	}, visual)
-
-	return { hit = hit, visual = visual, label = label }
-end
-
-local cx = CONFIG.Size.Music.X / 2
-local prevBtn = makeControl("Prev", ICON.Prev, cx - 48, 28, false)
-local playBtn = makeControl("Play", ICON.Play, cx,      34, true)
-local nextBtn = makeControl("Next", ICON.Next, cx + 48, 28, false)
+	TextColor3 = THEME.SubText,
+})
 
 -- 进度条
-local trackHitbox = create("TextButton", {
-	Name = "TrackHitbox",
-	Position = UDim2.fromOffset(num(16), num(116)),
-	Size = UDim2.new(1, -num(32), 0, num(16)),
-	BackgroundTransparency = 1,
-	Text = "",
-	TextTransparency = 1,
-	AutoButtonColor = false,
-	Active = false,
-	ZIndex = 6,
-}, musicLayer)
-
 local track = create("Frame", {
 	Name = "Track",
-	AnchorPoint = Vector2.new(0, 0.5),
-	Position = UDim2.fromScale(0, 0.5),
-	Size = UDim2.new(1, 0, 0, math.max(2, num(3))),
+	Position = UDim2.fromOffset(num(16), num(86)),
+	Size = UDim2.new(1, -num(32), 0, math.max(2, num(3))),
 	BackgroundColor3 = THEME.Track,
 	BorderSizePixel = 0,
-	ZIndex = 5,
-}, trackHitbox)
+	ZIndex = 3,
+}, musicLayer)
 
 create("UICorner", { CornerRadius = UDim.new(1, 0) }, track)
 
@@ -286,25 +211,13 @@ local musicFill = create("Frame", {
 	Size = UDim2.fromScale(0.35, 1),
 	BackgroundColor3 = THEME.TextColor,
 	BorderSizePixel = 0,
-	ZIndex = 6,
+	ZIndex = 4,
 }, track)
 
 create("UICorner", { CornerRadius = UDim.new(1, 0) }, musicFill)
 
-local fillKnob = create("Frame", {
-	Name = "Knob",
-	AnchorPoint = Vector2.new(0.5, 0.5),
-	Position = UDim2.fromScale(1, 0.5),
-	Size = dim(10, 10),
-	BackgroundColor3 = THEME.TextColor,
-	BorderSizePixel = 0,
-	ZIndex = 7,
-}, musicFill)
-
-create("UICorner", { CornerRadius = UDim.new(1, 0) }, fillKnob)
-
 --==============================================================
---  通知层
+--  通知展开态
 --==============================================================
 local notifLayer = create("Frame", {
 	Name = "NotifLayer",
@@ -314,6 +227,7 @@ local notifLayer = create("Frame", {
 }, island)
 
 local notifIcon = create("Frame", {
+	Name = "NotifIcon",
 	Position = UDim2.fromOffset(num(16), num(24)),
 	Size = dim(40, 40),
 	BackgroundColor3 = THEME.Accent,
@@ -324,6 +238,7 @@ local notifIcon = create("Frame", {
 create("UICorner", { CornerRadius = UDim.new(0, num(11)) }, notifIcon)
 
 local notifGlyph = create("TextLabel", {
+	Name = "Glyph",
 	BackgroundTransparency = 1,
 	Size = UDim2.fromScale(1, 1),
 	Text = "!",
@@ -333,92 +248,51 @@ local notifGlyph = create("TextLabel", {
 	ZIndex = 4,
 }, notifIcon)
 
-local notifTitle = create("TextLabel", {
+local notifTitle = makeText(notifLayer, {
+	Name = "NotifTitle",
 	Position = UDim2.fromOffset(num(68), num(24)),
 	Size = UDim2.new(1, -num(84), 0, num(18)),
-	BackgroundTransparency = 1,
 	Text = "新通知",
-	TextColor3 = THEME.TextColor,
 	TextSize = num(14),
 	Font = Enum.Font.GothamBold,
-	TextXAlignment = Enum.TextXAlignment.Left,
-	TextTruncate = Enum.TextTruncate.AtEnd,
-	ZIndex = 3,
-}, notifLayer)
+})
 
-local notifBody = create("TextLabel", {
+local notifBody = makeText(notifLayer, {
+	Name = "NotifBody",
 	Position = UDim2.fromOffset(num(68), num(44)),
 	Size = UDim2.new(1, -num(84), 0, num(18)),
-	BackgroundTransparency = 1,
 	Text = "你有一条未读消息",
-	TextColor3 = THEME.SubText,
 	TextSize = num(12),
-	Font = Enum.Font.Gotham,
-	TextXAlignment = Enum.TextXAlignment.Left,
-	TextTruncate = Enum.TextTruncate.AtEnd,
-	ZIndex = 3,
-}, notifLayer)
+	TextColor3 = THEME.SubText,
+})
 
 --==============================================================
---  透明点击层（始终在最底部 ZIndex=1）
---==============================================================
-local hitbox = create("TextButton", {
-	Name = "Hitbox",
-	Size = UDim2.fromScale(1, 1),
-	BackgroundTransparency = 1,
-	Text = "",
-	TextTransparency = 1,
-	AutoButtonColor = false,
-	ZIndex = 1,
-}, island)
-
---==============================================================
---  分组
+--  淡入淡出控制
 --==============================================================
 local compactParts = { dot }
-
-local musicParts = {
-	cover, coverIcon, musicTitle, musicSubtitle,
-	track, musicFill, fillKnob,
-	prevBtn.visual, prevBtn.label,
-	playBtn.visual, playBtn.label,
-	nextBtn.visual, nextBtn.label,
-}
-
-local notifParts = { notifIcon, notifGlyph, notifTitle, notifBody }
-
---==============================================================
---  Alpha 工具
---==============================================================
-local function tweenAlpha(obj, alpha, duration)
-	local info = TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-	if obj:IsA("TextLabel") then
-		TweenService:Create(obj, info, { TextTransparency = alpha }):Play()
-	elseif obj:IsA("TextButton") then
-		TweenService:Create(obj, info, {
-			TextTransparency = alpha,
-			BackgroundTransparency = alpha,
-		}):Play()
-	elseif obj:IsA("ImageLabel") or obj:IsA("ImageButton") then
-		TweenService:Create(obj, info, { ImageTransparency = alpha }):Play()
-	elseif obj:IsA("Frame") then
-		TweenService:Create(obj, info, { BackgroundTransparency = alpha }):Play()
-	end
-end
+local musicParts   = { cover, coverIcon, musicTitle, musicSubtitle, track, musicFill }
+local notifParts   = { notifIcon, notifGlyph, notifTitle, notifBody }
 
 local function setAlpha(parts, alpha, duration)
+	local info = TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 	for _, obj in ipairs(parts) do
-		tweenAlpha(obj, alpha, duration)
+		if obj:IsA("TextLabel") or obj:IsA("TextButton") then
+			TweenService:Create(obj, info, { TextTransparency = alpha }):Play()
+		elseif obj:IsA("ImageLabel") then
+			TweenService:Create(obj, info, { ImageTransparency = alpha }):Play()
+		elseif obj:IsA("Frame") then
+			TweenService:Create(obj, info, { BackgroundTransparency = alpha }):Play()
+		end
 	end
 end
 
--- 初始状态：紧凑可见，其它隐藏
+-- 初始全部隐藏
 setAlpha(compactParts, 0, 0)
-setAlpha(musicParts,   1, 0)
-setAlpha(notifParts,   1, 0)
+setAlpha(musicParts, 1, 0)
+setAlpha(notifParts, 1, 0)
 
 --==============================================================
---  尺寸 & 圆角补间（可打断）
+--  尺寸动画（自定义 Tween，可同时补间圆角半径并支持打断）
 --==============================================================
 local animToken = 0
 
@@ -442,9 +316,11 @@ local function animateSize(targetSize, targetRadius, duration)
 			conn:Disconnect()
 			return
 		end
+
 		elapsed = math.min(elapsed + dt, duration)
 		local a = elapsed / duration
-		local e = 1 - (1 - a) ^ 5
+		local e = 1 - (1 - a) ^ 5   -- easeOutQuint
+
 		island.Size = UDim2.new(
 			startSize.X.Scale  + (targetSize.X.Scale  - startSize.X.Scale)  * e,
 			startSize.X.Offset + (targetSize.X.Offset - startSize.X.Offset) * e,
@@ -452,35 +328,29 @@ local function animateSize(targetSize, targetRadius, duration)
 			startSize.Y.Offset + (targetSize.Y.Offset - startSize.Y.Offset) * e
 		)
 		corner.CornerRadius = UDim.new(0, startRadius + (targetRadius - startRadius) * e)
-		if a >= 1 then conn:Disconnect() end
+
+		if a >= 1 then
+			conn:Disconnect()
+		end
 	end)
 end
 
 --==============================================================
---  交互开关（防止收起态幽灵点击）
---==============================================================
-local function setInteractive(enable)
-	prevBtn.hit.Active = enable
-	playBtn.hit.Active = enable
-	nextBtn.hit.Active = enable
-	trackHitbox.Active = enable
-end
-setInteractive(false)
-
---==============================================================
 --  状态机
 --==============================================================
-local STATE = { Idle = "Idle", Music = "Music", Notification = "Notification" }
+local STATE = {
+	Idle         = "Idle",
+	Music        = "Music",
+	Notification = "Notification",
+}
 
 local currentState  = STATE.Idle
 local collapseToken = 0
-local isPlaying     = true
 
-local setState
+local setState   -- 前置声明
 local scheduleCollapse
 
 scheduleCollapse = function(delay)
-	if not delay or delay <= 0 then return end
 	collapseToken += 1
 	local token = collapseToken
 	task.delay(delay, function()
@@ -490,30 +360,27 @@ scheduleCollapse = function(delay)
 	end)
 end
 
-local function radiusFor(h) return num(math.min(h / 2, 40)) end
-
 setState = function(state)
 	if state == currentState then return end
 	currentState = state
-	collapseToken += 1
+	collapseToken += 1   -- 取消旧的自动收起计时
 
 	local targetSize, targetRadius
+
 	if state == STATE.Music then
-		targetSize   = dim(CONFIG.Size.Music.X, CONFIG.Size.Music.Y)
-		targetRadius = radiusFor(CONFIG.Size.Music.Y)
+		targetSize   = dim(BASE.Music.X, BASE.Music.Y)
+		targetRadius = num(math.min(BASE.Music.Y / 2, 30))
 	elseif state == STATE.Notification then
-		targetSize   = dim(CONFIG.Size.Notif.X, CONFIG.Size.Notif.Y)
-		targetRadius = radiusFor(CONFIG.Size.Notif.Y)
+		targetSize   = dim(BASE.Notif.X, BASE.Notif.Y)
+		targetRadius = num(math.min(BASE.Notif.Y / 2, 30))
 	else
-		targetSize   = dim(CONFIG.Size.Idle.X, CONFIG.Size.Idle.Y)
-		targetRadius = num(CONFIG.Size.Idle.Y / 2)
+		targetSize   = dim(BASE.Idle.X, BASE.Idle.Y)
+		targetRadius = num(BASE.Idle.Y / 2)
 	end
 
-	animateSize(targetSize, targetRadius, CONFIG.AnimTime)
+	animateSize(targetSize, targetRadius, ANIM_TIME)
 
-	-- 只启用当前层交互，避免收起态幽灵点击
-	setInteractive(state == STATE.Music)
-
+	-- 先全部淡出，再淡入目标内容
 	setAlpha(compactParts, 1, 0.10)
 	setAlpha(musicParts,   1, 0.10)
 	setAlpha(notifParts,   1, 0.10)
@@ -521,66 +388,28 @@ setState = function(state)
 	local myState = state
 	task.delay(0.10, function()
 		if currentState ~= myState then return end
-		setAlpha(compactParts, myState == STATE.Idle and 0 or 1, 0.22)
-		setAlpha(musicParts,   myState == STATE.Music and 0 or 1, 0.22)
+		setAlpha(compactParts, myState == STATE.Idle   and 0 or 1, 0.22)
+		setAlpha(musicParts,   myState == STATE.Music  and 0 or 1, 0.22)
 		setAlpha(notifParts,   myState == STATE.Notification and 0 or 1, 0.22)
 	end)
 end
 
 --==============================================================
---  按钮 & 进度条交互
+--  点击 / 触摸 交互
 --==============================================================
-prevBtn.hit.Activated:Connect(function()
-	if Island.OnPrev then task.spawn(Island.OnPrev) end
-end)
-
-nextBtn.hit.Activated:Connect(function()
-	if Island.OnNext then task.spawn(Island.OnNext) end
-end)
-
-playBtn.hit.Activated:Connect(function()
-	isPlaying = not isPlaying
-	playBtn.label.Text = isPlaying and ICON.Pause or ICON.Play
-	if Island.OnPlayPause then task.spawn(Island.OnPlayPause, isPlaying) end
-end)
-
-local isDragging = false
-
-local function applySeekFromX(x)
-	local abs = trackHitbox.AbsolutePosition.X
-	local w   = trackHitbox.AbsoluteSize.X
-	if w <= 0 then return end
-	local p = math.clamp((x - abs) / w, 0, 1)
-	musicFill.Size = UDim2.fromScale(p, 1)
-	if Island.OnSeek then task.spawn(Island.OnSeek, p) end
-end
-
-trackHitbox.InputBegan:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1
-	or input.UserInputType == Enum.UserInputType.Touch then
-		isDragging = true
-		applySeekFromX(input.Position.X)
-	end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-	if isDragging and (input.UserInputType == Enum.UserInputType.MouseMovement
-		or input.UserInputType == Enum.UserInputType.Touch) then
-		applySeekFromX(input.Position.X)
-	end
-end)
-
-UserInputService.InputEnded:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1
-	or input.UserInputType == Enum.UserInputType.Touch then
-		isDragging = false
-	end
-end)
+local hitbox = create("TextButton", {
+	Name = "Hitbox",
+	Size = UDim2.fromScale(1, 1),
+	BackgroundTransparency = 1,
+	Text = "",
+	AutoButtonColor = false,
+	ZIndex = 10,
+}, island)
 
 hitbox.Activated:Connect(function()
 	if currentState == STATE.Idle then
 		setState(STATE.Music)
-		scheduleCollapse(CONFIG.MusicAutoCollapse)
+		scheduleCollapse(6)
 	else
 		setState(STATE.Idle)
 	end
@@ -589,18 +418,14 @@ end)
 --==============================================================
 --  对外 API
 --==============================================================
-Island = {}
+local Island = {}
 
-function Island:ShowMusic(title, artist, progress, playing)
+function Island:ShowMusic(title, artist, progress)
 	musicTitle.Text    = title  or "正在播放"
 	musicSubtitle.Text = artist or "未知艺术家"
 	musicFill.Size     = UDim2.fromScale(math.clamp(progress or 0.35, 0, 1), 1)
-	if playing ~= nil then
-		isPlaying = playing and true or false
-		playBtn.label.Text = isPlaying and ICON.Pause or ICON.Play
-	end
 	setState(STATE.Music)
-	scheduleCollapse(CONFIG.MusicAutoCollapse)
+	scheduleCollapse(8)
 end
 
 function Island:ShowNotification(title, body, glyph)
@@ -608,54 +433,43 @@ function Island:ShowNotification(title, body, glyph)
 	notifBody.Text  = body  or ""
 	notifGlyph.Text = glyph or "!"
 	setState(STATE.Notification)
-	scheduleCollapse(CONFIG.NotificationAutoCollapse)
+	scheduleCollapse(5)
 end
 
-function Island:Hide() setState(STATE.Idle) end
-
-function Island:SetProgress(p)
-	musicFill.Size = UDim2.fromScale(math.clamp(p, 0, 1), 1)
+function Island:Hide()
+	setState(STATE.Idle)
 end
 
-function Island:SetPlaying(v)
-	isPlaying = v and true or false
-	playBtn.label.Text = isPlaying and ICON.Pause or ICON.Play
+function Island:SetProgress(progress)
+	musicFill.Size = UDim2.fromScale(math.clamp(progress, 0, 1), 1)
 end
-
-function Island:GetPlaying() return isPlaying end
-function Island:IsExpanded() return currentState ~= STATE.Idle end
 
 _G.DynamicIsland = Island
-_G.DynamicIslandConfig = CONFIG
 
 --==============================================================
---  呼吸光点（带 GUI 存活检测）
+--  呼吸光点（仅紧凑态）
 --==============================================================
 task.spawn(function()
 	while gui.Parent do
-		TweenService:Create(dot, TweenInfo.new(1, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+		TweenService:Create(dot,
+			TweenInfo.new(1.0, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
 			{ Size = dim(10, 10) }):Play()
-		task.wait(1)
-		if not gui.Parent then break end
-		TweenService:Create(dot, TweenInfo.new(1, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+		task.wait(1.0)
+		TweenService:Create(dot,
+			TweenInfo.new(1.0, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
 			{ Size = dim(8, 8) }):Play()
-		task.wait(1)
+		task.wait(1.0)
 	end
 end)
 
 --==============================================================
---  演示（正式项目里可删）
+--  演示（不需要可以整段删掉）
 --==============================================================
 task.spawn(function()
 	task.wait(2)
-	Island.OnPlayPause = function(p) print("[Demo] 播放:", p) end
-	Island.OnPrev      = function()  print("[Demo] 上一首") end
-	Island.OnNext      = function()  print("[Demo] 下一首") end
-	Island.OnSeek      = function(p) print("[Demo] 跳转:", p) end
-
-	Island:ShowNotification("Roblox", "灵动岛 v2.1 已加载")
+	Island:ShowNotification("Roblox", "灵动岛已加载完成")
 	task.wait(6)
-	Island:ShowMusic("Demo Track", "Demo Singer", 0.35, true)
-	task.wait(8)
+	Island:ShowMusic("Demo Track", "Singer", 0.45)
+	task.wait(6)
 	Island:Hide()
 end)
