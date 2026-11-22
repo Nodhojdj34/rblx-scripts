@@ -1,8 +1,9 @@
 -- 单个 LocalScript
 -- 放置位置：StarterPlayer > StarterPlayerScripts > LocalScript
--- 本脚本不包含异常玩家检测。
--- 防甩飞仅处理本地玩家角色，不操作其他玩家。
--- 音乐仅播放当前体验获准使用的 Roblox 音频，不连接 Spotify。
+-- 顶部灵动岛药丸 + 屏幕中央悬浮控制窗
+-- 不包含异常玩家检测。
+-- 防甩飞只处理本地玩家角色。
+-- 音乐只播放当前体验获准使用的 Roblox 音频，不连接 Spotify。
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -17,14 +18,14 @@ local Lighting = game:GetService("Lighting")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
-local scriptStartedAt = os.clock()
+local startedAt = os.clock()
 
--- 可选预设歌曲。不需要预设歌曲时保持空表。
+-- 可选预设曲目；不需要预设曲目就保持空表。
 -- 示例：{ title = "我的曲目", artist = "歌手", id = 1234567890 }
 local TRACKS = {}
 
 ----------------------------------------------------------------
--- 清理本脚本旧版本留下的本地对象
+-- 清理旧版本本地对象
 ----------------------------------------------------------------
 
 local oldGui = playerGui:FindFirstChild("IslandLocalUI")
@@ -45,33 +46,642 @@ if oldSound then
 end
 
 ----------------------------------------------------------------
--- 主题与通用 UI 工具
+-- 语言
+----------------------------------------------------------------
+
+local translations = {
+	zh = {
+		lang_zh = "简体中文",
+		lang_en = "English",
+		lang_ja = "日本語",
+		language_switch = "语言：%s",
+
+		pill_default = "灵动岛",
+		pill_hint = "轻触打开控制中心",
+		pill_playing = "播放中",
+		pill_paused = "已暂停",
+		pill_loading = "载入中",
+		pill_error = "载入失败",
+
+		window_title = "灵动岛控制中心",
+		tab_music = "音乐",
+		tab_info = "信息",
+		tab_appearance = "外观",
+		tab_protection = "防护",
+
+		music_idle = "Roblox 本地音频播放器",
+		music_notice = "只播放获准用于当前体验的 Roblox 音频；不连接 Spotify。",
+		audio_id = "Roblox 音频 ID",
+		audio_id_placeholder = "在这里输入音频 ID，例如 1234567890",
+		title_placeholder = "曲名（可选）",
+		add_play = "添加并播放",
+		search_placeholder = "搜索播放列表",
+		favorite_off = "☆ 只看收藏",
+		favorite_on = "★ 只看收藏：开",
+		track_not_selected = "尚未选择曲目",
+		previous = "上一首",
+		play = "播放",
+		pause = "暂停",
+		next = "下一首",
+		progress = "播放进度",
+		progress_format = "%s / %s",
+		volume = "音量",
+		playlist = "播放列表",
+		playlist_empty = "列表为空；在上方输入音频 ID 后添加。",
+		playlist_no_match = "没有符合搜索或收藏筛选的曲目。",
+		shuffle_off = "随机：关",
+		shuffle_on = "随机：开",
+		repeat_off = "循环：关",
+		repeat_list = "循环：列表",
+		repeat_one = "循环：单曲",
+		speed_format = "速度 %s×",
+		eq_format = "EQ %s",
+		eq_standard = "标准",
+		eq_bass = "低音",
+		eq_voice = "人声",
+		eq_bright = "明亮",
+		track_format = "%s · %s",
+		track_id = "音频 %s",
+		artist_default = "Roblox 音频",
+
+		status_idle = "等待播放。输入音频 ID 后添加曲目。",
+		status_loading = "正在载入；请确认音频获准用于当前体验。",
+		status_loaded = "音频已载入。",
+		status_playing = "正在播放。",
+		status_paused = "已暂停。",
+		status_failed = "载入失败：检查音频 ID、网络或体验音频权限。",
+		status_timeout = "载入超时：检查音频 ID、网络或体验音频权限。",
+		status_invalid_id = "请在上方输入有效的 Roblox 音频 ID。",
+		status_empty = "播放列表为空。",
+		status_finished = "播放完成。",
+
+		info_intro = "只显示 Roblox 客户端开放读取的信息；型号和电池状态不可读取。",
+		device_section = "设备与客户端",
+		device_platform = "客户端平台",
+		device_player = "本地玩家",
+		device_account = "用户 ID / 账号天数",
+		device_input = "可用输入方式",
+		device_last_input = "最近输入类型",
+		device_sensors = "传感器支持",
+		device_vr = "VR 状态",
+		device_viewport = "游戏视口与方向",
+		device_fps = "FPS 估算",
+		device_ping = "Ping（若客户端接口可用）",
+		device_memory = "客户端内存（若接口可用）",
+		device_camera = "摄像机类型 / 视野",
+		device_graphics = "图像质量（若接口可用）",
+		device_locale = "Roblox 客户端语言",
+		device_inset = "GUI 安全边距",
+		device_runtime = "面板运行时间",
+		device_model = "设备具体型号",
+		device_battery = "电池电量 / 是否充电",
+		api_unavailable = "Roblox 未开放读取",
+		info_unavailable = "客户端未提供",
+		info_not_reported = "未报告 / 不可用",
+		account_format = "%s · %s 天",
+		input_touch = "触屏",
+		input_keyboard = "键盘",
+		input_mouse = "鼠标",
+		input_gamepad = "手柄",
+		sensor_accel = "加速度计",
+		sensor_gyro = "陀螺仪",
+		vr_enabled = "已启用",
+		vr_disabled = "未启用",
+		orientation_landscape = "横向",
+		orientation_portrait = "纵向",
+		viewport_format = "%d × %d px · %s",
+		fps_format = "%d FPS（估算）",
+		camera_format = "%s · FOV %d°",
+		inset_format = "左上 (%d,%d) · 右下 (%d,%d)",
+
+		server_section = "当前服务器",
+		server_type = "服务器类型",
+		server_players = "当前人数 / 人数上限",
+		server_place_id = "PlaceId",
+		server_game_id = "GameId",
+		server_job_id = "当前实例 JobId",
+		server_place_version = "PlaceVersion",
+		server_private_id = "PrivateServerId",
+		server_private_owner = "PrivateServerOwnerId",
+		server_creator = "体验创建者 ID",
+		server_ip = "服务器 IP",
+		server_player_list = "当前服务器玩家",
+		server_studio = "Studio 测试",
+		server_vip = "私人 / VIP 服务器",
+		server_reserved = "预留服务器",
+		server_public = "公开服务器",
+		server_count_format = "%s / %s",
+		server_job_missing = "当前环境未提供",
+		server_private_none = "无 / 未提供",
+		server_ip_unavailable = "Roblox 客户端不会提供",
+		player_none = "当前没有玩家。",
+		you_suffix = " · 你",
+		player_line = "%s  (@%s)%s%s",
+
+		appearance_note = "外观调整只在本机当前会话生效。",
+		size_slider = "灵动岛整体大小",
+		accent_header = "强调色",
+		background_header = "背景色",
+		color_green = "绿",
+		color_cyan = "青",
+		color_blue = "蓝",
+		color_purple = "紫",
+		color_pink = "粉",
+		color_orange = "橙",
+		background_black = "墨黑",
+		background_blue = "深蓝",
+		background_purple = "紫夜",
+		background_forest = "森林",
+		hex_accent_placeholder = "强调色 HEX，例如 #1DB954",
+		apply_accent = "应用强调色",
+		hex_background_placeholder = "背景色 HEX，例如 #0C0D10",
+		apply_background = "应用背景色",
+		invalid_hex = "格式错误：请填写 #RRGGBB",
+		reset_appearance = "恢复默认外观",
+
+		screen_note = "滤镜、模糊和 FOV 只影响本机画面；游戏本身可能会覆盖 FOV。",
+		screen_off = "画面效果：关闭",
+		screen_custom = "画面效果：自定义",
+		screen_preset_status = "画面预设：%s",
+		screen_presets = "画面预设",
+		screen_default = "默认",
+		screen_warm = "暖色",
+		screen_cool = "冷色",
+		screen_mono = "黑白",
+		screen_contrast = "高对比",
+		brightness = "亮度微调",
+		contrast = "对比度",
+		saturation = "饱和度",
+		blur = "本机模糊",
+		fov = "本机摄像机 FOV",
+		reset_fov = "恢复摄像机原始 FOV",
+		disable_effects = "关闭滤镜和模糊",
+
+		protection_note = "此页不扫描其他玩家。防甩飞只处理你的角色；服务器强制的物理效果不保证能拦截。",
+		anti_toggle_on = "防甩飞：开启",
+		anti_toggle_off = "防甩飞：关闭",
+		anti_ready = "只监测自己的角色；坐在载具中时会跳过。",
+		anti_off = "防甩飞已关闭。",
+		anti_handled = "已处理本地角色异常速度（%.0f studs/s）。",
+		anti_threshold = "异常速度处理阈值",
+	},
+
+	en = {
+		lang_zh = "Chinese (Simplified)",
+		lang_en = "English",
+		lang_ja = "Japanese",
+		language_switch = "Language: %s",
+
+		pill_default = "Dynamic Island",
+		pill_hint = "Tap to open controls",
+		pill_playing = "Playing",
+		pill_paused = "Paused",
+		pill_loading = "Loading",
+		pill_error = "Load failed",
+
+		window_title = "Dynamic Island Controls",
+		tab_music = "Music",
+		tab_info = "Info",
+		tab_appearance = "Display",
+		tab_protection = "Guard",
+
+		music_idle = "Local Roblox audio player",
+		music_notice = "Only audio permitted for this experience can play. No Spotify connection.",
+		audio_id = "Roblox audio ID",
+		audio_id_placeholder = "Enter an audio ID, e.g. 1234567890",
+		title_placeholder = "Track title (optional)",
+		add_play = "Add and play",
+		search_placeholder = "Search playlist",
+		favorite_off = "☆ Favorites only",
+		favorite_on = "★ Favorites only: On",
+		track_not_selected = "No track selected",
+		previous = "Previous",
+		play = "Play",
+		pause = "Pause",
+		next = "Next",
+		progress = "Progress",
+		progress_format = "%s / %s",
+		volume = "Volume",
+		playlist = "Playlist",
+		playlist_empty = "Playlist is empty. Enter an audio ID above to add a track.",
+		playlist_no_match = "No tracks match the search or favorites filter.",
+		shuffle_off = "Shuffle: Off",
+		shuffle_on = "Shuffle: On",
+		repeat_off = "Repeat: Off",
+		repeat_list = "Repeat: List",
+		repeat_one = "Repeat: One",
+		speed_format = "Speed %s×",
+		eq_format = "EQ %s",
+		eq_standard = "Normal",
+		eq_bass = "Bass",
+		eq_voice = "Voice",
+		eq_bright = "Bright",
+		track_format = "%s · %s",
+		track_id = "Audio %s",
+		artist_default = "Roblox audio",
+
+		status_idle = "Ready. Enter an audio ID to add a track.",
+		status_loading = "Loading. Make sure this audio is permitted for this experience.",
+		status_loaded = "Audio loaded.",
+		status_playing = "Playing.",
+		status_paused = "Paused.",
+		status_failed = "Load failed. Check the ID, network, and experience audio permissions.",
+		status_timeout = "Load timed out. Check the ID, network, and experience audio permissions.",
+		status_invalid_id = "Enter a valid Roblox audio ID above.",
+		status_empty = "Playlist is empty.",
+		status_finished = "Playback finished.",
+
+		info_intro = "Shows only information exposed by the Roblox client. Device model and battery are unavailable.",
+		device_section = "Device and client",
+		device_platform = "Client platform",
+		device_player = "Local player",
+		device_account = "User ID / account age",
+		device_input = "Available input",
+		device_last_input = "Last input type",
+		device_sensors = "Sensor support",
+		device_vr = "VR status",
+		device_viewport = "Game viewport and orientation",
+		device_fps = "Estimated FPS",
+		device_ping = "Ping (if available)",
+		device_memory = "Client memory (if available)",
+		device_camera = "Camera type / FOV",
+		device_graphics = "Graphics quality (if available)",
+		device_locale = "Roblox client language",
+		device_inset = "GUI safe inset",
+		device_runtime = "Panel runtime",
+		device_model = "Exact device model",
+		device_battery = "Battery / charging status",
+		api_unavailable = "Not exposed by Roblox",
+		info_unavailable = "Not provided by client",
+		info_not_reported = "Not reported / unavailable",
+		account_format = "%s · %s days",
+		input_touch = "Touch",
+		input_keyboard = "Keyboard",
+		input_mouse = "Mouse",
+		input_gamepad = "Gamepad",
+		sensor_accel = "Accelerometer",
+		sensor_gyro = "Gyroscope",
+		vr_enabled = "Enabled",
+		vr_disabled = "Disabled",
+		orientation_landscape = "Landscape",
+		orientation_portrait = "Portrait",
+		viewport_format = "%d × %d px · %s",
+		fps_format = "%d FPS (estimate)",
+		camera_format = "%s · FOV %d°",
+		inset_format = "Top-left (%d,%d) · bottom-right (%d,%d)",
+
+		server_section = "Current server",
+		server_type = "Server type",
+		server_players = "Players / capacity",
+		server_place_id = "PlaceId",
+		server_game_id = "GameId",
+		server_job_id = "Current JobId",
+		server_place_version = "PlaceVersion",
+		server_private_id = "PrivateServerId",
+		server_private_owner = "PrivateServerOwnerId",
+		server_creator = "Experience creator ID",
+		server_ip = "Server IP",
+		server_player_list = "Players in this server",
+		server_studio = "Studio test",
+		server_vip = "Private / VIP server",
+		server_reserved = "Reserved server",
+		server_public = "Public server",
+		server_count_format = "%s / %s",
+		server_job_missing = "Not provided in this environment",
+		server_private_none = "None / not provided",
+		server_ip_unavailable = "Not provided by the Roblox client",
+		player_none = "No players found.",
+		you_suffix = " · You",
+		player_line = "%s  (@%s)%s%s",
+
+		appearance_note = "Appearance changes apply only to your current local session.",
+		size_slider = "Island size",
+		accent_header = "Accent color",
+		background_header = "Background",
+		color_green = "Green",
+		color_cyan = "Cyan",
+		color_blue = "Blue",
+		color_purple = "Purple",
+		color_pink = "Pink",
+		color_orange = "Orange",
+		background_black = "Black",
+		background_blue = "Deep blue",
+		background_purple = "Purple night",
+		background_forest = "Forest",
+		hex_accent_placeholder = "Accent HEX, e.g. #1DB954",
+		apply_accent = "Apply accent color",
+		hex_background_placeholder = "Background HEX, e.g. #0C0D10",
+		apply_background = "Apply background",
+		invalid_hex = "Invalid format. Use #RRGGBB",
+		reset_appearance = "Reset appearance",
+
+		screen_note = "Filters, blur, and FOV affect only your local view. The game may override FOV.",
+		screen_off = "Visual effects: Off",
+		screen_custom = "Visual effects: Custom",
+		screen_preset_status = "Visual preset: %s",
+		screen_presets = "Visual presets",
+		screen_default = "Default",
+		screen_warm = "Warm",
+		screen_cool = "Cool",
+		screen_mono = "Monochrome",
+		screen_contrast = "High contrast",
+		brightness = "Brightness",
+		contrast = "Contrast",
+		saturation = "Saturation",
+		blur = "Local blur",
+		fov = "Local camera FOV",
+		reset_fov = "Restore original camera FOV",
+		disable_effects = "Turn off filters and blur",
+
+		protection_note = "This page does not scan other players. Anti-fling only affects your character; server-forced physics may not be blocked.",
+		anti_toggle_on = "Anti-fling: On",
+		anti_toggle_off = "Anti-fling: Off",
+		anti_ready = "Monitors only your character; skipped while seated.",
+		anti_off = "Anti-fling is off.",
+		anti_handled = "Local abnormal velocity handled (%.0f studs/s).",
+		anti_threshold = "Velocity handling threshold",
+	},
+
+	ja = {
+		lang_zh = "中国語（簡体字）",
+		lang_en = "英語",
+		lang_ja = "日本語",
+		language_switch = "言語：%s",
+
+		pill_default = "ダイナミックアイランド",
+		pill_hint = "タップして操作を開く",
+		pill_playing = "再生中",
+		pill_paused = "一時停止",
+		pill_loading = "読み込み中",
+		pill_error = "読み込み失敗",
+
+		window_title = "ダイナミックアイランド",
+		tab_music = "音楽",
+		tab_info = "情報",
+		tab_appearance = "画面",
+		tab_protection = "保護",
+
+		music_idle = "Roblox ローカル音楽プレーヤー",
+		music_notice = "この体験で許可されたRoblox音声のみ再生できます。Spotifyには接続しません。",
+		audio_id = "Roblox音声ID",
+		audio_id_placeholder = "音声IDを入力（例：1234567890）",
+		title_placeholder = "曲名（任意）",
+		add_play = "追加して再生",
+		search_placeholder = "プレイリストを検索",
+		favorite_off = "☆ お気に入りのみ",
+		favorite_on = "★ お気に入りのみ：オン",
+		track_not_selected = "曲が選択されていません",
+		previous = "前へ",
+		play = "再生",
+		pause = "一時停止",
+		next = "次へ",
+		progress = "再生位置",
+		progress_format = "%s / %s",
+		volume = "音量",
+		playlist = "プレイリスト",
+		playlist_empty = "リストは空です。上に音声IDを入力して追加してください。",
+		playlist_no_match = "検索またはお気に入り条件に一致する曲はありません。",
+		shuffle_off = "シャッフル：オフ",
+		shuffle_on = "シャッフル：オン",
+		repeat_off = "リピート：オフ",
+		repeat_list = "リピート：リスト",
+		repeat_one = "リピート：1曲",
+		speed_format = "速度 %s×",
+		eq_format = "EQ %s",
+		eq_standard = "標準",
+		eq_bass = "低音",
+		eq_voice = "ボーカル",
+		eq_bright = "明るい",
+		track_format = "%s · %s",
+		track_id = "音声 %s",
+		artist_default = "Roblox音声",
+
+		status_idle = "待機中。音声IDを入力して曲を追加してください。",
+		status_loading = "読み込み中。この体験で音声が許可されているか確認してください。",
+		status_loaded = "音声を読み込みました。",
+		status_playing = "再生中。",
+		status_paused = "一時停止中。",
+		status_failed = "読み込み失敗。ID、ネットワーク、音声権限を確認してください。",
+		status_timeout = "読み込みタイムアウト。ID、ネットワーク、音声権限を確認してください。",
+		status_invalid_id = "有効なRoblox音声IDを入力してください。",
+		status_empty = "プレイリストは空です。",
+		status_finished = "再生が終了しました。",
+
+		info_intro = "Robloxクライアントが公開する情報のみ表示します。端末モデルとバッテリーは取得できません。",
+		device_section = "端末とクライアント",
+		device_platform = "クライアントプラットフォーム",
+		device_player = "ローカルプレイヤー",
+		device_account = "ユーザーID / アカウント日数",
+		device_input = "利用可能な入力",
+		device_last_input = "最後の入力タイプ",
+		device_sensors = "センサー対応",
+		device_vr = "VR状態",
+		device_viewport = "ゲーム画面と向き",
+		device_fps = "推定FPS",
+		device_ping = "Ping（取得可能な場合）",
+		device_memory = "クライアントメモリ（取得可能な場合）",
+		device_camera = "カメラタイプ / FOV",
+		device_graphics = "画質設定（取得可能な場合）",
+		device_locale = "Robloxクライアント言語",
+		device_inset = "GUIセーフ領域",
+		device_runtime = "パネル稼働時間",
+		device_model = "正確な端末モデル",
+		device_battery = "バッテリー / 充電状態",
+		api_unavailable = "Roblox APIでは取得不可",
+		info_unavailable = "クライアントから取得できません",
+		info_not_reported = "未報告 / 利用不可",
+		account_format = "%s · %s日",
+		input_touch = "タッチ",
+		input_keyboard = "キーボード",
+		input_mouse = "マウス",
+		input_gamepad = "ゲームパッド",
+		sensor_accel = "加速度センサー",
+		sensor_gyro = "ジャイロセンサー",
+		vr_enabled = "有効",
+		vr_disabled = "無効",
+		orientation_landscape = "横向き",
+		orientation_portrait = "縦向き",
+		viewport_format = "%d × %d px · %s",
+		fps_format = "%d FPS（推定）",
+		camera_format = "%s · FOV %d°",
+		inset_format = "左上 (%d,%d) · 右下 (%d,%d)",
+
+		server_section = "現在のサーバー",
+		server_type = "サーバータイプ",
+		server_players = "人数 / 上限",
+		server_place_id = "PlaceId",
+		server_game_id = "GameId",
+		server_job_id = "現在のJobId",
+		server_place_version = "PlaceVersion",
+		server_private_id = "PrivateServerId",
+		server_private_owner = "PrivateServerOwnerId",
+		server_creator = "体験作成者ID",
+		server_ip = "サーバーIP",
+		server_player_list = "現在のサーバープレイヤー",
+		server_studio = "Studioテスト",
+		server_vip = "プライベート / VIPサーバー",
+		server_reserved = "予約サーバー",
+		server_public = "公開サーバー",
+		server_count_format = "%s / %s",
+		server_job_missing = "この環境では提供されません",
+		server_private_none = "なし / 未提供",
+		server_ip_unavailable = "Robloxクライアントは提供しません",
+		player_none = "プレイヤーはいません。",
+		you_suffix = " · あなた",
+		player_line = "%s  (@%s)%s%s",
+
+		appearance_note = "外観設定は現在のローカルセッションにのみ適用されます。",
+		size_slider = "アイランドのサイズ",
+		accent_header = "アクセントカラー",
+		background_header = "背景色",
+		color_green = "緑",
+		color_cyan = "シアン",
+		color_blue = "青",
+		color_purple = "紫",
+		color_pink = "ピンク",
+		color_orange = "オレンジ",
+		background_black = "ブラック",
+		background_blue = "ダークブルー",
+		background_purple = "パープル",
+		background_forest = "フォレスト",
+		hex_accent_placeholder = "アクセントHEX（例：#1DB954）",
+		apply_accent = "アクセント色を適用",
+		hex_background_placeholder = "背景HEX（例：#0C0D10）",
+		apply_background = "背景色を適用",
+		invalid_hex = "形式が違います。#RRGGBBを使用してください",
+		reset_appearance = "外観をリセット",
+
+		screen_note = "フィルター、ぼかし、FOVは自分の画面だけに適用されます。ゲームがFOVを上書きする場合があります。",
+		screen_off = "画面効果：オフ",
+		screen_custom = "画面効果：カスタム",
+		screen_preset_status = "画面プリセット：%s",
+		screen_presets = "画面プリセット",
+		screen_default = "デフォルト",
+		screen_warm = "暖色",
+		screen_cool = "寒色",
+		screen_mono = "モノクロ",
+		screen_contrast = "高コントラスト",
+		brightness = "明るさ",
+		contrast = "コントラスト",
+		saturation = "彩度",
+		blur = "ローカルぼかし",
+		fov = "ローカルカメラFOV",
+		reset_fov = "カメラFOVを元に戻す",
+		disable_effects = "フィルターとぼかしをオフ",
+
+		protection_note = "他のプレイヤーは検査しません。防甩飛機能は自分のキャラクターだけに作用します。",
+		anti_toggle_on = "防甩飛：オン",
+		anti_toggle_off = "防甩飛：オフ",
+		anti_ready = "自分のキャラクターのみ監視します。乗り物に乗っている間はスキップします。",
+		anti_off = "防甩飛はオフです。",
+		anti_handled = "自分のキャラクターの異常速度を処理しました（%.0f studs/s）。",
+		anti_threshold = "速度処理しきい値",
+	},
+}
+
+local languageOrder = { "zh", "en", "ja" }
+local language = "zh"
+local localizedBindings = {}
+local allSliders = {}
+local languageButton = nil
+local refreshDynamicUI = nil
+
+local function T(key)
+	local current = translations[language]
+	if current and current[key] then
+		return current[key]
+	end
+
+	return translations.zh[key] or key
+end
+
+local function TF(key, ...)
+	local formatString = T(key)
+	local arguments = { ... }
+
+	if #arguments == 0 then
+		return formatString
+	end
+
+	local success, result = pcall(
+		string.format,
+		formatString,
+		table.unpack(arguments)
+	)
+
+	if success then
+		return result
+	end
+
+	return formatString
+end
+
+local function bindLocalizedText(object, key, property)
+	table.insert(localizedBindings, {
+		object = object,
+		key = key,
+		property = property,
+	})
+
+	object[property] = T(key)
+	return object
+end
+
+local function applyLanguage(nextLanguage)
+	language = nextLanguage
+
+	for index = #localizedBindings, 1, -1 do
+		local binding = localizedBindings[index]
+
+		if binding.object and binding.object.Parent then
+			binding.object[binding.property] = T(binding.key)
+		else
+			table.remove(localizedBindings, index)
+		end
+	end
+
+	if languageButton then
+		languageButton.Text =
+			TF("language_switch", T("lang_" .. language))
+	end
+
+	if refreshDynamicUI then
+		refreshDynamicUI()
+	end
+
+	for _, slider in ipairs(allSliders) do
+		slider:Refresh()
+	end
+end
+
+----------------------------------------------------------------
+-- 主题和界面基础工具
 ----------------------------------------------------------------
 
 local theme = {
 	accent = Color3.fromRGB(29, 185, 84),
-	background = Color3.fromRGB(12, 13, 16),
+	background = Color3.fromRGB(10, 11, 13),
 }
 
 local accentPresets = {
-	{ name = "绿", color = Color3.fromRGB(29, 185, 84) },
-	{ name = "青", color = Color3.fromRGB(24, 194, 190) },
-	{ name = "蓝", color = Color3.fromRGB(65, 145, 255) },
-	{ name = "紫", color = Color3.fromRGB(158, 95, 255) },
-	{ name = "粉", color = Color3.fromRGB(245, 90, 170) },
-	{ name = "橙", color = Color3.fromRGB(255, 150, 55) },
+	{ key = "color_green", color = Color3.fromRGB(29, 185, 84) },
+	{ key = "color_cyan", color = Color3.fromRGB(24, 194, 190) },
+	{ key = "color_blue", color = Color3.fromRGB(65, 145, 255) },
+	{ key = "color_purple", color = Color3.fromRGB(158, 95, 255) },
+	{ key = "color_pink", color = Color3.fromRGB(245, 90, 170) },
+	{ key = "color_orange", color = Color3.fromRGB(255, 150, 55) },
 }
 
 local backgroundPresets = {
-	{ name = "墨黑", color = Color3.fromRGB(12, 13, 16) },
-	{ name = "深蓝", color = Color3.fromRGB(13, 22, 34) },
-	{ name = "紫夜", color = Color3.fromRGB(28, 18, 38) },
-	{ name = "森林", color = Color3.fromRGB(17, 30, 24) },
+	{ key = "background_black", color = Color3.fromRGB(10, 11, 13) },
+	{ key = "background_blue", color = Color3.fromRGB(13, 22, 34) },
+	{ key = "background_purple", color = Color3.fromRGB(28, 18, 38) },
+	{ key = "background_forest", color = Color3.fromRGB(17, 30, 24) },
 }
 
 local styleRegistry = setmetatable({}, { __mode = "k" })
-local pageOrder = {}
 local scrollFrames = {}
+local pageOrder = {}
 
 local function contrastText(color)
 	local luminance =
@@ -195,7 +805,6 @@ local function newGui(className, parent, properties, role)
 		object.LayoutOrder = pageOrder[parent]
 	end
 
-	-- 先 Parent，再应用样式，保证初始主题颜色生效。
 	object.Parent = parent
 
 	if role then
@@ -241,6 +850,12 @@ local function createLabel(parent, text, size, role, extraProperties)
 	return newGui("TextLabel", parent, properties, role or "text")
 end
 
+local function createLocalizedLabel(parent, key, size, role, extraProperties)
+	local label = createLabel(parent, T(key), size, role, extraProperties)
+	bindLocalizedText(label, key, "Text")
+	return label
+end
+
 local function createButton(parent, text, size, position, role, textSize)
 	local button = newGui("TextButton", parent, {
 		Size = size,
@@ -255,6 +870,19 @@ local function createButton(parent, text, size, position, role, textSize)
 	}, role or "button")
 
 	addCorner(button, 9)
+	return button
+end
+
+local function createLocalizedButton(parent, key, size, position, role, textSize)
+	local button = createButton(
+		parent,
+		T(key),
+		size,
+		position,
+		role,
+		textSize
+	)
+	bindLocalizedText(button, key, "Text")
 	return button
 end
 
@@ -282,6 +910,36 @@ local function createTextBox(parent, placeholder, size)
 	return box
 end
 
+local function createLocalizedTextBox(parent, placeholderKey, size)
+	local box = createTextBox(parent, T(placeholderKey), size)
+	bindLocalizedText(box, placeholderKey, "PlaceholderText")
+	return box
+end
+
+local function createLocalizedButtonRow(parent, keys, height)
+	local row = newGui("Frame", parent, {
+		Size = UDim2.new(1, -4, 0, height or 38),
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+	}, nil)
+
+	local buttons = {}
+	local count = #keys
+
+	for index, key in ipairs(keys) do
+		buttons[index] = createLocalizedButton(
+			row,
+			key,
+			UDim2.new(1 / count, -6, 1, -4),
+			UDim2.new((index - 1) / count, 3, 0, 2),
+			"button",
+			10
+		)
+	end
+
+	return row, buttons
+end
+
 local function createButtonRow(parent, texts, height)
 	local row = newGui("Frame", parent, {
 		Size = UDim2.new(1, -4, 0, height or 38),
@@ -306,10 +964,10 @@ local function createButtonRow(parent, texts, height)
 	return row, buttons
 end
 
-local function createSectionTitle(parent, text)
-	return createLabel(
+local function createSectionTitle(parent, key)
+	return createLocalizedLabel(
 		parent,
-		text,
+		key,
 		UDim2.new(1, -4, 0, 23),
 		"text",
 		{
@@ -320,12 +978,12 @@ local function createSectionTitle(parent, text)
 end
 
 ----------------------------------------------------------------
--- 滑杆：支持鼠标与触屏
+-- 滑杆：支持鼠标和触屏
 ----------------------------------------------------------------
 
 local function createSlider(
 	parent,
-	title,
+	titleKey,
 	minValue,
 	maxValue,
 	initialValue,
@@ -340,9 +998,9 @@ local function createSlider(
 	}, "card")
 	addCorner(container, 9)
 
-	createLabel(
+	createLocalizedLabel(
 		container,
-		title,
+		titleKey,
 		UDim2.new(0.68, -8, 0, 19),
 		"text",
 		{
@@ -479,18 +1137,27 @@ local function createSlider(
 		end
 	end)
 
-	drawValue()
+	local slider = {}
 
-	return {
-		SetValue = setValue,
-		IsDragging = function()
-			return dragging
-		end,
-	}
+	function slider:SetValue(newValue, shouldFire)
+		setValue(newValue, shouldFire)
+	end
+
+	function slider:IsDragging()
+		return dragging
+	end
+
+	function slider:Refresh()
+		drawValue()
+	end
+
+	drawValue()
+	table.insert(allSliders, slider)
+	return slider
 end
 
 ----------------------------------------------------------------
--- 灵动岛：小药丸与有限高度面板
+-- ScreenGui、顶部灵动岛和中央悬浮窗
 ----------------------------------------------------------------
 
 local screenGui = Instance.new("ScreenGui")
@@ -501,88 +1168,114 @@ screenGui.DisplayOrder = 50
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 screenGui.Parent = playerGui
 
-local root = newGui("Frame", screenGui, {
-	Name = "IslandRoot",
-	AnchorPoint = Vector2.new(0.5, 0),
-	Position = UDim2.new(0.5, 0, 0, 8),
-	Size = UDim2.new(0, 320, 0, 44),
-	BackgroundTransparency = 1,
-	BorderSizePixel = 0,
-	ClipsDescendants = false,
-}, nil)
-
-local uiScale = Instance.new("UIScale")
-uiScale.Scale = 1
-uiScale.Parent = root
-
-local island = newGui("Frame", root, {
+local pill = newGui("Frame", screenGui, {
 	Name = "IslandPill",
 	AnchorPoint = Vector2.new(0.5, 0),
-	Position = UDim2.new(0.5, 0, 0, 0),
-	Size = UDim2.new(0, 245, 0, 44),
+	Position = UDim2.new(0.5, 0, 0, 8),
+	Size = UDim2.new(0, 250, 0, 48),
 	BorderSizePixel = 0,
+	ClipsDescendants = true,
 }, "pill")
-addCorner(island, 22)
-addStroke(island)
+addCorner(pill, 24)
+addStroke(pill)
 
-createLabel(
-	island,
-	"●",
-	UDim2.new(0, 22, 1, 0),
-	"accentText",
-	{
-		Position = UDim2.new(0, 12, 0, 0),
-		TextSize = 11,
-		Font = Enum.Font.GothamBold,
-		TextXAlignment = Enum.TextXAlignment.Center,
-	}
-)
+local pillScale = Instance.new("UIScale")
+pillScale.Scale = 1
+pillScale.Parent = pill
 
-local pillTrackLabel = createLabel(
-	island,
-	"灵动岛 · 本机面板",
-	UDim2.new(1, -94, 1, 0),
-	"muted",
-	{
-		Position = UDim2.new(0, 40, 0, 0),
-		TextSize = 11,
-		Font = Enum.Font.GothamMedium,
-		TextTruncate = Enum.TextTruncate.AtEnd,
-	}
-)
-
-local dragArea = newGui("TextButton", island, {
-	Size = UDim2.new(1, -52, 1, 0),
+local pillOpenButton = newGui("TextButton", pill, {
+	Name = "OpenControls",
+	Size = UDim2.new(1, -42, 1, 0),
+	Position = UDim2.new(0, 42, 0, 0),
 	BackgroundTransparency = 1,
 	BorderSizePixel = 0,
 	AutoButtonColor = false,
 	Text = "",
 }, nil)
 
-local expandButton = createButton(
-	island,
-	"⌄",
-	UDim2.new(0, 38, 0, 32),
-	UDim2.new(1, -43, 0, 6),
-	"button",
-	16
+local dragHandle = createButton(
+	pill,
+	"♫",
+	UDim2.new(0, 32, 0, 32),
+	UDim2.new(0, 8, 0, 8),
+	"accentButton",
+	15
+)
+dragHandle.Name = "IslandDragHandle"
+
+local miniTitle = createLabel(
+	pill,
+	T("pill_default"),
+	UDim2.new(1, -92, 0, 18),
+	"text",
+	{
+		Position = UDim2.new(0, 48, 0, 6),
+		TextSize = 11,
+		Font = Enum.Font.GothamBold,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		TextWrapped = false,
+	}
 )
 
-local panel = newGui("Frame", root, {
-	Name = "IslandPanel",
-	Size = UDim2.new(1, 0, 0, 360),
-	Position = UDim2.new(0, 0, 0, 50),
+local miniSubtitle = createLabel(
+	pill,
+	T("pill_hint"),
+	UDim2.new(1, -92, 0, 16),
+	"muted",
+	{
+		Position = UDim2.new(0, 48, 0, 23),
+		TextSize = 9,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		TextWrapped = false,
+	}
+)
+
+local miniState = createLabel(
+	pill,
+	"·",
+	UDim2.new(0, 28, 0, 24),
+	"accentText",
+	{
+		Position = UDim2.new(1, -34, 0, 10),
+		TextSize = 12,
+		Font = Enum.Font.GothamBold,
+		TextXAlignment = Enum.TextXAlignment.Center,
+	}
+)
+
+local miniProgressBack = newGui("Frame", pill, {
+	Size = UDim2.new(1, -58, 0, 2),
+	Position = UDim2.new(0, 48, 1, -3),
+	BorderSizePixel = 0,
+}, "button")
+addCorner(miniProgressBack, 2)
+
+local miniProgressFill = newGui("Frame", miniProgressBack, {
+	Size = UDim2.new(0, 0, 1, 0),
+	BorderSizePixel = 0,
+}, "accentBar")
+addCorner(miniProgressFill, 2)
+
+local window = newGui("Frame", screenGui, {
+	Name = "IslandFloatingWindow",
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.new(0.5, 0, 0.5, 0),
+	Size = UDim2.new(0, 400, 0, 400),
 	BorderSizePixel = 0,
 	Visible = false,
 	ClipsDescendants = true,
 }, "panel")
-addCorner(panel, 18)
-addStroke(panel)
+addCorner(window, 18)
+addStroke(window)
 
-createLabel(
-	panel,
-	"灵动岛",
-	UDim2.new(1, -55, 0, 28),
+local windowScale = Instance.new("UIScale")
+windowScale.Scale = 1
+windowScale.Parent = window
+
+local windowTitle = createLocalizedLabel(
+	window,
+	"window_title",
+	UDim2.new(1, -55, 0, 30),
 	"text",
 	{
 		Position = UDim2.new(0, 13, 0, 4),
@@ -592,7 +1285,7 @@ createLabel(
 )
 
 local closeButton = createButton(
-	panel,
+	window,
 	"×",
 	UDim2.new(0, 34, 0, 30),
 	UDim2.new(1, -42, 0, 3),
@@ -600,28 +1293,28 @@ local closeButton = createButton(
 	17
 )
 
-local tabBar = newGui("Frame", panel, {
-	Size = UDim2.new(1, -16, 0, 31),
-	Position = UDim2.new(0, 8, 0, 35),
+local tabBar = newGui("Frame", window, {
+	Size = UDim2.new(1, -16, 0, 32),
+	Position = UDim2.new(0, 8, 0, 36),
 	BackgroundTransparency = 1,
 	BorderSizePixel = 0,
 }, nil)
 
 local pageSpecs = {
-	{ key = "Music", title = "音乐" },
-	{ key = "Info", title = "信息" },
-	{ key = "Visual", title = "画面" },
-	{ key = "Safety", title = "防护" },
+	{ key = "Music", titleKey = "tab_music" },
+	{ key = "Info", titleKey = "tab_info" },
+	{ key = "Appearance", titleKey = "tab_appearance" },
+	{ key = "Protection", titleKey = "tab_protection" },
 }
 
 local pages = {}
 local tabButtons = {}
 
 local function createPage(key)
-	local page = newGui("ScrollingFrame", panel, {
+	local page = newGui("ScrollingFrame", window, {
 		Name = key .. "Page",
-		Size = UDim2.new(1, -16, 1, -78),
-		Position = UDim2.new(0, 8, 0, 70),
+		Size = UDim2.new(1, -16, 1, -82),
+		Position = UDim2.new(0, 8, 0, 72),
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		CanvasSize = UDim2.new(0, 0, 0, 0),
@@ -657,9 +1350,9 @@ for _, spec in ipairs(pageSpecs) do
 end
 
 for index, spec in ipairs(pageSpecs) do
-	tabButtons[spec.key] = createButton(
+	tabButtons[spec.key] = createLocalizedButton(
 		tabBar,
-		spec.title,
+		spec.titleKey,
 		UDim2.new(0.25, -5, 1, -4),
 		UDim2.new((index - 1) * 0.25, 2, 0, 2),
 		"button",
@@ -667,77 +1360,73 @@ for index, spec in ipairs(pageSpecs) do
 	)
 end
 
-local expanded = false
+local windowOpen = false
 local userScale = 1
-local rootOffsetX = 0
-local rootOffsetY = 8
+local pillOffsetX = 0
+local pillOffsetY = 8
 
 local function getViewportSize()
 	local camera = workspace.CurrentCamera
 	if camera then
 		return camera.ViewportSize
 	end
+
 	return Vector2.new(800, 600)
 end
 
 local function updateLayout()
 	local viewport = getViewportSize()
-	local panelWidth
 
+	local windowWidth
 	if viewport.X < 600 then
-		panelWidth = math.max(210, math.min(360, viewport.X - 48))
+		windowWidth = math.max(220, math.min(400, viewport.X - 28))
 	else
-		panelWidth = math.max(320, math.min(420, viewport.X - 80))
+		windowWidth = math.max(320, math.min(440, viewport.X - 80))
 	end
 
-	local pillWidth
-	if viewport.X < 600 then
-		pillWidth = math.max(170, math.min(248, viewport.X - 72))
-	else
-		pillWidth = math.max(210, math.min(270, viewport.X - 100))
-	end
+	local windowHeight = math.floor(math.clamp(viewport.Y * 0.58, 220, 500))
+	local pillWidth = math.max(190, math.min(260, viewport.X - 72))
 
-	-- 面板内容过多时在面板内部滚动，不铺满手机屏幕。
-	local panelHeight = math.floor(math.clamp(viewport.Y * 0.45, 120, 440))
-	local rootHeight = expanded and (panelHeight + 50) or 44
-
-	root.Size = UDim2.new(0, panelWidth, 0, rootHeight)
-	island.Size = UDim2.new(0, pillWidth, 0, 44)
-	panel.Position = UDim2.new(0, 0, 0, 50)
-	panel.Size = UDim2.new(1, 0, 0, panelHeight)
-	panel.Visible = expanded
-	expandButton.Text = expanded and "⌃" or "⌄"
+	window.Size = UDim2.new(0, windowWidth, 0, windowHeight)
+	window.Position = UDim2.new(0.5, 0, 0.5, 0)
+	window.Visible = windowOpen
 
 	for _, page in pairs(pages) do
-		page.Position = UDim2.new(0, 8, 0, 70)
-		page.Size = UDim2.new(1, -16, 1, -78)
+		page.Position = UDim2.new(0, 8, 0, 72)
+		page.Size = UDim2.new(1, -16, 1, -82)
 	end
 
-	local fitX = math.max(0.5, (viewport.X - 16) / panelWidth)
-	local fitY = math.max(0.5, (viewport.Y - 16) / math.max(rootHeight, 1))
-	uiScale.Scale = math.min(userScale, fitX, fitY)
+	local windowFitX = math.max(0.4, (viewport.X - 12) / windowWidth)
+	local windowFitY = math.max(0.4, (viewport.Y - 12) / windowHeight)
+	windowScale.Scale = math.min(userScale, windowFitX, windowFitY)
 
-	local scaledWidth = panelWidth * uiScale.Scale
-	local scaledHeight = rootHeight * uiScale.Scale
-	local maxX = math.max(0, viewport.X / 2 - scaledWidth / 2 - 4)
-	local maxY = math.max(4, viewport.Y - scaledHeight - 8)
+	pill.Size = UDim2.new(0, pillWidth, 0, 48)
 
-	rootOffsetX = math.clamp(rootOffsetX, -maxX, maxX)
-	rootOffsetY = math.clamp(rootOffsetY, 4, maxY)
-	root.Position = UDim2.new(0.5, rootOffsetX, 0, rootOffsetY)
+	local pillFitX = math.max(0.4, (viewport.X - 16) / pillWidth)
+	local pillFitY = math.max(0.4, (viewport.Y - 16) / 48)
+	pillScale.Scale = math.min(userScale, pillFitX, pillFitY)
+
+	local actualPillWidth = pill.AbsoluteSize.X
+	local actualPillHeight = pill.AbsoluteSize.Y
+	local maxPillX = math.max(0, viewport.X / 2 - actualPillWidth / 2 - 4)
+	local maxPillY = math.max(4, viewport.Y - actualPillHeight - 8)
+
+	pillOffsetX = math.clamp(pillOffsetX, -maxPillX, maxPillX)
+	pillOffsetY = math.clamp(pillOffsetY, 4, maxPillY)
+	pill.Position = UDim2.new(0.5, pillOffsetX, 0, pillOffsetY)
 end
 
-local function setExpanded(value)
-	expanded = value
+local function setWindowOpen(value)
+	windowOpen = value
 	updateLayout()
 end
 
-expandButton.Activated:Connect(function()
-	setExpanded(not expanded)
+pillOpenButton.Activated:Connect(function()
+	setWindowOpen(not windowOpen)
 end)
 
 closeButton.Activated:Connect(function()
-	setExpanded(false)
+	setWindowOpen(false)
 end)
 
 local function selectTab(key)
@@ -759,11 +1448,21 @@ local function selectTab(key)
 end
 
 for _, spec in ipairs(pageSpecs) do
-	local key = spec.key
-	tabButtons[key].Activated:Connect(function()
-		selectTab(key)
+	local pageKey = spec.key
+	tabButtons[pageKey].Activated:Connect(function()
+		selectTab(pageKey)
 	end)
 end
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then
+		return
+	end
+
+	if input.KeyCode == Enum.KeyCode.Escape and windowOpen then
+		setWindowOpen(false)
+	end
+end)
 
 ----------------------------------------------------------------
 -- 音乐播放器
@@ -775,11 +1474,12 @@ local tracks = {}
 for _, track in ipairs(TRACKS) do
 	if track.id ~= nil then
 		local id = tostring(track.id):match("%d+")
+
 		if id and tonumber(id) and tonumber(id) > 0 then
 			table.insert(tracks, {
 				id = id,
-				title = track.title or ("音频 " .. id),
-				artist = track.artist or "Roblox 音频",
+				title = track.title or TF("track_id", id),
+				artist = track.artist or T("artist_default"),
 				favorite = track.favorite == true,
 			})
 		end
@@ -795,6 +1495,7 @@ local speedValues = { 0.75, 1, 1.25, 1.5 }
 local speedIndex = 2
 local playbackSpeed = speedValues[speedIndex]
 local playToken = 0
+local musicStatusKey = "status_idle"
 
 local sound = Instance.new("Sound")
 sound.Name = "IslandLocalMusic"
@@ -807,82 +1508,78 @@ equalizer.Name = "IslandLocalEQ"
 equalizer.Parent = sound
 
 local eqPresets = {
-	{ name = "标准", low = 0, mid = 0, high = 0 },
-	{ name = "低音", low = 5, mid = 0, high = -2 },
-	{ name = "人声", low = -3, mid = 4, high = -1 },
-	{ name = "明亮", low = -2, mid = 0, high = 4 },
+	{ key = "eq_standard", low = 0, mid = 0, high = 0 },
+	{ key = "eq_bass", low = 5, mid = 0, high = -2 },
+	{ key = "eq_voice", low = -3, mid = 4, high = -1 },
+	{ key = "eq_bright", low = -2, mid = 0, high = 4 },
 }
 local eqIndex = 1
 
 local musicStatusLabel = createLabel(
 	musicPage,
-	"本地 Roblox 音频播放器",
+	T("music_idle"),
 	UDim2.new(1, -4, 0, 25),
 	"muted",
 	{ TextSize = 11 }
 )
 
-createLabel(
+createLocalizedLabel(
 	musicPage,
-	"只能播放获准用于当前体验的 Roblox 音频；不连接 Spotify。",
+	"music_notice",
 	UDim2.new(1, -4, 0, 31),
 	"muted",
 	{ TextSize = 10 }
 )
 
-createLabel(
-	musicPage,
-	"Roblox 音频 ID",
-	UDim2.new(1, -4, 0, 19),
-	"text",
-	{ TextSize = 11 }
-)
+createSectionTitle(musicPage, "audio_id")
 
-local idBox = createTextBox(
+local idBox = createLocalizedTextBox(
 	musicPage,
-	"在这里输入音频 ID，例如 1234567890",
+	"audio_id_placeholder",
 	UDim2.new(1, -4, 0, 36)
 )
 
-local titleBox = createTextBox(
+local titleBox = createLocalizedTextBox(
 	musicPage,
-	"曲名（可选）",
+	"title_placeholder",
 	UDim2.new(1, -4, 0, 36)
 )
 
-local addTrackButton = createButton(
+local addTrackButton = createLocalizedButton(
 	musicPage,
-	"添加并播放",
+	"add_play",
 	UDim2.new(1, -4, 0, 36),
 	UDim2.new(),
 	"accentButton",
 	11
 )
 
-local searchBox = createTextBox(
+local searchBox = createLocalizedTextBox(
 	musicPage,
-	"搜索播放列表",
+	"search_placeholder",
 	UDim2.new(1, -4, 0, 36)
 )
 
-local _, favoriteButtons = createButtonRow(
+local favoriteFilterButton = createButton(
 	musicPage,
-	{ "☆ 只看收藏" },
-	34
+	T("favorite_off"),
+	UDim2.new(1, -4, 0, 34),
+	UDim2.new(),
+	"button",
+	10
 )
-local favoriteFilterButton = favoriteButtons[1]
 
 local currentTrackLabel = createLabel(
 	musicPage,
-	"尚未选择曲目",
+	T("track_not_selected"),
 	UDim2.new(1, -4, 0, 29),
 	"accentText",
 	{ TextSize = 11 }
 )
 
-local _, playButtons = createButtonRow(
+local _, playButtons = createLocalizedButtonRow(
 	musicPage,
-	{ "上一首", "播放", "下一首" },
+	{ "previous", "play", "next" },
 	36
 )
 local previousButton = playButtons[1]
@@ -891,6 +1588,7 @@ local nextButton = playButtons[3]
 
 local function formatTime(seconds)
 	seconds = tonumber(seconds) or 0
+
 	if seconds < 0 or seconds ~= seconds then
 		seconds = 0
 	end
@@ -901,17 +1599,20 @@ end
 
 local progressSlider = createSlider(
 	musicPage,
-	"播放进度",
+	"progress",
 	0,
 	1,
 	0,
 	function(value)
 		if sound.TimeLength > 0 then
-			return formatTime(value * sound.TimeLength)
-				.. " / "
-				.. formatTime(sound.TimeLength)
+			return TF(
+				"progress_format",
+				formatTime(value * sound.TimeLength),
+				formatTime(sound.TimeLength)
+			)
 		end
-		return "00:00 / 00:00"
+
+		return TF("progress_format", "00:00", "00:00")
 	end,
 	function(value)
 		if sound.TimeLength > 0 and currentIndex > 0 then
@@ -925,7 +1626,7 @@ local progressSlider = createSlider(
 
 local _, optionButtons = createButtonRow(
 	musicPage,
-	{ "随机：关", "循环：关", "速度 1×", "EQ 标准" },
+	{ "", "", "", "" },
 	36
 )
 local shuffleButton = optionButtons[1]
@@ -935,7 +1636,7 @@ local eqButton = optionButtons[4]
 
 createSlider(
 	musicPage,
-	"音量",
+	"volume",
 	0,
 	1,
 	volume,
@@ -949,7 +1650,7 @@ createSlider(
 	0.01
 )
 
-createSectionTitle(musicPage, "播放列表")
+createSectionTitle(musicPage, "playlist")
 
 local playlistContainer = newGui("Frame", musicPage, {
 	Name = "PlaylistContainer",
@@ -966,7 +1667,7 @@ playlistLayout.Parent = playlistContainer
 
 local playlistEmptyLabel = createLabel(
 	playlistContainer,
-	"列表为空；在上方输入音频 ID 后添加。",
+	T("playlist_empty"),
 	UDim2.new(1, 0, 0, 34),
 	"muted",
 	{ TextSize = 10 }
@@ -974,23 +1675,74 @@ local playlistEmptyLabel = createLabel(
 playlistEmptyLabel.Name = "PlaylistEmpty"
 playlistEmptyLabel.LayoutOrder = -1
 
-local function setMusicStatus(text)
-	musicStatusLabel.Text = text
-end
-
-local function updateCurrentTrackUI()
+local function updateMiniIsland()
 	local track = tracks[currentIndex]
 
-	if track then
-		currentTrackLabel.Text =
-			track.title .. " · " .. (track.artist or "Roblox 音频")
-		pillTrackLabel.Text = "♫ " .. track.title
-	else
-		currentTrackLabel.Text = "尚未选择曲目"
-		pillTrackLabel.Text = "灵动岛 · 本机面板"
+	if not track then
+		miniTitle.Text = T("pill_default")
+		miniSubtitle.Text = T("pill_hint")
+		miniState.Text = "·"
+		miniProgressFill.Size = UDim2.new(0, 0, 1, 0)
+		return
 	end
 
-	playPauseButton.Text = sound.IsPlaying and "暂停" or "播放"
+	miniTitle.Text = tostring(track.title or T("artist_default"))
+
+	local miniStatus
+	if musicStatusKey == "status_failed" or musicStatusKey == "status_timeout" then
+		miniStatus = T("pill_error")
+	elseif sound.IsPlaying then
+		miniStatus = T("pill_playing")
+	elseif not sound.IsLoaded then
+		miniStatus = T("pill_loading")
+	else
+		miniStatus = T("pill_paused")
+	end
+
+	miniSubtitle.Text =
+		tostring(track.artist or T("artist_default")) .. " · " .. miniStatus
+	miniState.Text = sound.IsPlaying and "Ⅱ" or "▶"
+
+	local ratio = 0
+	if sound.TimeLength > 0 then
+		ratio = math.clamp(sound.TimePosition / sound.TimeLength, 0, 1)
+	end
+
+	miniProgressFill.Size = UDim2.new(ratio, 0, 1, 0)
+end
+
+local function setMusicStatus(key)
+	musicStatusKey = key
+	musicStatusLabel.Text = T(key)
+	updateMiniIsland()
+end
+
+local function updateMusicButtons()
+	favoriteFilterButton.Text =
+		favoriteOnly and T("favorite_on") or T("favorite_off")
+	setStyle(
+		favoriteFilterButton,
+		favoriteOnly and "accentButton" or "button"
+	)
+
+	shuffleButton.Text =
+		shuffleEnabled and T("shuffle_on") or T("shuffle_off")
+	setStyle(
+		shuffleButton,
+		shuffleEnabled and "accentButton" or "button"
+	)
+
+	if repeatMode == 1 then
+		repeatButton.Text = T("repeat_list")
+	elseif repeatMode == 2 then
+		repeatButton.Text = T("repeat_one")
+	else
+		repeatButton.Text = T("repeat_off")
+	end
+
+	speedButton.Text = TF("speed_format", tostring(playbackSpeed))
+	eqButton.Text = TF("eq_format", T(eqPresets[eqIndex].key))
+	playPauseButton.Text = sound.IsPlaying and T("pause") or T("play")
 end
 
 local playTrack
@@ -1039,7 +1791,7 @@ local function refreshPlaylist()
 				10
 			)
 
-			createLabel(
+			local nameLabel = createLabel(
 				row,
 				tostring(track.title) .. " · ID " .. tostring(track.id),
 				UDim2.new(1, -116, 1, 0),
@@ -1071,7 +1823,18 @@ local function refreshPlaylist()
 			)
 
 			playButton.Activated:Connect(function()
-				playTrack(capturedIndex)
+				if playTrack then
+					playTrack(capturedIndex)
+				end
+			end)
+
+			nameLabel.InputBegan:Connect(function(input)
+				if input.UserInputType == Enum.UserInputType.MouseButton1
+					or input.UserInputType == Enum.UserInputType.Touch then
+					if playTrack then
+						playTrack(capturedIndex)
+					end
+				end
 			end)
 
 			favoriteButton.Activated:Connect(function()
@@ -1097,7 +1860,8 @@ local function refreshPlaylist()
 				end
 
 				table.remove(tracks, capturedIndex)
-				updateCurrentTrackUI()
+				updateMiniIsland()
+				updateMusicButtons()
 				refreshPlaylist()
 			end)
 		end
@@ -1108,16 +1872,34 @@ local function refreshPlaylist()
 		UDim2.new(1, 0, 0, visibleCount == 0 and 34 or 0)
 
 	if visibleCount == 0 and #tracks > 0 then
-		playlistEmptyLabel.Text = "没有符合搜索或收藏筛选的曲目。"
+		playlistEmptyLabel.Text = T("playlist_no_match")
 	else
-		playlistEmptyLabel.Text = "列表为空；在上方输入音频 ID 后添加。"
+		playlistEmptyLabel.Text = T("playlist_empty")
 	end
+end
+
+local function updateCurrentTrackUI()
+	local track = tracks[currentIndex]
+
+	if track then
+		currentTrackLabel.Text = TF(
+			"track_format",
+			tostring(track.title or ""),
+			tostring(track.artist or T("artist_default"))
+		)
+	else
+		currentTrackLabel.Text = T("track_not_selected")
+	end
+
+	updateMusicButtons()
+	updateMiniIsland()
 end
 
 playTrack = function(index)
 	local track = tracks[index]
+
 	if not track then
-		setMusicStatus("播放列表中没有这首曲目。")
+		setMusicStatus("status_empty")
 		return
 	end
 
@@ -1136,7 +1918,7 @@ playTrack = function(index)
 		sound:Play()
 	end)
 
-	setMusicStatus("正在载入；请确认音频获准用于当前体验。")
+	setMusicStatus("status_loading")
 	updateCurrentTrackUI()
 
 	task.spawn(function()
@@ -1155,24 +1937,26 @@ playTrack = function(index)
 		end
 
 		if not success or fetchFailure then
-			setMusicStatus("载入失败：检查音频 ID、网络或体验音频权限。")
+			setMusicStatus("status_failed")
 		elseif sound.IsLoaded then
-			setMusicStatus(sound.IsPlaying and "正在播放。" or "音频已载入。")
+			setMusicStatus(
+				sound.IsPlaying and "status_playing" or "status_loaded"
+			)
 		else
-			setMusicStatus("音频仍在载入；请检查 ID 和体验权限。")
+			setMusicStatus("status_loading")
 		end
 	end)
 
 	task.delay(15, function()
 		if playToken == thisToken and not sound.IsLoaded then
-			setMusicStatus("载入超时：检查音频 ID、网络或体验音频权限。")
+			setMusicStatus("status_timeout")
 		end
 	end)
 end
 
 local function nextTrack(manual)
 	if #tracks == 0 then
-		setMusicStatus("播放列表为空。")
+		setMusicStatus("status_empty")
 		return
 	end
 
@@ -1182,6 +1966,7 @@ local function nextTrack(manual)
 		nextIndex = 1
 	elseif shuffleEnabled and #tracks > 1 then
 		nextIndex = currentIndex
+
 		for _ = 1, 8 do
 			local candidate = math.random(1, #tracks)
 			if candidate ~= currentIndex then
@@ -1195,7 +1980,7 @@ local function nextTrack(manual)
 		nextIndex = 1
 	else
 		sound:Stop()
-		setMusicStatus("播放完成。")
+		setMusicStatus("status_finished")
 		updateCurrentTrackUI()
 		return
 	end
@@ -1229,19 +2014,20 @@ local function addTrackFromInput()
 		or rawText:match("(%d+)")
 
 	if not id or not tonumber(id) or tonumber(id) <= 0 then
-		setMusicStatus("请在上方输入有效的 Roblox 音频 ID。")
+		setMusicStatus("status_invalid_id")
 		return
 	end
 
 	local title = titleBox.Text
+
 	if not title or title:gsub("%s", "") == "" then
-		title = "音频 " .. id
+		title = TF("track_id", id)
 	end
 
 	table.insert(tracks, {
 		id = id,
 		title = title,
-		artist = "Roblox 音频",
+		artist = T("artist_default"),
 		favorite = false,
 	})
 
@@ -1252,22 +2038,6 @@ local function addTrackFromInput()
 	playTrack(newIndex)
 end
 
-local function updatePlaybackButtons()
-	shuffleButton.Text = shuffleEnabled and "随机：开" or "随机：关"
-	setStyle(shuffleButton, shuffleEnabled and "accentButton" or "button")
-
-	if repeatMode == 1 then
-		repeatButton.Text = "循环：列表"
-	elseif repeatMode == 2 then
-		repeatButton.Text = "循环：单曲"
-	else
-		repeatButton.Text = "循环：关"
-	end
-
-	speedButton.Text = "速度 " .. tostring(playbackSpeed) .. "×"
-	eqButton.Text = "EQ " .. eqPresets[eqIndex].name
-end
-
 local function applyEQ(index)
 	eqIndex = index
 	local preset = eqPresets[eqIndex]
@@ -1276,7 +2046,7 @@ local function applyEQ(index)
 	equalizer.MidGain = preset.mid
 	equalizer.HighGain = preset.high
 
-	updatePlaybackButtons()
+	updateMusicButtons()
 end
 
 addTrackButton.Activated:Connect(addTrackFromInput)
@@ -1291,18 +2061,12 @@ searchBox:GetPropertyChangedSignal("Text"):Connect(refreshPlaylist)
 
 favoriteFilterButton.Activated:Connect(function()
 	favoriteOnly = not favoriteOnly
-	favoriteFilterButton.Text =
-		favoriteOnly and "★ 只看收藏：开" or "☆ 只看收藏"
-
-	setStyle(
-		favoriteFilterButton,
-		favoriteOnly and "accentButton" or "button"
-	)
-
+	updateMusicButtons()
 	refreshPlaylist()
 end)
 
 previousButton.Activated:Connect(previousTrack)
+
 nextButton.Activated:Connect(function()
 	nextTrack(true)
 end)
@@ -1310,14 +2074,14 @@ end)
 playPauseButton.Activated:Connect(function()
 	if sound.IsPlaying then
 		sound:Pause()
-		setMusicStatus("已暂停。")
+		setMusicStatus("status_paused")
 	elseif currentIndex > 0 and sound.SoundId ~= "" then
 		sound:Play()
-		setMusicStatus("正在播放。")
+		setMusicStatus("status_playing")
 	elseif #tracks > 0 then
 		playTrack(1)
 	else
-		setMusicStatus("请先输入音频 ID 并添加曲目。")
+		setMusicStatus("status_empty")
 	end
 
 	updateCurrentTrackUI()
@@ -1325,20 +2089,20 @@ end)
 
 shuffleButton.Activated:Connect(function()
 	shuffleEnabled = not shuffleEnabled
-	updatePlaybackButtons()
+	updateMusicButtons()
 end)
 
 repeatButton.Activated:Connect(function()
 	repeatMode = (repeatMode + 1) % 3
 	sound.Looped = repeatMode == 2
-	updatePlaybackButtons()
+	updateMusicButtons()
 end)
 
 speedButton.Activated:Connect(function()
 	speedIndex = (speedIndex % #speedValues) + 1
 	playbackSpeed = speedValues[speedIndex]
 	sound.PlaybackSpeed = playbackSpeed
-	updatePlaybackButtons()
+	updateMusicButtons()
 end)
 
 eqButton.Activated:Connect(function()
@@ -1353,29 +2117,39 @@ end)
 
 sound.Loaded:Connect(function()
 	if currentIndex > 0 then
-		setMusicStatus(sound.IsPlaying and "正在播放。" or "音频已载入。")
+		setMusicStatus(
+			sound.IsPlaying and "status_playing" or "status_loaded"
+		)
 	end
 end)
 
-sound:GetPropertyChangedSignal("IsPlaying"):Connect(updateCurrentTrackUI)
+sound:GetPropertyChangedSignal("IsPlaying"):Connect(function()
+	updateCurrentTrackUI()
+
+	if currentIndex > 0 then
+		setMusicStatus(
+			sound.IsPlaying and "status_playing" or "status_paused"
+		)
+	end
+end)
 
 ----------------------------------------------------------------
--- 设备与服务器信息
+-- 信息页：设备和当前服务器
 ----------------------------------------------------------------
 
 local infoPage = pages.Info
 local deviceRows = {}
 local serverRows = {}
 
-createLabel(
+createLocalizedLabel(
 	infoPage,
-	"只显示 Roblox 客户端开放读取的信息；型号和电池状态不可读取。",
-	UDim2.new(1, -4, 0, 34),
+	"info_intro",
+	UDim2.new(1, -4, 0, 36),
 	"muted",
 	{ TextSize = 10 }
 )
 
-local function createInfoRow(parent, key, title, initialText)
+local function createInfoRow(parent, key, titleKey, initialText)
 	local row = newGui("Frame", parent, {
 		Name = key .. "Row",
 		Size = UDim2.new(1, -4, 0, 54),
@@ -1383,9 +2157,9 @@ local function createInfoRow(parent, key, title, initialText)
 	}, "card")
 	addCorner(row, 9)
 
-	createLabel(
+	createLocalizedLabel(
 		row,
-		title,
+		titleKey,
 		UDim2.new(1, -16, 0, 17),
 		"muted",
 		{
@@ -1396,7 +2170,7 @@ local function createInfoRow(parent, key, title, initialText)
 
 	local valueLabel = createLabel(
 		row,
-		initialText or "读取中…",
+		initialText or T("info_unavailable"),
 		UDim2.new(1, -16, 0, 28),
 		"text",
 		{
@@ -1409,48 +2183,49 @@ local function createInfoRow(parent, key, title, initialText)
 	return row, valueLabel
 end
 
-local function addDeviceRow(key, title, initialText)
-	local _, valueLabel = createInfoRow(infoPage, key, title, initialText)
+local function addDeviceRow(key, titleKey, initialText)
+	local _, valueLabel =
+		createInfoRow(infoPage, key, titleKey, initialText)
 	deviceRows[key] = valueLabel
 end
 
-local function addServerRow(key, title, initialText)
+local function addServerRow(key, titleKey, initialText)
 	local _, valueLabel =
-		createInfoRow(infoPage, "server_" .. key, title, initialText)
+		createInfoRow(infoPage, "server_" .. key, titleKey, initialText)
 	serverRows[key] = valueLabel
 end
 
-createSectionTitle(infoPage, "设备与客户端")
-addDeviceRow("platform", "客户端平台", "读取中…")
-addDeviceRow("player", "本地玩家", "读取中…")
-addDeviceRow("account", "用户 ID / 账号天数", "读取中…")
-addDeviceRow("input", "可用输入方式", "读取中…")
-addDeviceRow("lastInput", "最近输入类型", "读取中…")
-addDeviceRow("sensors", "传感器支持", "读取中…")
-addDeviceRow("vr", "VR 状态", "读取中…")
-addDeviceRow("viewport", "游戏视口与方向", "读取中…")
-addDeviceRow("fps", "FPS 估算", "读取中…")
-addDeviceRow("ping", "Ping（若客户端接口可用）", "读取中…")
-addDeviceRow("memory", "客户端内存（若接口可用）", "读取中…")
-addDeviceRow("camera", "摄像机类型 / 视野", "读取中…")
-addDeviceRow("graphics", "图像质量（若接口可用）", "读取中…")
-addDeviceRow("locale", "Roblox 客户端语言", "读取中…")
-addDeviceRow("inset", "GUI 安全边距", "读取中…")
-addDeviceRow("runtime", "面板运行时间", "读取中…")
-addDeviceRow("model", "设备具体型号", "Roblox 未开放读取")
-addDeviceRow("battery", "电池电量 / 是否充电", "Roblox 未开放读取")
+createSectionTitle(infoPage, "device_section")
+addDeviceRow("platform", "device_platform")
+addDeviceRow("player", "device_player")
+addDeviceRow("account", "device_account")
+addDeviceRow("input", "device_input")
+addDeviceRow("lastInput", "device_last_input")
+addDeviceRow("sensors", "device_sensors")
+addDeviceRow("vr", "device_vr")
+addDeviceRow("viewport", "device_viewport")
+addDeviceRow("fps", "device_fps")
+addDeviceRow("ping", "device_ping")
+addDeviceRow("memory", "device_memory")
+addDeviceRow("camera", "device_camera")
+addDeviceRow("graphics", "device_graphics")
+addDeviceRow("locale", "device_locale")
+addDeviceRow("inset", "device_inset")
+addDeviceRow("runtime", "device_runtime")
+addDeviceRow("model", "device_model", T("api_unavailable"))
+addDeviceRow("battery", "device_battery", T("api_unavailable"))
 
-createSectionTitle(infoPage, "当前服务器")
-addServerRow("type", "服务器类型")
-addServerRow("players", "当前人数 / 人数上限")
-addServerRow("placeId", "PlaceId")
-addServerRow("gameId", "GameId")
-addServerRow("jobId", "当前实例 JobId")
-addServerRow("placeVersion", "PlaceVersion")
-addServerRow("privateServerId", "PrivateServerId")
-addServerRow("privateOwner", "PrivateServerOwnerId")
-addServerRow("creator", "体验创建者 ID")
-addServerRow("serverIp", "服务器 IP", "Roblox 客户端不会提供")
+createSectionTitle(infoPage, "server_section")
+addServerRow("type", "server_type")
+addServerRow("players", "server_players")
+addServerRow("placeId", "server_place_id")
+addServerRow("gameId", "server_game_id")
+addServerRow("jobId", "server_job_id")
+addServerRow("placeVersion", "server_place_version")
+addServerRow("privateServerId", "server_private_id")
+addServerRow("privateOwner", "server_private_owner")
+addServerRow("creator", "server_creator")
+addServerRow("serverIp", "server_ip", T("server_ip_unavailable"))
 
 local playerListCard = newGui("Frame", infoPage, {
 	Name = "ServerPlayerListCard",
@@ -1459,9 +2234,9 @@ local playerListCard = newGui("Frame", infoPage, {
 }, "card")
 addCorner(playerListCard, 9)
 
-createLabel(
+createLocalizedLabel(
 	playerListCard,
-	"当前服务器玩家（信息列表，不做异常检测）",
+	"server_player_list",
 	UDim2.new(1, -16, 0, 20),
 	"text",
 	{
@@ -1504,7 +2279,7 @@ end
 
 local function enumName(value)
 	if value == nil then
-		return "不可用"
+		return T("info_unavailable")
 	end
 
 	local text = tostring(value)
@@ -1528,7 +2303,7 @@ local function getPingText()
 		return result
 	end
 
-	return "客户端未提供"
+	return T("info_unavailable")
 end
 
 local function getMemoryText()
@@ -1540,7 +2315,7 @@ local function getMemoryText()
 		return string.format("%.1f MB", value)
 	end
 
-	return "客户端未提供"
+	return T("info_unavailable")
 end
 
 local function getGraphicsText()
@@ -1549,7 +2324,7 @@ local function getGraphicsText()
 	end)
 
 	if not success or not settings then
-		return "客户端未提供"
+		return T("info_unavailable")
 	end
 
 	local quality = readProperty(settings, "SavedQualityLevel", nil)
@@ -1557,7 +2332,7 @@ local function getGraphicsText()
 		return enumName(quality)
 	end
 
-	return "客户端未提供"
+	return T("info_unavailable")
 end
 
 local fpsFrameCount = 0
@@ -1579,7 +2354,7 @@ RunService.RenderStepped:Connect(function(dt)
 end)
 
 local function updateDeviceInfo()
-	local platformText = "不可用"
+	local platformText = T("info_unavailable")
 	local platformSuccess, platform = pcall(function()
 		return UserInputService:GetPlatform()
 	end)
@@ -1592,25 +2367,25 @@ local function updateDeviceInfo()
 	deviceRows.player.Text =
 		player.DisplayName .. "  (@" .. player.Name .. ")"
 	deviceRows.account.Text =
-		tostring(player.UserId) .. " / " .. tostring(player.AccountAge) .. " 天"
+		TF("account_format", tostring(player.UserId), tostring(player.AccountAge))
 
 	local inputs = {}
 
 	if readProperty(UserInputService, "TouchEnabled", false) then
-		table.insert(inputs, "触屏")
+		table.insert(inputs, T("input_touch"))
 	end
 	if readProperty(UserInputService, "KeyboardEnabled", false) then
-		table.insert(inputs, "键盘")
+		table.insert(inputs, T("input_keyboard"))
 	end
 	if readProperty(UserInputService, "MouseEnabled", false) then
-		table.insert(inputs, "鼠标")
+		table.insert(inputs, T("input_mouse"))
 	end
 	if readProperty(UserInputService, "GamepadEnabled", false) then
-		table.insert(inputs, "手柄")
+		table.insert(inputs, T("input_gamepad"))
 	end
 
 	if #inputs == 0 then
-		table.insert(inputs, "未报告")
+		table.insert(inputs, T("info_not_reported"))
 	end
 
 	deviceRows.input.Text = table.concat(inputs, " / ")
@@ -1620,70 +2395,77 @@ local function updateDeviceInfo()
 	end)
 
 	deviceRows.lastInput.Text =
-		inputSuccess and enumName(lastInput) or "不可用"
+		inputSuccess and enumName(lastInput) or T("info_unavailable")
 
 	local sensors = {}
 
 	if readProperty(UserInputService, "AccelerometerEnabled", false) then
-		table.insert(sensors, "加速度计")
+		table.insert(sensors, T("sensor_accel"))
 	end
 	if readProperty(UserInputService, "GyroscopeEnabled", false) then
-		table.insert(sensors, "陀螺仪")
+		table.insert(sensors, T("sensor_gyro"))
 	end
 
 	deviceRows.sensors.Text =
-		#sensors > 0 and table.concat(sensors, " / ") or "未报告 / 不可用"
+		#sensors > 0 and table.concat(sensors, " / ") or T("info_not_reported")
 
 	deviceRows.vr.Text =
-		readProperty(VRService, "VREnabled", false) and "已启用" or "未启用"
+		readProperty(VRService, "VREnabled", false)
+		and T("vr_enabled")
+		or T("vr_disabled")
 
 	local camera = workspace.CurrentCamera
 
 	if camera then
 		local viewport = camera.ViewportSize
-		local orientation = viewport.X >= viewport.Y and "横向" or "纵向"
+		local orientation =
+			viewport.X >= viewport.Y
+			and T("orientation_landscape")
+			or T("orientation_portrait")
 
-		deviceRows.viewport.Text = string.format(
-			"%d × %d px · %s",
+		deviceRows.viewport.Text = TF(
+			"viewport_format",
 			math.floor(viewport.X),
 			math.floor(viewport.Y),
 			orientation
 		)
 
-		deviceRows.camera.Text = string.format(
-			"%s · FOV %d°",
+		deviceRows.camera.Text = TF(
+			"camera_format",
 			enumName(camera.CameraType),
 			math.floor(camera.FieldOfView + 0.5)
 		)
 	else
-		deviceRows.viewport.Text = "不可用"
-		deviceRows.camera.Text = "不可用"
+		deviceRows.viewport.Text = T("info_unavailable")
+		deviceRows.camera.Text = T("info_unavailable")
 	end
 
-	deviceRows.fps.Text = tostring(fpsEstimate) .. " FPS（估算）"
+	deviceRows.fps.Text = TF("fps_format", fpsEstimate)
 	deviceRows.ping.Text = getPingText()
 	deviceRows.memory.Text = getMemoryText()
 	deviceRows.graphics.Text = getGraphicsText()
 	deviceRows.locale.Text =
-		tostring(readProperty(LocalizationService, "RobloxLocaleId", "不可用"))
+		tostring(readProperty(LocalizationService, "RobloxLocaleId", T("info_unavailable")))
 
 	local insetSuccess, topLeft, bottomRight = pcall(function()
 		return GuiService:GetGuiInset()
 	end)
 
 	if insetSuccess and topLeft and bottomRight then
-		deviceRows.inset.Text = string.format(
-			"左上 (%d,%d) · 右下 (%d,%d)",
+		deviceRows.inset.Text = TF(
+			"inset_format",
 			math.floor(topLeft.X),
 			math.floor(topLeft.Y),
 			math.floor(bottomRight.X),
 			math.floor(bottomRight.Y)
 		)
 	else
-		deviceRows.inset.Text = "客户端未提供"
+		deviceRows.inset.Text = T("info_unavailable")
 	end
 
-	deviceRows.runtime.Text = formatTime(os.clock() - scriptStartedAt)
+	deviceRows.runtime.Text = formatTime(os.clock() - startedAt)
+	deviceRows.model.Text = T("api_unavailable")
+	deviceRows.battery.Text = T("api_unavailable")
 end
 
 local function updatePlayerList()
@@ -1701,7 +2483,7 @@ local function updatePlayerList()
 	if #playerList == 0 then
 		local emptyLabel = createLabel(
 			playerListScroll,
-			"当前没有玩家。",
+			T("player_none"),
 			UDim2.new(1, -4, 0, 22),
 			"muted",
 			{ TextSize = 10 }
@@ -1713,16 +2495,18 @@ local function updatePlayerList()
 	for index, listedPlayer in ipairs(playerList) do
 		local teamText =
 			listedPlayer.Team and (" · " .. listedPlayer.Team.Name) or ""
-		local selfText = listedPlayer == player and " · 你" or ""
+		local selfText =
+			listedPlayer == player and T("you_suffix") or ""
 
 		local label = createLabel(
 			playerListScroll,
-			listedPlayer.DisplayName
-				.. "  (@"
-				.. listedPlayer.Name
-				.. ")"
-				.. teamText
-				.. selfText,
+			TF(
+				"player_line",
+				listedPlayer.DisplayName,
+				listedPlayer.Name,
+				teamText,
+				selfText
+			),
 			UDim2.new(1, -4, 0, 22),
 			"muted",
 			{
@@ -1749,61 +2533,70 @@ local function updateServerInfo()
 	local serverType
 
 	if isStudio then
-		serverType = "Studio 测试"
+		serverType = T("server_studio")
 	elseif privateServerId ~= "" and privateOwner > 0 then
-		serverType = "私人 / VIP 服务器"
+		serverType = T("server_vip")
 	elseif privateServerId ~= "" then
-		serverType = "预留服务器"
+		serverType = T("server_reserved")
 	else
-		serverType = "公开服务器"
+		serverType = T("server_public")
 	end
 
 	local maxPlayers = readProperty(Players, "MaxPlayers", nil)
-	local maxText = maxPlayers and tostring(maxPlayers) or "不可读取"
+	local maxText = maxPlayers and tostring(maxPlayers) or T("info_unavailable")
 	local jobId = tostring(readProperty(game, "JobId", "") or "")
 
 	serverRows.type.Text = serverType
 	serverRows.players.Text =
-		tostring(#Players:GetPlayers()) .. " / " .. maxText
+		TF("server_count_format", #Players:GetPlayers(), maxText)
 	serverRows.placeId.Text =
-		tostring(readProperty(game, "PlaceId", "不可读取"))
+		tostring(readProperty(game, "PlaceId", T("info_unavailable")))
 	serverRows.gameId.Text =
-		tostring(readProperty(game, "GameId", "不可读取"))
+		tostring(readProperty(game, "GameId", T("info_unavailable")))
 	serverRows.jobId.Text =
-		jobId ~= "" and jobId or "当前环境未提供"
+		jobId ~= "" and jobId or T("server_job_missing")
 	serverRows.placeVersion.Text =
-		tostring(readProperty(game, "PlaceVersion", "不可读取"))
+		tostring(readProperty(game, "PlaceVersion", T("info_unavailable")))
 	serverRows.privateServerId.Text =
-		privateServerId ~= "" and privateServerId or "无 / 未提供"
+		privateServerId ~= "" and privateServerId or T("server_private_none")
 	serverRows.privateOwner.Text = tostring(privateOwner)
 	serverRows.creator.Text =
-		tostring(readProperty(game, "CreatorId", "不可读取"))
-	serverRows.serverIp.Text = "Roblox 客户端不会提供"
+		tostring(readProperty(game, "CreatorId", T("info_unavailable")))
+	serverRows.serverIp.Text = T("server_ip_unavailable")
 
 	updatePlayerList()
 end
 
 ----------------------------------------------------------------
--- 外观设置：大小、强调色、背景色
+-- 外观、语言、画面设置
 ----------------------------------------------------------------
 
-local visualPage = pages.Visual
+local appearancePage = pages.Appearance
 local currentAccentIndex = 1
 local currentBackgroundIndex = 1
 local accentSwatches = {}
 local backgroundSwatches = {}
 
-createLabel(
-	visualPage,
-	"外观调整只在本机当前会话生效。",
+createLocalizedLabel(
+	appearancePage,
+	"appearance_note",
 	UDim2.new(1, -4, 0, 28),
 	"muted",
 	{ TextSize = 10 }
 )
 
-createSlider(
-	visualPage,
-	"灵动岛整体大小",
+languageButton = createButton(
+	appearancePage,
+	TF("language_switch", T("lang_" .. language)),
+	UDim2.new(1, -4, 0, 36),
+	UDim2.new(),
+	"button",
+	11
+)
+
+local sizeSlider = createSlider(
+	appearancePage,
+	"size_slider",
 	0.75,
 	1.15,
 	1,
@@ -1817,9 +2610,9 @@ createSlider(
 	0.05
 )
 
-createSectionTitle(visualPage, "强调色")
+createSectionTitle(appearancePage, "accent_header")
 
-local function createColorSwatches(parent, presets, recordTable)
+local function createColorSwatches(parent, presets, records)
 	local row = newGui("Frame", parent, {
 		Size = UDim2.new(1, -4, 0, 36),
 		BackgroundTransparency = 1,
@@ -1836,12 +2629,13 @@ local function createColorSwatches(parent, presets, recordTable)
 			BorderSizePixel = 0,
 			BackgroundColor3 = capturedPreset.color,
 			AutoButtonColor = false,
-			Text = capturedPreset.name,
+			Text = T(capturedPreset.key),
 			TextColor3 = contrastText(capturedPreset.color),
 			TextSize = 9,
 			Font = Enum.Font.GothamMedium,
 		}, nil)
 		addCorner(button, 8)
+		bindLocalizedText(button, capturedPreset.key, "Text")
 
 		local stroke = Instance.new("UIStroke")
 		stroke.Thickness = 1
@@ -1849,7 +2643,7 @@ local function createColorSwatches(parent, presets, recordTable)
 		stroke.Color = Color3.new(1, 1, 1)
 		stroke.Parent = button
 
-		table.insert(recordTable, {
+		table.insert(records, {
 			button = button,
 			stroke = stroke,
 		})
@@ -1858,44 +2652,44 @@ local function createColorSwatches(parent, presets, recordTable)
 	return row
 end
 
-createColorSwatches(visualPage, accentPresets, accentSwatches)
+createColorSwatches(appearancePage, accentPresets, accentSwatches)
 
-createSectionTitle(visualPage, "背景色")
-createColorSwatches(visualPage, backgroundPresets, backgroundSwatches)
+createSectionTitle(appearancePage, "background_header")
+createColorSwatches(appearancePage, backgroundPresets, backgroundSwatches)
 
-local accentHexBox = createTextBox(
-	visualPage,
-	"强调色 HEX，例如 #1DB954",
+local accentHexBox = createLocalizedTextBox(
+	appearancePage,
+	"hex_accent_placeholder",
 	UDim2.new(1, -4, 0, 36)
 )
 
-local applyAccentHexButton = createButton(
-	visualPage,
-	"应用强调色",
+local applyAccentHexButton = createLocalizedButton(
+	appearancePage,
+	"apply_accent",
 	UDim2.new(1, -4, 0, 35),
 	UDim2.new(),
 	"button",
 	11
 )
 
-local backgroundHexBox = createTextBox(
-	visualPage,
-	"背景色 HEX，例如 #0C0D10",
+local backgroundHexBox = createLocalizedTextBox(
+	appearancePage,
+	"hex_background_placeholder",
 	UDim2.new(1, -4, 0, 36)
 )
 
-local applyBackgroundHexButton = createButton(
-	visualPage,
-	"应用背景色",
+local applyBackgroundHexButton = createLocalizedButton(
+	appearancePage,
+	"apply_background",
 	UDim2.new(1, -4, 0, 35),
 	UDim2.new(),
 	"button",
 	11
 )
 
-local resetAppearanceButton = createButton(
-	visualPage,
-	"恢复默认外观",
+local resetAppearanceButton = createLocalizedButton(
+	appearancePage,
+	"reset_appearance",
 	UDim2.new(1, -4, 0, 35),
 	UDim2.new(),
 	"button",
@@ -1932,6 +2726,7 @@ end
 
 local function parseHexColor(text)
 	local hex = tostring(text or ""):gsub("%s", ""):gsub("^#", "")
+
 	if #hex ~= 6 then
 		return nil
 	end
@@ -1972,7 +2767,7 @@ applyAccentHexButton.Activated:Connect(function()
 	if color then
 		setAccentColor(color, 0)
 	else
-		accentHexBox.PlaceholderText = "格式错误：请填写 #RRGGBB"
+		accentHexBox.PlaceholderText = T("invalid_hex")
 	end
 end)
 
@@ -1982,17 +2777,18 @@ applyBackgroundHexButton.Activated:Connect(function()
 	if color then
 		setBackgroundColor(color, 0)
 	else
-		backgroundHexBox.PlaceholderText = "格式错误：请填写 #RRGGBB"
+		backgroundHexBox.PlaceholderText = T("invalid_hex")
 	end
 end)
 
 resetAppearanceButton.Activated:Connect(function()
 	setAccentColor(accentPresets[1].color, 1)
 	setBackgroundColor(backgroundPresets[1].color, 1)
+	sizeSlider:SetValue(1, true)
 end)
 
 ----------------------------------------------------------------
--- 本机画面设置：滤镜、模糊和 FOV
+-- 本机画面效果
 ----------------------------------------------------------------
 
 local colorEffect = Instance.new("ColorCorrectionEffect")
@@ -2006,39 +2802,53 @@ blurEffect.Enabled = false
 blurEffect.Size = 0
 blurEffect.Parent = Lighting
 
-createLabel(
-	visualPage,
-	"滤镜、模糊和 FOV 只影响本机画面；游戏本身可能会覆盖 FOV。",
-	UDim2.new(1, -4, 0, 33),
+createLocalizedLabel(
+	appearancePage,
+	"screen_note",
+	UDim2.new(1, -4, 0, 36),
 	"muted",
 	{ TextSize = 10 }
 )
 
 local screenStatusLabel = createLabel(
-	visualPage,
-	"画面效果：关闭",
+	appearancePage,
+	T("screen_off"),
 	UDim2.new(1, -4, 0, 22),
 	"accentText",
 	{ TextSize = 10 }
 )
 
-createSectionTitle(visualPage, "画面预设")
+createSectionTitle(appearancePage, "screen_presets")
 
-local _, screenPresetButtons1 = createButtonRow(
-	visualPage,
-	{ "默认", "暖色", "冷色" },
+local _, screenPresetButtons1 = createLocalizedButtonRow(
+	appearancePage,
+	{ "screen_default", "screen_warm", "screen_cool" },
 	35
 )
 
-local _, screenPresetButtons2 = createButtonRow(
-	visualPage,
-	{ "黑白", "高对比" },
+local _, screenPresetButtons2 = createLocalizedButtonRow(
+	appearancePage,
+	{ "screen_mono", "screen_contrast" },
 	35
 )
+
+local screenStatusType = "off"
+local activeScreenPresetKey = nil
+
+local function refreshScreenStatus()
+	if screenStatusType == "custom" then
+		screenStatusLabel.Text = T("screen_custom")
+	elseif activeScreenPresetKey then
+		screenStatusLabel.Text =
+			TF("screen_preset_status", T(activeScreenPresetKey))
+	else
+		screenStatusLabel.Text = T("screen_off")
+	end
+end
 
 local brightnessSlider = createSlider(
-	visualPage,
-	"亮度微调",
+	appearancePage,
+	"brightness",
 	-0.2,
 	0.2,
 	0,
@@ -2048,14 +2858,16 @@ local brightnessSlider = createSlider(
 	function(value)
 		colorEffect.Brightness = value
 		colorEffect.Enabled = true
-		screenStatusLabel.Text = "画面效果：自定义"
+		screenStatusType = "custom"
+		activeScreenPresetKey = nil
+		refreshScreenStatus()
 	end,
 	0.01
 )
 
 local contrastSlider = createSlider(
-	visualPage,
-	"对比度",
+	appearancePage,
+	"contrast",
 	-0.5,
 	0.5,
 	0,
@@ -2065,14 +2877,16 @@ local contrastSlider = createSlider(
 	function(value)
 		colorEffect.Contrast = value
 		colorEffect.Enabled = true
-		screenStatusLabel.Text = "画面效果：自定义"
+		screenStatusType = "custom"
+		activeScreenPresetKey = nil
+		refreshScreenStatus()
 	end,
 	0.01
 )
 
 local saturationSlider = createSlider(
-	visualPage,
-	"饱和度",
+	appearancePage,
+	"saturation",
 	-1,
 	1,
 	0,
@@ -2082,14 +2896,16 @@ local saturationSlider = createSlider(
 	function(value)
 		colorEffect.Saturation = value
 		colorEffect.Enabled = true
-		screenStatusLabel.Text = "画面效果：自定义"
+		screenStatusType = "custom"
+		activeScreenPresetKey = nil
+		refreshScreenStatus()
 	end,
 	0.05
 )
 
 local blurSlider = createSlider(
-	visualPage,
-	"本机模糊",
+	appearancePage,
+	"blur",
 	0,
 	15,
 	0,
@@ -2099,8 +2915,9 @@ local blurSlider = createSlider(
 	function(value)
 		blurEffect.Size = value
 		blurEffect.Enabled = value > 0.05
-		screenStatusLabel.Text =
-			value > 0.05 and "本机模糊：开启" or "本机模糊：关闭"
+		screenStatusType = "custom"
+		activeScreenPresetKey = nil
+		refreshScreenStatus()
 	end,
 	1
 )
@@ -2114,8 +2931,8 @@ if initialCamera then
 end
 
 local fovSlider = createSlider(
-	visualPage,
-	"本机摄像机 FOV",
+	appearancePage,
+	"fov",
 	50,
 	120,
 	math.clamp(initialFov, 50, 120),
@@ -2133,46 +2950,46 @@ local fovSlider = createSlider(
 	1
 )
 
-local resetFovButton = createButton(
-	visualPage,
-	"恢复摄像机原始 FOV",
+local resetFovButton = createLocalizedButton(
+	appearancePage,
+	"reset_fov",
 	UDim2.new(1, -4, 0, 35),
 	UDim2.new(),
 	"button",
 	11
 )
 
-local resetScreenButton = createButton(
-	visualPage,
-	"关闭滤镜和模糊",
+local resetScreenButton = createLocalizedButton(
+	appearancePage,
+	"disable_effects",
 	UDim2.new(1, -4, 0, 35),
 	UDim2.new(),
 	"button",
 	11
 )
 
-local function applyScreenPreset(name)
+local function applyScreenPreset(presetKey)
 	local brightness = 0
 	local contrast = 0
 	local saturation = 0
 	local tint = Color3.new(1, 1, 1)
 	local enabled = true
 
-	if name == "默认" then
+	if presetKey == "screen_default" then
 		enabled = false
-	elseif name == "暖色" then
+	elseif presetKey == "screen_warm" then
 		brightness = 0.02
 		contrast = 0.04
 		saturation = 0.10
 		tint = Color3.fromRGB(255, 235, 218)
-	elseif name == "冷色" then
+	elseif presetKey == "screen_cool" then
 		brightness = 0.01
 		contrast = 0.04
 		saturation = 0.06
 		tint = Color3.fromRGB(218, 235, 255)
-	elseif name == "黑白" then
+	elseif presetKey == "screen_mono" then
 		saturation = -1
-	elseif name == "高对比" then
+	elseif presetKey == "screen_contrast" then
 		contrast = 0.22
 		saturation = 0.12
 	end
@@ -2183,40 +3000,47 @@ local function applyScreenPreset(name)
 	colorEffect.TintColor = tint
 	colorEffect.Enabled = enabled
 
-	blurEffect.Enabled = false
 	blurEffect.Size = 0
+	blurEffect.Enabled = false
 
-	brightnessSlider.SetValue(brightness, false)
-	contrastSlider.SetValue(contrast, false)
-	saturationSlider.SetValue(saturation, false)
-	blurSlider.SetValue(0, false)
+	brightnessSlider:SetValue(brightness, false)
+	contrastSlider:SetValue(contrast, false)
+	saturationSlider:SetValue(saturation, false)
+	blurSlider:SetValue(0, false)
 
-	screenStatusLabel.Text =
-		enabled and ("画面预设：" .. name) or "画面效果：关闭"
+	if presetKey == "screen_default" then
+		screenStatusType = "off"
+		activeScreenPresetKey = nil
+	else
+		screenStatusType = "preset"
+		activeScreenPresetKey = presetKey
+	end
+
+	refreshScreenStatus()
 end
 
 screenPresetButtons1[1].Activated:Connect(function()
-	applyScreenPreset("默认")
+	applyScreenPreset("screen_default")
 end)
 
 screenPresetButtons1[2].Activated:Connect(function()
-	applyScreenPreset("暖色")
+	applyScreenPreset("screen_warm")
 end)
 
 screenPresetButtons1[3].Activated:Connect(function()
-	applyScreenPreset("冷色")
+	applyScreenPreset("screen_cool")
 end)
 
 screenPresetButtons2[1].Activated:Connect(function()
-	applyScreenPreset("黑白")
+	applyScreenPreset("screen_mono")
 end)
 
 screenPresetButtons2[2].Activated:Connect(function()
-	applyScreenPreset("高对比")
+	applyScreenPreset("screen_contrast")
 end)
 
 resetScreenButton.Activated:Connect(function()
-	applyScreenPreset("默认")
+	applyScreenPreset("screen_default")
 end)
 
 local function captureCameraFov(camera)
@@ -2228,7 +3052,7 @@ local function captureCameraFov(camera)
 		cameraFovOriginals[camera] = camera.FieldOfView
 	end
 
-	fovSlider.SetValue(math.clamp(camera.FieldOfView, 50, 120), false)
+	fovSlider:SetValue(math.clamp(camera.FieldOfView, 50, 120), false)
 end
 
 resetFovButton.Activated:Connect(function()
@@ -2243,18 +3067,18 @@ resetFovButton.Activated:Connect(function()
 		camera.FieldOfView = original
 	end)
 
-	fovSlider.SetValue(math.clamp(original, 50, 120), false)
+	fovSlider:SetValue(math.clamp(original, 50, 120), false)
 end)
 
 ----------------------------------------------------------------
--- 防甩飞：只处理本地玩家角色
+-- 只作用于本地角色的防甩飞
 ----------------------------------------------------------------
 
-local safetyPage = pages.Safety
+local protectionPage = pages.Protection
 
-createLabel(
-	safetyPage,
-	"此页不扫描其他玩家。防甩飞只处理你的角色；服务器强制的物理效果不保证能拦截。",
+createLocalizedLabel(
+	protectionPage,
+	"protection_note",
 	UDim2.new(1, -4, 0, 45),
 	"muted",
 	{ TextSize = 10 }
@@ -2262,11 +3086,13 @@ createLabel(
 
 local antiFlingEnabled = true
 local antiFlingThreshold = 160
+local antiFlingStatusKey = "anti_ready"
+local antiFlingLastSpeed = 0
 local antiFlingNoticeAt = 0
 
 local antiFlingToggle = createButton(
-	safetyPage,
-	"防甩飞：开启",
+	protectionPage,
+	T("anti_toggle_on"),
 	UDim2.new(1, -4, 0, 37),
 	UDim2.new(),
 	"accentButton",
@@ -2274,16 +3100,16 @@ local antiFlingToggle = createButton(
 )
 
 local antiFlingStatus = createLabel(
-	safetyPage,
-	"只监测自己的角色；坐在载具中时会跳过。",
+	protectionPage,
+	T("anti_ready"),
 	UDim2.new(1, -4, 0, 32),
 	"muted",
 	{ TextSize = 10 }
 )
 
-createSlider(
-	safetyPage,
-	"异常速度处理阈值",
+local antiFlingSlider = createSlider(
+	protectionPage,
+	"anti_threshold",
 	80,
 	300,
 	antiFlingThreshold,
@@ -2296,19 +3122,34 @@ createSlider(
 	10
 )
 
+local function refreshAntiFlingUI()
+	if antiFlingEnabled then
+		antiFlingToggle.Text = T("anti_toggle_on")
+		setStyle(antiFlingToggle, "accentButton")
+
+		if antiFlingStatusKey == "handled" then
+			antiFlingStatus.Text =
+				TF("anti_handled", antiFlingLastSpeed)
+		else
+			antiFlingStatus.Text = T("anti_ready")
+		end
+	else
+		antiFlingToggle.Text = T("anti_toggle_off")
+		setStyle(antiFlingToggle, "button")
+		antiFlingStatus.Text = T("anti_off")
+	end
+end
+
 antiFlingToggle.Activated:Connect(function()
 	antiFlingEnabled = not antiFlingEnabled
 
 	if antiFlingEnabled then
-		antiFlingToggle.Text = "防甩飞：开启"
-		setStyle(antiFlingToggle, "accentButton")
-		antiFlingStatus.Text =
-			"只监测自己的角色；坐在载具中时会跳过。"
+		antiFlingStatusKey = "ready"
 	else
-		antiFlingToggle.Text = "防甩飞：关闭"
-		setStyle(antiFlingToggle, "button")
-		antiFlingStatus.Text = "防甩飞已关闭。"
+		antiFlingStatusKey = "off"
 	end
+
+	refreshAntiFlingUI()
 end)
 
 local localCharacter
@@ -2351,28 +3192,45 @@ if player.Character then
 end
 
 ----------------------------------------------------------------
--- 拖动灵动岛位置
+-- 语言切换、灵动岛拖动与刷新
 ----------------------------------------------------------------
 
-local draggingIsland = false
-local dragInput = nil
-local dragStartPointer = nil
-local dragStartX = 0
-local dragStartY = 0
+languageButton.Activated:Connect(function()
+	local currentIndex = 1
 
-dragArea.InputBegan:Connect(function(input)
+	for index, code in ipairs(languageOrder) do
+		if code == language then
+			currentIndex = index
+			break
+		end
+	end
+
+	local nextIndex = (currentIndex % #languageOrder) + 1
+	applyLanguage(languageOrder[nextIndex])
+end)
+
+local draggingPill = false
+local pillDragInput = nil
+local pillDragStartPointer = nil
+local pillDragStartX = 0
+local pillDragStartY = 0
+
+dragHandle.InputBegan:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton1
 		or input.UserInputType == Enum.UserInputType.Touch then
-		draggingIsland = true
-		dragInput = input
-		dragStartPointer = Vector2.new(input.Position.X, input.Position.Y)
-		dragStartX = root.Position.X.Offset
-		dragStartY = root.Position.Y.Offset
+		draggingPill = true
+		pillDragInput = input
+		pillDragStartPointer = Vector2.new(
+			input.Position.X,
+			input.Position.Y
+		)
+		pillDragStartX = pillOffsetX
+		pillDragStartY = pillOffsetY
 	end
 end)
 
 UserInputService.InputChanged:Connect(function(input)
-	if not draggingIsland or not dragStartPointer then
+	if not draggingPill or not pillDragStartPointer then
 		return
 	end
 
@@ -2380,44 +3238,57 @@ UserInputService.InputChanged:Connect(function(input)
 		or input.UserInputType == Enum.UserInputType.Touch then
 
 		local pointer = Vector2.new(input.Position.X, input.Position.Y)
-		local delta = pointer - dragStartPointer
+		local delta = pointer - pillDragStartPointer
 		local viewport = getViewportSize()
-		local scaledWidth = root.AbsoluteSize.X
-		local scaledHeight = root.AbsoluteSize.Y
-		local maxX = math.max(0, viewport.X / 2 - scaledWidth / 2 - 4)
-		local maxY = math.max(4, viewport.Y - scaledHeight - 8)
+		local pillWidth = pill.AbsoluteSize.X
+		local pillHeight = pill.AbsoluteSize.Y
+		local maxX = math.max(0, viewport.X / 2 - pillWidth / 2 - 4)
+		local maxY = math.max(4, viewport.Y - pillHeight - 8)
 
-		rootOffsetX = math.clamp(dragStartX + delta.X, -maxX, maxX)
-		rootOffsetY = math.clamp(dragStartY + delta.Y, 4, maxY)
-		root.Position = UDim2.new(0.5, rootOffsetX, 0, rootOffsetY)
+		pillOffsetX = math.clamp(pillDragStartX + delta.X, -maxX, maxX)
+		pillOffsetY = math.clamp(pillDragStartY + delta.Y, 4, maxY)
+		pill.Position = UDim2.new(0.5, pillOffsetX, 0, pillOffsetY)
 	end
 end)
 
 UserInputService.InputEnded:Connect(function(input)
-	if input == dragInput
+	if input == pillDragInput
 		or input.UserInputType == Enum.UserInputType.MouseButton1
 		or input.UserInputType == Enum.UserInputType.Touch then
-		draggingIsland = false
-		dragInput = nil
-		dragStartPointer = nil
+		draggingPill = false
+		pillDragInput = nil
+		pillDragStartPointer = nil
 	end
 end)
 
-----------------------------------------------------------------
--- 刷新与初始化
-----------------------------------------------------------------
+refreshDynamicUI = function()
+	if languageButton then
+		languageButton.Text =
+			TF("language_switch", T("lang_" .. language))
+	end
 
-local cameraViewportConnection = nil
+	musicStatusLabel.Text = T(musicStatusKey)
+	updateMusicButtons()
+	updateCurrentTrackUI()
+	refreshPlaylist()
+	refreshScreenStatus()
+	refreshAntiFlingUI()
+	updateDeviceInfo()
+	updateServerInfo()
+end
+
+local viewportConnection = nil
 
 local function bindViewportSize()
-	if cameraViewportConnection then
-		cameraViewportConnection:Disconnect()
-		cameraViewportConnection = nil
+	if viewportConnection then
+		viewportConnection:Disconnect()
+		viewportConnection = nil
 	end
 
 	local camera = workspace.CurrentCamera
+
 	if camera then
-		cameraViewportConnection =
+		viewportConnection =
 			camera:GetPropertyChangedSignal("ViewportSize"):Connect(updateLayout)
 		captureCameraFov(camera)
 	end
@@ -2425,9 +3296,7 @@ local function bindViewportSize()
 	updateLayout()
 end
 
-workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
-	bindViewportSize()
-end)
+workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(bindViewportSize)
 
 Players.PlayerAdded:Connect(function()
 	updateServerInfo()
@@ -2441,7 +3310,7 @@ local deviceTimer = 0
 local serverTimer = 0
 
 RunService.Heartbeat:Connect(function(dt)
-	-- 本地防甩飞：不遍历或修改其他玩家角色。
+	-- 只检查本地玩家，不遍历或修改其他玩家角色。
 	if antiFlingEnabled
 		and localCharacter
 		and localHumanoid
@@ -2472,23 +3341,22 @@ RunService.Heartbeat:Connect(function(dt)
 
 				if os.clock() - antiFlingNoticeAt > 1.5 then
 					antiFlingNoticeAt = os.clock()
-					antiFlingStatus.Text = string.format(
-						"已处理本地角色异常速度（%.0f studs/s）。",
-						linearSpeed
-					)
+					antiFlingLastSpeed = linearSpeed
+					antiFlingStatusKey = "handled"
+					refreshAntiFlingUI()
 				end
 			end
 		end
 	end
 
-	-- 更新音乐进度。
 	if currentIndex > 0
 		and sound.TimeLength > 0
-		and not progressSlider.IsDragging() then
-		progressSlider.SetValue(
+		and not progressSlider:IsDragging() then
+		progressSlider:SetValue(
 			math.clamp(sound.TimePosition / sound.TimeLength, 0, 1),
 			false
 		)
+		updateMiniIsland()
 	end
 
 	deviceTimer += dt
@@ -2505,14 +3373,18 @@ RunService.Heartbeat:Connect(function(dt)
 	end
 end)
 
+----------------------------------------------------------------
 -- 初始化
+----------------------------------------------------------------
+
 selectTab("Music")
 bindViewportSize()
 refreshPlaylist()
+updateMusicButtons()
 updateCurrentTrackUI()
-updatePlaybackButtons()
 applyEQ(1)
 updateDeviceInfo()
 updateServerInfo()
 refreshAccentSwatches()
 refreshBackgroundSwatches()
+refreshAntiFlingUI()
