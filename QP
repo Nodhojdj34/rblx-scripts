@@ -1,6 +1,7 @@
+-- 单个 LocalScript
 -- 放置位置：StarterPlayer > StarterPlayerScripts > LocalScript
--- 单个 LocalScript；不需要额外的服务器 Script。
--- 音乐只播放当前体验获准使用的 Roblox 音频，不连接 Spotify。
+-- 音乐只使用当前体验获准播放的 Roblox 音频，不连接 Spotify。
+-- 玩家异常检查只显示本机可见的异常迹象，不踢人、不封禁、不修改其他玩家。
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -17,19 +18,23 @@ local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 local scriptStartedAt = os.clock()
 
--- 可选：把预设歌曲放入这里；不需要预设歌曲时保持空表。
+-- 可选预设歌曲；不需要预设歌曲就保持空表。
 -- 示例：{ title = "我的曲目", artist = "歌手", id = 1234567890 }
 local TRACKS = {}
 
--- 清理本脚本上次运行留下的本地界面、音乐和画面效果。
+----------------------------------------------------------------
+-- 清理本脚本旧版本留下的本地对象
+----------------------------------------------------------------
+
 local oldGui = playerGui:FindFirstChild("IslandLocalUI")
 if oldGui then
 	oldGui:Destroy()
 end
 
-for _, obj in ipairs(Lighting:GetChildren()) do
-	if obj.Name == "IslandLocalColorCorrection" or obj.Name == "IslandLocalBlur" then
-		obj:Destroy()
+for _, object in ipairs(Lighting:GetChildren()) do
+	if object.Name == "IslandLocalColorCorrection"
+		or object.Name == "IslandLocalBlur" then
+		object:Destroy()
 	end
 end
 
@@ -39,12 +44,12 @@ if oldSound then
 end
 
 ----------------------------------------------------------------
--- 主题和界面工具
+-- 主题与 UI 工具
 ----------------------------------------------------------------
 
 local theme = {
 	accent = Color3.fromRGB(29, 185, 84),
-	background = Color3.fromRGB(15, 16, 19),
+	background = Color3.fromRGB(12, 13, 16),
 }
 
 local accentPresets = {
@@ -57,98 +62,107 @@ local accentPresets = {
 }
 
 local backgroundPresets = {
-	{ name = "墨黑", color = Color3.fromRGB(15, 16, 19) },
+	{ name = "墨黑", color = Color3.fromRGB(12, 13, 16) },
 	{ name = "深蓝", color = Color3.fromRGB(13, 22, 34) },
 	{ name = "紫夜", color = Color3.fromRGB(28, 18, 38) },
 	{ name = "森林", color = Color3.fromRGB(17, 30, 24) },
 }
 
-local currentAccentIndex = 1
-local currentBackgroundIndex = 1
-local accentSwatches = {}
-local backgroundSwatches = {}
-local styleRegistry = {}
+local styleRegistry = setmetatable({}, { __mode = "k" })
 local scrollFrames = {}
-
-local function luminance(color)
-	return color.R * 0.2126 + color.G * 0.7152 + color.B * 0.0722
-end
+local pageOrder = {}
 
 local function contrastText(color)
-	if luminance(color) > 0.58 then
+	local luminance = color.R * 0.2126 + color.G * 0.7152 + color.B * 0.0722
+	if luminance > 0.58 then
 		return Color3.fromRGB(20, 21, 23)
 	end
 	return Color3.fromRGB(245, 246, 248)
 end
 
 local function cardColor()
-	if luminance(theme.background) > 0.58 then
+	if theme.background.R * 0.2126
+		+ theme.background.G * 0.7152
+		+ theme.background.B * 0.0722 > 0.58 then
 		return theme.background:Lerp(Color3.new(0, 0, 0), 0.07)
 	end
-	return theme.background:Lerp(Color3.new(1, 1, 1), 0.075)
+
+	return theme.background:Lerp(Color3.new(1, 1, 1), 0.07)
 end
 
 local function colorForRole(role)
-	if role == "panel" then
+	if role == "panel" or role == "pill" then
 		return theme.background
 	elseif role == "card" or role == "button" or role == "input" then
 		return cardColor()
-	elseif role == "island" then
-		return theme.background:Lerp(theme.accent, 0.20)
-	elseif role == "accent" or role == "accentBar" or role == "accentButton" then
+	elseif role == "accent"
+		or role == "accentBar"
+		or role == "accentButton" then
 		return theme.accent
 	elseif role == "stroke" then
-		return theme.background:Lerp(contrastText(theme.background), 0.28)
+		return theme.background:Lerp(contrastText(theme.background), 0.26)
 	end
+
 	return theme.background
 end
 
-local function applyStyleToOne(inst, role)
-	if not inst or not inst.Parent then
+local function applyStyle(object, role)
+	if not object or not object.Parent then
 		return
 	end
 
-	if role == "stroke" and inst:IsA("UIStroke") then
-		inst.Color = colorForRole("stroke")
+	if object:IsA("UIStroke") then
+		if role == "stroke" then
+			object.Color = colorForRole("stroke")
+		end
 		return
 	end
 
-	if inst:IsA("GuiObject") then
-		if role == "panel" or role == "card" or role == "button"
-			or role == "input" or role == "island" or role == "accent"
-			or role == "accentBar" or role == "accentButton" then
-			inst.BackgroundColor3 = colorForRole(role)
+	if object:IsA("GuiObject") then
+		if role == "panel"
+			or role == "pill"
+			or role == "card"
+			or role == "button"
+			or role == "input"
+			or role == "accent"
+			or role == "accentBar"
+			or role == "accentButton" then
+			object.BackgroundColor3 = colorForRole(role)
 		end
 	end
 
-	if inst:IsA("TextLabel") or inst:IsA("TextButton") or inst:IsA("TextBox") then
+	if object:IsA("TextLabel")
+		or object:IsA("TextButton")
+		or object:IsA("TextBox") then
+
 		if role == "muted" then
-			inst.TextColor3 = contrastText(theme.background):Lerp(theme.background, 0.34)
+			object.TextColor3 = contrastText(theme.background):Lerp(theme.background, 0.36)
 		elseif role == "accentText" then
-			inst.TextColor3 = theme.accent
+			object.TextColor3 = theme.accent
 		elseif role == "accentButton" then
-			inst.TextColor3 = contrastText(theme.accent)
+			object.TextColor3 = contrastText(theme.accent)
 		else
-			inst.TextColor3 = contrastText(theme.background)
+			object.TextColor3 = contrastText(theme.background)
 		end
 
-		if inst:IsA("TextBox") then
-			inst.PlaceholderColor3 = contrastText(theme.background):Lerp(theme.background, 0.42)
+		if object:IsA("TextBox") then
+			object.PlaceholderColor3 =
+				contrastText(theme.background):Lerp(theme.background, 0.42)
 		end
 	end
 end
 
-local function setStyle(inst, role)
-	styleRegistry[inst] = role
-	applyStyleToOne(inst, role)
+local function setStyle(object, role)
+	styleRegistry[object] = role
+	applyStyle(object, role)
 end
 
 local function applyTheme()
-	for inst, role in pairs(styleRegistry) do
-		if inst.Parent then
-			applyStyleToOne(inst, role)
+	for object, role in pairs(styleRegistry) do
+		if object.Parent then
+			applyStyle(object, role)
 		else
-			styleRegistry[inst] = nil
+			styleRegistry[object] = nil
 		end
 	end
 
@@ -160,55 +174,65 @@ local function applyTheme()
 end
 
 local function newGui(className, parent, properties, role)
-	local inst = Instance.new(className)
+	local object = Instance.new(className)
 
 	for key, value in pairs(properties or {}) do
-		inst[key] = value
+		object[key] = value
 	end
 
 	if role then
-		setStyle(inst, role)
+		setStyle(object, role)
 	end
 
-	inst.Parent = parent
-	return inst
+	if pageOrder[parent] ~= nil then
+		pageOrder[parent] += 1
+		object.LayoutOrder = pageOrder[parent]
+	end
+
+	object.Parent = parent
+	return object
 end
 
-local function addCorner(inst, radius)
+local function addCorner(object, radius)
 	local corner = Instance.new("UICorner")
 	corner.CornerRadius = UDim.new(0, radius or 10)
-	corner.Parent = inst
+	corner.Parent = object
 	return corner
 end
 
-local function addStroke(inst)
+local function addStroke(object)
 	local stroke = Instance.new("UIStroke")
 	stroke.Thickness = 1
 	stroke.Transparency = 0.45
-	stroke.Parent = inst
+	stroke.Parent = object
 	setStyle(stroke, "stroke")
 	return stroke
 end
 
-local function createLabel(parent, text, size, position, role, textSize)
-	return newGui("TextLabel", parent, {
+local function createLabel(parent, text, size, role, extraProperties)
+	local properties = {
 		Size = size,
-		Position = position,
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		Text = text or "",
-		TextSize = textSize or 13,
+		TextSize = 12,
 		Font = Enum.Font.Gotham,
 		TextWrapped = true,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextYAlignment = Enum.TextYAlignment.Center,
-	}, role or "text")
+	}
+
+	for key, value in pairs(extraProperties or {}) do
+		properties[key] = value
+	end
+
+	return newGui("TextLabel", parent, properties, role or "text")
 end
 
 local function createButton(parent, text, size, position, role, textSize)
 	local button = newGui("TextButton", parent, {
 		Size = size,
-		Position = position,
+		Position = position or UDim2.new(),
 		BackgroundTransparency = 0,
 		BorderSizePixel = 0,
 		AutoButtonColor = false,
@@ -217,25 +241,25 @@ local function createButton(parent, text, size, position, role, textSize)
 		Font = Enum.Font.GothamMedium,
 		TextWrapped = true,
 	}, role or "button")
+
 	addCorner(button, 9)
 	return button
 end
 
-local function createTextBox(parent, placeholder, size, position)
+local function createTextBox(parent, placeholder, size)
 	local box = newGui("TextBox", parent, {
 		Size = size,
-		Position = position,
 		BackgroundTransparency = 0,
 		BorderSizePixel = 0,
 		ClearTextOnFocus = false,
-		TextEditable = true,
 		Text = "",
 		PlaceholderText = placeholder or "",
-		TextSize = 13,
+		TextSize = 12,
 		Font = Enum.Font.Gotham,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextYAlignment = Enum.TextYAlignment.Center,
 	}, "input")
+
 	addCorner(box, 9)
 	return box
 end
@@ -250,25 +274,38 @@ local function createButtonRow(parent, texts, height)
 	local buttons = {}
 	local count = #texts
 
-	for i, text in ipairs(texts) do
-		local index = i
-		local button = createButton(
+	for index, text in ipairs(texts) do
+		buttons[index] = createButton(
 			row,
 			text,
 			UDim2.new(1 / count, -6, 1, -4),
 			UDim2.new((index - 1) / count, 3, 0, 2),
 			"button",
-			11
+			10
 		)
-		buttons[index] = button
 	end
 
 	return row, buttons
 end
 
+local function createSectionTitle(parent, text)
+	local label = createLabel(
+		parent,
+		text,
+		UDim2.new(1, -4, 0, 23),
+		"text",
+		{ TextSize = 12, Font = Enum.Font.GothamBold }
+	)
+	return label
+end
+
+----------------------------------------------------------------
+-- 滑杆工具（触屏与鼠标）
+----------------------------------------------------------------
+
 local function createSlider(parent, title, minValue, maxValue, initialValue, formatter, onChanged, step)
 	local container = newGui("Frame", parent, {
-		Size = UDim2.new(1, -4, 0, 56),
+		Size = UDim2.new(1, -4, 0, 54),
 		BackgroundTransparency = 0,
 		BorderSizePixel = 0,
 	}, "card")
@@ -278,33 +315,36 @@ local function createSlider(parent, title, minValue, maxValue, initialValue, for
 		container,
 		title,
 		UDim2.new(0.68, -8, 0, 19),
-		UDim2.new(0, 10, 0, 3),
 		"text",
-		12
+		{
+			Position = UDim2.new(0, 9, 0, 3),
+			TextSize = 11,
+		}
 	)
 
 	local valueLabel = createLabel(
 		container,
 		"",
 		UDim2.new(0.32, -12, 0, 19),
-		UDim2.new(0.68, 0, 0, 3),
 		"muted",
-		11
+		{
+			Position = UDim2.new(0.68, 0, 0, 3),
+			TextSize = 10,
+			TextXAlignment = Enum.TextXAlignment.Right,
+		}
 	)
-	valueLabel.TextXAlignment = Enum.TextXAlignment.Right
 
 	local bar = newGui("Frame", container, {
-		Size = UDim2.new(1, -26, 0, 7),
-		Position = UDim2.new(0, 13, 0, 37),
+		Size = UDim2.new(1, -26, 0, 6),
+		Position = UDim2.new(0, 13, 0, 36),
 		BorderSizePixel = 0,
-		BackgroundTransparency = 0,
 	}, "button")
 	addCorner(bar, 5)
 
 	local fill = newGui("Frame", bar, {
 		Size = UDim2.new(0, 0, 1, 0),
-		Position = UDim2.new(0, 0, 0, 0),
 		BorderSizePixel = 0,
+		ZIndex = 2,
 	}, "accentBar")
 	addCorner(fill, 5)
 
@@ -312,11 +352,12 @@ local function createSlider(parent, title, minValue, maxValue, initialValue, for
 		Size = UDim2.new(0, 14, 0, 14),
 		Position = UDim2.new(0, -7, 0.5, -7),
 		BorderSizePixel = 0,
+		ZIndex = 3,
 	}, "accent")
 	addCorner(knob, 10)
 
 	local hit = newGui("TextButton", container, {
-		Size = UDim2.new(1, -8, 0, 32),
+		Size = UDim2.new(1, -8, 0, 30),
 		Position = UDim2.new(0, 4, 0, 22),
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
@@ -327,17 +368,7 @@ local function createSlider(parent, title, minValue, maxValue, initialValue, for
 
 	local value = initialValue
 	local dragging = false
-	local dragInput
-
-	local slider = {}
-
-	local function displayValue()
-		if formatter then
-			valueLabel.Text = formatter(value)
-		else
-			valueLabel.Text = tostring(value)
-		end
-	end
+	local dragInput = nil
 
 	local function drawValue()
 		local range = maxValue - minValue
@@ -345,16 +376,24 @@ local function createSlider(parent, title, minValue, maxValue, initialValue, for
 		if range ~= 0 then
 			ratio = math.clamp((value - minValue) / range, 0, 1)
 		end
+
 		fill.Size = UDim2.new(ratio, 0, 1, 0)
 		knob.Position = UDim2.new(ratio, -7, 0.5, -7)
-		displayValue()
+
+		if formatter then
+			valueLabel.Text = formatter(value)
+		else
+			valueLabel.Text = tostring(value)
+		end
 	end
 
 	local function setValue(newValue, shouldFire)
 		newValue = math.clamp(newValue, minValue, maxValue)
 
 		if step and step > 0 then
-			newValue = minValue + math.floor(((newValue - minValue) / step) + 0.5) * step
+			newValue =
+				minValue
+				+ math.floor(((newValue - minValue) / step) + 0.5) * step
 			newValue = math.clamp(newValue, minValue, maxValue)
 		end
 
@@ -364,14 +403,6 @@ local function createSlider(parent, title, minValue, maxValue, initialValue, for
 		if shouldFire ~= false and onChanged then
 			onChanged(value)
 		end
-	end
-
-	function slider:SetValue(newValue, shouldFire)
-		setValue(newValue, shouldFire)
-	end
-
-	function slider:IsDragging()
-		return dragging
 	end
 
 	local function updateFromX(x)
@@ -414,11 +445,17 @@ local function createSlider(parent, title, minValue, maxValue, initialValue, for
 	end)
 
 	drawValue()
-	return slider
+
+	return {
+		SetValue = setValue,
+		IsDragging = function()
+			return dragging
+		end,
+	}
 end
 
 ----------------------------------------------------------------
--- 灵动岛窗口和页面
+-- 灵动岛：小药丸 + 有限高度面板
 ----------------------------------------------------------------
 
 local screenGui = Instance.new("ScreenGui")
@@ -433,7 +470,7 @@ local root = newGui("Frame", screenGui, {
 	Name = "IslandRoot",
 	AnchorPoint = Vector2.new(0.5, 0),
 	Position = UDim2.new(0.5, 0, 0, 8),
-	Size = UDim2.new(0, 400, 0, 44),
+	Size = UDim2.new(0, 320, 0, 44),
 	BackgroundTransparency = 1,
 	BorderSizePixel = 0,
 	ClipsDescendants = false,
@@ -444,67 +481,80 @@ uiScale.Scale = 1
 uiScale.Parent = root
 
 local island = newGui("Frame", root, {
-	Name = "IslandBar",
-	Size = UDim2.new(1, 0, 0, 44),
-	Position = UDim2.new(0, 0, 0, 0),
+	Name = "IslandPill",
+	AnchorPoint = Vector2.new(0.5, 0),
+	Position = UDim2.new(0.5, 0, 0, 0),
+	Size = UDim2.new(0, 245, 0, 44),
 	BorderSizePixel = 0,
-}, "island")
+}, "pill")
 addCorner(island, 22)
 addStroke(island)
 
-newGui("TextLabel", island, {
-	Size = UDim2.new(0, 28, 1, 0),
-	Position = UDim2.new(0, 12, 0, 0),
-	BackgroundTransparency = 1,
-	BorderSizePixel = 0,
-	Text = "●",
-	TextSize = 15,
-	Font = Enum.Font.GothamBold,
-	TextColor3 = theme.accent,
-}, "accentText")
+createLabel(
+	island,
+	"●",
+	UDim2.new(0, 22, 1, 0),
+	"accentText",
+	{
+		Position = UDim2.new(0, 12, 0, 0),
+		TextSize = 11,
+		Font = Enum.Font.GothamBold,
+		TextXAlignment = Enum.TextXAlignment.Center,
+	}
+)
 
-local dragHandle = newGui("TextLabel", island, {
-	Size = UDim2.new(1, -112, 1, 0),
-	Position = UDim2.new(0, 42, 0, 0),
+local pillTrackLabel = createLabel(
+	island,
+	"灵动岛 · 本机面板",
+	UDim2.new(1, -94, 1, 0),
+	"muted",
+	{
+		Position = UDim2.new(0, 40, 0, 0),
+		TextSize = 11,
+		Font = Enum.Font.GothamMedium,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+	}
+)
+
+local dragArea = newGui("TextButton", island, {
+	Size = UDim2.new(1, -52, 1, 0),
 	BackgroundTransparency = 1,
 	BorderSizePixel = 0,
-	Text = "灵动岛 · 拖动这里",
-	TextSize = 12,
-	Font = Enum.Font.GothamMedium,
-	TextXAlignment = Enum.TextXAlignment.Left,
-	TextTruncate = Enum.TextTruncate.AtEnd,
-	Active = true,
-}, "muted")
+	AutoButtonColor = false,
+	Text = "",
+}, nil)
 
 local expandButton = createButton(
 	island,
-	"展开",
-	UDim2.new(0, 62, 0, 32),
-	UDim2.new(1, -70, 0, 6),
-	"accentButton",
-	11
+	"⌄",
+	UDim2.new(0, 38, 0, 32),
+	UDim2.new(1, -43, 0, 6),
+	"button",
+	16
 )
 
 local panel = newGui("Frame", root, {
 	Name = "IslandPanel",
-	Size = UDim2.new(1, 0, 0, 430),
+	Size = UDim2.new(1, 0, 0, 360),
 	Position = UDim2.new(0, 0, 0, 50),
 	BorderSizePixel = 0,
 	Visible = false,
 	ClipsDescendants = true,
 }, "panel")
-addCorner(panel, 16)
+addCorner(panel, 18)
 addStroke(panel)
 
 local panelTitle = createLabel(
 	panel,
-	"灵动岛 · 本机面板",
-	UDim2.new(1, -54, 0, 32),
-	UDim2.new(0, 12, 0, 2),
+	"灵动岛",
+	UDim2.new(1, -55, 0, 28),
 	"text",
-	14
+	{
+		Position = UDim2.new(0, 13, 0, 4),
+		TextSize = 14,
+		Font = Enum.Font.GothamBold,
+	}
 )
-panelTitle.Font = Enum.Font.GothamBold
 
 local closeButton = createButton(
 	panel,
@@ -512,33 +562,31 @@ local closeButton = createButton(
 	UDim2.new(0, 34, 0, 30),
 	UDim2.new(1, -42, 0, 3),
 	"button",
-	18
+	17
 )
 
 local tabBar = newGui("Frame", panel, {
-	Size = UDim2.new(1, -16, 0, 32),
-	Position = UDim2.new(0, 8, 0, 37),
+	Size = UDim2.new(1, -16, 0, 31),
+	Position = UDim2.new(0, 8, 0, 35),
 	BackgroundTransparency = 1,
 	BorderSizePixel = 0,
 }, nil)
 
-local pages = {}
 local pageSpecs = {
 	{ key = "Music", title = "音乐" },
-	{ key = "Device", title = "设备" },
-	{ key = "Server", title = "服务器" },
-	{ key = "Appearance", title = "外观" },
-	{ key = "Screen", title = "画面" },
-	{ key = "Protection", title = "保护" },
+	{ key = "Info", title = "设备" },
+	{ key = "Visual", title = "画面" },
+	{ key = "Safety", title = "检测" },
 }
 
+local pages = {}
 local tabButtons = {}
 
 local function createPage(key)
 	local page = newGui("ScrollingFrame", panel, {
 		Name = key .. "Page",
-		Size = UDim2.new(1, -16, 1, -82),
-		Position = UDim2.new(0, 8, 0, 74),
+		Size = UDim2.new(1, -16, 1, -78),
+		Position = UDim2.new(0, 8, 0, 70),
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		CanvasSize = UDim2.new(0, 0, 0, 0),
@@ -550,7 +598,7 @@ local function createPage(key)
 		Visible = false,
 	}, nil)
 
-	table.insert(scrollFrames, page)
+	pageOrder[page] = 0
 
 	local padding = Instance.new("UIPadding")
 	padding.PaddingTop = UDim.new(0, 4)
@@ -564,6 +612,7 @@ local function createPage(key)
 	layout.SortOrder = Enum.SortOrder.LayoutOrder
 	layout.Parent = page
 
+	table.insert(scrollFrames, page)
 	pages[key] = page
 	return page
 end
@@ -572,27 +621,89 @@ for _, spec in ipairs(pageSpecs) do
 	createPage(spec.key)
 end
 
-for i, spec in ipairs(pageSpecs) do
-	local index = i
-	local button = createButton(
+for index, spec in ipairs(pageSpecs) do
+	tabButtons[spec.key] = createButton(
 		tabBar,
 		spec.title,
-		UDim2.new(1 / #pageSpecs, -4, 1, -4),
-		UDim2.new((index - 1) / #pageSpecs, 2, 0, 2),
+		UDim2.new(0.25, -5, 1, -4),
+		UDim2.new((index - 1) * 0.25, 2, 0, 2),
 		"button",
 		10
 	)
-	tabButtons[spec.key] = button
 end
 
-local selectedTab = "Music"
+local expanded = false
+local userScale = 1
+local rootOffsetX = 0
+local rootOffsetY = 8
+
+local function getViewportSize()
+	local camera = workspace.CurrentCamera
+	if camera then
+		return camera.ViewportSize
+	end
+	return Vector2.new(800, 600)
+end
+
+local function updateLayout()
+	local viewport = getViewportSize()
+
+	-- 面板留出左右边距；手机上不会强行按桌面 420px 宽显示。
+	local panelWidth = math.max(190, math.min(420, viewport.X - 32))
+	local pillWidth = math.max(180, math.min(258, viewport.X - 72))
+
+	-- 面板高度限制为屏幕的大约 55%，内容过多时在面板内滚动。
+	local panelHeight = math.floor(math.min(500, math.max(190, viewport.Y * 0.55)))
+	local rootHeight = expanded and (panelHeight + 50) or 44
+
+	root.Size = UDim2.new(0, panelWidth, 0, rootHeight)
+	island.Size = UDim2.new(0, pillWidth, 0, 44)
+	panel.Position = UDim2.new(0, 0, 0, 50)
+	panel.Size = UDim2.new(1, 0, 0, panelHeight)
+	panel.Visible = expanded
+	expandButton.Text = expanded and "⌃" or "⌄"
+
+	for _, page in pairs(pages) do
+		page.Position = UDim2.new(0, 8, 0, 70)
+		page.Size = UDim2.new(1, -16, 1, -78)
+	end
+
+	local baseHeight = rootHeight
+	local fitScale = math.min(
+		1.15,
+		(viewport.X - 16) / panelWidth,
+		(viewport.Y - 16) / math.max(baseHeight, 1)
+	)
+
+	uiScale.Scale = math.min(userScale, fitScale)
+
+	local scaledWidth = panelWidth * uiScale.Scale
+	local scaledHeight = baseHeight * uiScale.Scale
+	local maxX = math.max(0, viewport.X / 2 - scaledWidth / 2 - 4)
+	local maxY = math.max(4, viewport.Y - scaledHeight - 8)
+
+	rootOffsetX = math.clamp(rootOffsetX, -maxX, maxX)
+	rootOffsetY = math.clamp(rootOffsetY, 4, maxY)
+	root.Position = UDim2.new(0.5, rootOffsetX, 0, rootOffsetY)
+end
+
+local function setExpanded(value)
+	expanded = value
+	updateLayout()
+end
+
+expandButton.Activated:Connect(function()
+	setExpanded(not expanded)
+end)
+
+closeButton.Activated:Connect(function()
+	setExpanded(false)
+end)
 
 local function selectTab(key)
 	if not pages[key] then
 		return
 	end
-
-	selectedTab = key
 
 	for pageKey, page in pairs(pages) do
 		page.Visible = pageKey == key
@@ -614,61 +725,13 @@ for _, spec in ipairs(pageSpecs) do
 	end)
 end
 
-local expanded = false
-local userScale = 1
-
-local function getViewportSize()
-	local camera = workspace.CurrentCamera
-	if camera then
-		return camera.ViewportSize
-	end
-	return Vector2.new(800, 600)
-end
-
-local function updateLayout()
-	local viewport = getViewportSize()
-	local baseWidth = math.floor(math.clamp((viewport.X - 20) / 1.15, 240, 420))
-	local panelHeight = math.floor(math.clamp(viewport.Y - 120, 220, 470))
-
-	island.Size = UDim2.new(1, 0, 0, 44)
-	panel.Position = UDim2.new(0, 0, 0, 50)
-	panel.Size = UDim2.new(1, 0, 0, panelHeight)
-
-	for _, page in pairs(pages) do
-		page.Position = UDim2.new(0, 8, 0, 74)
-		page.Size = UDim2.new(1, -16, 1, -82)
-	end
-
-	root.Size = UDim2.new(0, baseWidth, 0, expanded and (panelHeight + 50) or 44)
-	uiScale.Scale = userScale
-	panel.Visible = expanded
-	expandButton.Text = expanded and "收起" or "展开"
-end
-
-local function setExpanded(value)
-	expanded = value
-	updateLayout()
-end
-
-expandButton.Activated:Connect(function()
-	setExpanded(not expanded)
-end)
-
-closeButton.Activated:Connect(function()
-	setExpanded(false)
-end)
-
-for key, button in pairs(tabButtons) do
-	if key == selectedTab then
-		setStyle(button, "accentButton")
-	end
-end
-
 ----------------------------------------------------------------
 -- 音乐播放器
 ----------------------------------------------------------------
 
+local musicPage = pages.Music
 local tracks = {}
+
 for _, track in ipairs(TRACKS) do
 	if track.id ~= nil then
 		local id = tostring(track.id):match("%d+")
@@ -686,7 +749,7 @@ end
 local currentIndex = 0
 local favoriteOnly = false
 local shuffleEnabled = false
-local repeatMode = 0 -- 0 关闭，1 列表循环，2 单曲循环
+local repeatMode = 0
 local volume = 0.5
 local speedValues = { 0.75, 1, 1.25, 1.5 }
 local speedIndex = 2
@@ -711,81 +774,76 @@ local eqPresets = {
 }
 local eqIndex = 1
 
-local musicPage = pages.Music
-
 local musicStatusLabel = createLabel(
 	musicPage,
-	"Roblox 本地播放器 · 音频只在本机播放",
-	UDim2.new(1, -4, 0, 32),
-	UDim2.new(),
+	"本地 Roblox 音频播放器",
+	UDim2.new(1, -4, 0, 25),
 	"muted",
-	11
+	{ TextSize = 11 }
 )
 
-local musicNotice = createLabel(
+local musicNote = createLabel(
 	musicPage,
-	"仅能播放当前体验获准使用的 Roblox 音频；不连接 Spotify。",
-	UDim2.new(1, -4, 0, 34),
-	UDim2.new(),
+	"只能播放获准用于当前体验的 Roblox 音频；不连接 Spotify。",
+	UDim2.new(1, -4, 0, 31),
 	"muted",
-	11
+	{ TextSize = 10 }
 )
 
 local idLabel = createLabel(
 	musicPage,
-	"Roblox 音频 ID（可粘贴数字 ID 或资产链接）",
-	UDim2.new(1, -4, 0, 20),
-	UDim2.new(),
+	"Roblox 音频 ID",
+	UDim2.new(1, -4, 0, 19),
 	"text",
-	12
+	{ TextSize = 11 }
 )
 
 local idBox = createTextBox(
 	musicPage,
 	"在这里输入音频 ID，例如 1234567890",
-	UDim2.new(1, -4, 0, 38),
-	UDim2.new()
+	UDim2.new(1, -4, 0, 36)
 )
 
 local titleBox = createTextBox(
 	musicPage,
 	"曲名（可选）",
-	UDim2.new(1, -4, 0, 38),
-	UDim2.new()
+	UDim2.new(1, -4, 0, 36)
 )
 
 local addTrackButton = createButton(
 	musicPage,
 	"添加并播放",
-	UDim2.new(1, -4, 0, 38),
+	UDim2.new(1, -4, 0, 36),
 	UDim2.new(),
 	"accentButton",
-	12
+	11
 )
 
 local searchBox = createTextBox(
 	musicPage,
 	"搜索播放列表",
-	UDim2.new(1, -4, 0, 38),
-	UDim2.new()
+	UDim2.new(1, -4, 0, 36)
 )
 
-local _, favoriteRowButtons = createButtonRow(musicPage, { "☆ 只看收藏" }, 36)
-local favoriteFilterButton = favoriteRowButtons[1]
+local _, favoriteButtons = createButtonRow(musicPage, { "☆ 只看收藏" }, 34)
+local favoriteFilterButton = favoriteButtons[1]
 
 local currentTrackLabel = createLabel(
 	musicPage,
 	"尚未选择曲目",
-	UDim2.new(1, -4, 0, 34),
-	UDim2.new(),
+	UDim2.new(1, -4, 0, 29),
 	"accentText",
-	12
+	{ TextSize = 11 }
 )
 
-local _, playbackButtons = createButtonRow(musicPage, { "上一首", "播放", "下一首" }, 40)
-local previousButton = playbackButtons[1]
-local playPauseButton = playbackButtons[2]
-local nextButton = playbackButtons[3]
+local _, playButtons = createButtonRow(
+	musicPage,
+	{ "上一首", "播放", "下一首" },
+	36
+)
+local previousButton = playButtons[1]
+local playPauseButton = playButtons[2]
+local nextButton = playButtons[3]
 
 local function formatTime(seconds)
 	seconds = tonumber(seconds) or 0
@@ -794,46 +852,44 @@ local function formatTime(seconds)
 	end
 
 	seconds = math.floor(seconds)
-	local minutes = math.floor(seconds / 60)
-	local remaining = seconds % 60
-	return string.format("%02d:%02d", minutes, remaining)
+	return string.format("%02d:%02d", math.floor(seconds / 60), seconds % 60)
 end
 
-local progressSlider
-progressSlider = createSlider(
+local progressSlider = createSlider(
 	musicPage,
 	"播放进度",
 	0,
 	1,
 	0,
 	function(value)
-		local length = sound.TimeLength
-		if length and length > 0 then
-			return formatTime(value * length) .. " / " .. formatTime(length)
+		if sound.TimeLength > 0 then
+			return formatTime(value * sound.TimeLength)
+				.. " / "
+				.. formatTime(sound.TimeLength)
 		end
 		return "00:00 / 00:00"
 	end,
 	function(value)
 		if sound.TimeLength > 0 and currentIndex > 0 then
 			pcall(function()
-				sound.TimePosition = math.clamp(value, 0, 1) * sound.TimeLength
+				sound.TimePosition =
+					math.clamp(value, 0, 1) * sound.TimeLength
 			end)
 		end
 	end
 )
 
-local _, optionsButtons = createButtonRow(
+local _, optionButtons = createButtonRow(
 	musicPage,
 	{ "随机：关", "循环：关", "速度 1×", "EQ 标准" },
-	38
+	36
 )
-local shuffleButton = optionsButtons[1]
-local repeatButton = optionsButtons[2]
-local speedButton = optionsButtons[3]
-local eqButton = optionsButtons[4]
+local shuffleButton = optionButtons[1]
+local repeatButton = optionButtons[2]
+local speedButton = optionButtons[3]
+local eqButton = optionButtons[4]
 
-local volumeSlider
-volumeSlider = createSlider(
+local volumeSlider = createSlider(
 	musicPage,
 	"音量",
 	0,
@@ -844,20 +900,12 @@ volumeSlider = createSlider(
 	end,
 	function(value)
 		volume = value
-		sound.Volume = volume
+		sound.Volume = value
 	end,
 	0.01
 )
 
-local playlistTitle = createLabel(
-	musicPage,
-	"播放列表",
-	UDim2.new(1, -4, 0, 22),
-	UDim2.new(),
-	"text",
-	13
-)
-playlistTitle.Font = Enum.Font.GothamBold
+createSectionTitle(musicPage, "播放列表")
 
 local playlistContainer = newGui("Frame", musicPage, {
 	Name = "PlaylistContainer",
@@ -874,13 +922,13 @@ playlistLayout.Parent = playlistContainer
 
 local playlistEmptyLabel = createLabel(
 	playlistContainer,
-	"列表为空；在上方输入 Roblox 音频 ID 后添加。",
-	UDim2.new(1, 0, 0, 36),
-	UDim2.new(),
+	"列表为空；在上方输入音频 ID 后添加。",
+	UDim2.new(1, 0, 0, 34),
 	"muted",
-	11
+	{ TextSize = 10 }
 )
 playlistEmptyLabel.Name = "PlaylistEmpty"
+playlistEmptyLabel.LayoutOrder = -1
 
 local function setMusicStatus(text)
 	musicStatusLabel.Text = text
@@ -890,15 +938,18 @@ local function updateCurrentTrackUI()
 	local track = tracks[currentIndex]
 
 	if track then
-		currentTrackLabel.Text = track.title .. "  ·  " .. (track.artist or "Roblox 音频")
-		dragHandle.Text = "♫ " .. track.title
+		currentTrackLabel.Text =
+			track.title .. " · " .. (track.artist or "Roblox 音频")
+		pillTrackLabel.Text = "♫ " .. track.title
 	else
 		currentTrackLabel.Text = "尚未选择曲目"
-		dragHandle.Text = "灵动岛 · 拖动这里"
+		pillTrackLabel.Text = "灵动岛 · 本机面板"
 	end
 
 	playPauseButton.Text = sound.IsPlaying and "暂停" or "播放"
 end
+
+local playTrack
 
 local function refreshPlaylist()
 	for _, child in ipairs(playlistContainer:GetChildren()) do
@@ -911,13 +962,16 @@ local function refreshPlaylist()
 	local visibleCount = 0
 
 	for index, track in ipairs(tracks) do
-		local textToSearch = string.lower(
-			tostring(track.title or "") .. " "
-				.. tostring(track.artist or "") .. " "
+		local searchable = string.lower(
+			tostring(track.title or "")
+				.. " "
+				.. tostring(track.artist or "")
+				.. " "
 				.. tostring(track.id or "")
 		)
 
-		local matchesSearch = query == "" or string.find(textToSearch, query, 1, true) ~= nil
+		local matchesSearch =
+			query == "" or string.find(searchable, query, 1, true) ~= nil
 		local matchesFavorite = not favoriteOnly or track.favorite == true
 
 		if matchesSearch and matchesFavorite then
@@ -926,57 +980,54 @@ local function refreshPlaylist()
 
 			local row = newGui("Frame", playlistContainer, {
 				Name = "TrackRow",
-				Size = UDim2.new(1, 0, 0, 46),
+				Size = UDim2.new(1, 0, 0, 44),
 				BorderSizePixel = 0,
+				LayoutOrder = visibleCount,
 			}, "card")
 			addCorner(row, 9)
 
 			local playButton = createButton(
 				row,
 				"▶",
-				UDim2.new(0, 34, 0, 32),
-				UDim2.new(0, 6, 0.5, -16),
+				UDim2.new(0, 32, 0, 30),
+				UDim2.new(0, 6, 0.5, -15),
 				"accentButton",
-				11
+				10
 			)
 
 			local nameLabel = createLabel(
 				row,
-				tostring(track.title) .. "  ·  ID " .. tostring(track.id),
-				UDim2.new(1, -124, 1, 0),
-				UDim2.new(0, 46, 0, 0),
+				tostring(track.title) .. " · ID " .. tostring(track.id),
+				UDim2.new(1, -116, 1, 0),
 				"text",
-				11
+				{
+					Position = UDim2.new(0, 43, 0, 0),
+					TextSize = 10,
+					TextTruncate = Enum.TextTruncate.AtEnd,
+					TextWrapped = false,
+				}
 			)
-			nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
 
 			local favoriteButton = createButton(
 				row,
 				track.favorite and "★" or "☆",
-				UDim2.new(0, 30, 0, 32),
-				UDim2.new(1, -70, 0.5, -16),
-				"button",
-				15
+				UDim2.new(0, 28, 0, 30),
+				UDim2.new(1, -66, 0.5, -15),
+				track.favorite and "accentButton" or "button",
+				14
 			)
 
 			local removeButton = createButton(
 				row,
 				"×",
-				UDim2.new(0, 30, 0, 32),
-				UDim2.new(1, -36, 0.5, -16),
+				UDim2.new(0, 28, 0, 30),
+				UDim2.new(1, -34, 0.5, -15),
 				"button",
-				16
+				15
 			)
 
 			playButton.Activated:Connect(function()
 				playTrack(capturedIndex)
-			end)
-
-			nameLabel.InputBegan:Connect(function(input)
-				if input.UserInputType == Enum.UserInputType.MouseButton1
-					or input.UserInputType == Enum.UserInputType.Touch then
-					playTrack(capturedIndex)
-				end
 			end)
 
 			favoriteButton.Activated:Connect(function()
@@ -994,9 +1045,9 @@ local function refreshPlaylist()
 
 				if capturedIndex == currentIndex then
 					sound:Stop()
+					sound.SoundId = ""
 					currentIndex = 0
 					playToken += 1
-					sound.SoundId = ""
 				elseif capturedIndex < currentIndex then
 					currentIndex -= 1
 				end
@@ -1010,13 +1061,13 @@ local function refreshPlaylist()
 
 	playlistEmptyLabel.Visible = visibleCount == 0
 	if visibleCount == 0 and #tracks > 0 then
-		playlistEmptyLabel.Text = "沒有符合搜尋或收藏篩選的曲目。"
+		playlistEmptyLabel.Text = "没有符合搜索或收藏筛选的曲目。"
 	else
-		playlistEmptyLabel.Text = "列表为空；在上方输入 Roblox 音频 ID 后添加。"
+		playlistEmptyLabel.Text = "列表为空；在上方输入音频 ID 后添加。"
 	end
 end
 
-local function playTrack(index)
+playTrack = function(index)
 	local track = tracks[index]
 	if not track then
 		setMusicStatus("播放列表中没有这首曲目。")
@@ -1035,23 +1086,19 @@ local function playTrack(index)
 
 	pcall(function()
 		sound.TimePosition = 0
-	end)
-
-	setMusicStatus("正在载入音频…请确认该音频获准用于当前体验。")
-	updateCurrentTrackUI()
-
-	-- 先请求播放，再异步预载；权限问题无法通过脚本绕过。
-	pcall(function()
 		sound:Play()
 	end)
 
+	setMusicStatus("正在载入；请确认音频获准用于当前体验。")
+	updateCurrentTrackUI()
+
 	task.spawn(function()
-		local fetchFailure
-		local ok, err = pcall(function()
+		local fetchFailure = false
+
+		local success = pcall(function()
 			ContentProvider:PreloadAsync({ sound }, function(_, status)
-				local statusText = tostring(status)
-				if not string.find(statusText, "Success", 1, true) then
-					fetchFailure = statusText
+				if not string.find(tostring(status), "Success", 1, true) then
+					fetchFailure = true
 				end
 			end)
 		end)
@@ -1060,21 +1107,18 @@ local function playTrack(index)
 			return
 		end
 
-		if not ok or fetchFailure then
-			setMusicStatus("加载失败：音频可能不存在、无权限或暂时不可用。")
-			return
-		end
-
-		if sound.IsLoaded then
-			setMusicStatus(sound.IsPlaying and "正在播放" or "音频已载入。")
+		if not success or fetchFailure then
+			setMusicStatus("载入失败：检查音频 ID、网络或体验音频权限。")
+		elseif sound.IsLoaded then
+			setMusicStatus(sound.IsPlaying and "正在播放。" or "音频已载入。")
 		else
-			setMusicStatus("音频仍在载入；若无法播放，请检查音频 ID 和体验权限。")
+			setMusicStatus("音频仍在载入；请检查 ID 和体验权限。")
 		end
 	end)
 
 	task.delay(15, function()
 		if playToken == thisToken and not sound.IsLoaded then
-			setMusicStatus("载入超时：请检查音频 ID、网络或体验音频权限。")
+			setMusicStatus("载入超时：检查音频 ID、网络或体验音频权限。")
 		end
 	end)
 end
@@ -1125,11 +1169,7 @@ local function previousTrack()
 	end
 
 	if currentIndex <= 1 then
-		if repeatMode == 1 or currentIndex == 0 then
-			playTrack(#tracks)
-		else
-			playTrack(1)
-		end
+		playTrack(#tracks)
 	else
 		playTrack(currentIndex - 1)
 	end
@@ -1142,7 +1182,7 @@ local function addTrackFromInput()
 		or rawText:match("(%d+)")
 
 	if not id or not tonumber(id) or tonumber(id) <= 0 then
-		setMusicStatus("请在上方音频 ID 输入框填写有效的 Roblox 音频 ID。")
+		setMusicStatus("请在上方输入有效的 Roblox 音频 ID。")
 		return
 	end
 
@@ -1160,11 +1200,29 @@ local function addTrackFromInput()
 
 	local newIndex = #tracks
 	idBox.Text = ""
+	titleBox.Text = ""
 	refreshPlaylist()
 	playTrack(newIndex)
 end
 
+local function updatePlaybackButtons()
+	shuffleButton.Text = shuffleEnabled and "随机：开" or "随机：关"
+	setStyle(shuffleButton, shuffleEnabled and "accentButton" or "button")
+
+	if repeatMode == 1 then
+		repeatButton.Text = "循环：列表"
+	elseif repeatMode == 2 then
+		repeatButton.Text = "循环：单曲"
+	else
+		repeatButton.Text = "循环：关"
+	end
+
+	speedButton.Text = "速度 " .. tostring(playbackSpeed) .. "×"
+	eqButton.Text = "EQ " .. eqPresets[eqIndex].name
+end
+
 addTrackButton.Activated:Connect(addTrackFromInput)
+
 idBox.FocusLost:Connect(function(enterPressed)
 	if enterPressed then
 		addTrackFromInput()
@@ -1175,8 +1233,12 @@ searchBox:GetPropertyChangedSignal("Text"):Connect(refreshPlaylist)
 
 favoriteFilterButton.Activated:Connect(function()
 	favoriteOnly = not favoriteOnly
-	favoriteFilterButton.Text = favoriteOnly and "★ 只看收藏：开" or "☆ 只看收藏"
-	setStyle(favoriteFilterButton, favoriteOnly and "accentButton" or "button")
+	favoriteFilterButton.Text =
+		favoriteOnly and "★ 只看收藏：开" or "☆ 只看收藏"
+	setStyle(
+		favoriteFilterButton,
+		favoriteOnly and "accentButton" or "button"
+	)
 	refreshPlaylist()
 end)
 
@@ -1197,24 +1259,9 @@ playPauseButton.Activated:Connect(function()
 	else
 		setMusicStatus("请先输入音频 ID 并添加曲目。")
 	end
+
 	updateCurrentTrackUI()
 end)
-
-local function updatePlaybackButtons()
-	shuffleButton.Text = shuffleEnabled and "随机：开" or "随机：关"
-	setStyle(shuffleButton, shuffleEnabled and "accentButton" or "button")
-
-	local repeatText = "循环：关"
-	if repeatMode == 1 then
-		repeatText = "循环：列表"
-	elseif repeatMode == 2 then
-		repeatText = "循环：单曲"
-	end
-	repeatButton.Text = repeatText
-
-	speedButton.Text = "速度 " .. tostring(playbackSpeed) .. "×"
-	eqButton.Text = "EQ " .. eqPresets[eqIndex].name
-end
 
 shuffleButton.Activated:Connect(function()
 	shuffleEnabled = not shuffleEnabled
@@ -1248,9 +1295,7 @@ eqButton.Activated:Connect(function()
 end)
 
 sound.Ended:Connect(function()
-	if repeatMode == 2 then
-		playTrack(currentIndex)
-	else
+	if repeatMode ~= 2 then
 		nextTrack(false)
 	end
 end)
@@ -1264,317 +1309,120 @@ end)
 sound:GetPropertyChangedSignal("IsPlaying"):Connect(updateCurrentTrackUI)
 
 ----------------------------------------------------------------
--- 设备信息：只显示 Roblox 客户端实际可读取的项目
+-- 设备信息和当前服务器信息
 ----------------------------------------------------------------
 
-local devicePage = pages.Device
-
-local deviceNote = createLabel(
-	devicePage,
-	"显示当前客户端可访问的信息。具体设备型号和电池状态由 Roblox API 隐藏。",
-	UDim2.new(1, -4, 0, 38),
-	UDim2.new(),
-	"muted",
-	11
-)
-
+local infoPage = pages.Info
 local deviceRows = {}
+local serverRows = {}
+
+createLabel(
+	infoPage,
+	"以下是 Roblox 客户端可读取的概略信息；不代表真实硬件规格。",
+	UDim2.new(1, -4, 0, 34),
+	"muted",
+	{ TextSize = 10 }
+)
 
 local function createInfoRow(parent, key, title, initialText)
 	local row = newGui("Frame", parent, {
 		Name = key .. "Row",
-		Size = UDim2.new(1, -4, 0, 58),
+		Size = UDim2.new(1, -4, 0, 54),
 		BorderSizePixel = 0,
 	}, "card")
 	addCorner(row, 9)
 
-	local titleLabel = createLabel(
+	createLabel(
 		row,
 		title,
-		UDim2.new(1, -16, 0, 18),
-		UDim2.new(0, 9, 0, 4),
+		UDim2.new(1, -16, 0, 17),
 		"muted",
-		10
+		{
+			Position = UDim2.new(0, 9, 0, 4),
+			TextSize = 9,
+		}
 	)
 
 	local valueLabel = createLabel(
 		row,
 		initialText or "读取中…",
-		UDim2.new(1, -16, 0, 31),
-		UDim2.new(0, 9, 0, 22),
+		UDim2.new(1, -16, 0, 28),
 		"text",
-		12
+		{
+			Position = UDim2.new(0, 9, 0, 22),
+			TextSize = 10,
+			TextYAlignment = Enum.TextYAlignment.Top,
+		}
 	)
-	valueLabel.TextYAlignment = Enum.TextYAlignment.Top
 
+	return row, valueLabel
+end
+
+local function addDeviceRow(key, title, initialText)
+	local _, valueLabel = createInfoRow(infoPage, key, title, initialText)
 	deviceRows[key] = valueLabel
-	return row
 end
 
-createInfoRow(devicePage, "platform", "客户端平台", "读取中…")
-createInfoRow(devicePage, "player", "当前本地玩家", "读取中…")
-createInfoRow(devicePage, "account", "本地用户 ID / 账号天数", "读取中…")
-createInfoRow(devicePage, "input", "可用输入方式", "读取中…")
-createInfoRow(devicePage, "lastInput", "最近输入类型", "读取中…")
-createInfoRow(devicePage, "sensors", "传感器支持", "读取中…")
-createInfoRow(devicePage, "vr", "VR 状态", "读取中…")
-createInfoRow(devicePage, "viewport", "屏幕视口和方向", "读取中…")
-createInfoRow(devicePage, "fps", "客户端 FPS 估算", "读取中…")
-createInfoRow(devicePage, "ping", "网络延迟 Ping", "读取中…")
-createInfoRow(devicePage, "memory", "客户端内存（若接口可用）", "读取中…")
-createInfoRow(devicePage, "camera", "摄像机类型 / 视野", "读取中…")
-createInfoRow(devicePage, "graphics", "图像质量设置（若接口可用）", "读取中…")
-createInfoRow(devicePage, "locale", "Roblox 客户端语言", "读取中…")
-createInfoRow(devicePage, "inset", "GUI 安全边距", "读取中…")
-createInfoRow(devicePage, "runtime", "本面板运行时间", "读取中…")
-createInfoRow(devicePage, "model", "设备具体型号", "Roblox 未开放读取")
-createInfoRow(devicePage, "battery", "电池电量 / 是否充电", "Roblox 未开放读取")
-
-local function setDeviceRow(key, value)
-	if deviceRows[key] then
-		deviceRows[key].Text = tostring(value)
-	end
+local function addServerRow(key, title, initialText)
+	local _, valueLabel = createInfoRow(infoPage, "server_" .. key, title, initialText)
+	serverRows[key] = valueLabel
 end
 
-local function readProperty(object, property, fallback)
-	local ok, value = pcall(function()
-		return object[property]
-	end)
-	if ok and value ~= nil then
-		return value
-	end
-	return fallback
-end
+createSectionTitle(infoPage, "设备与客户端")
+addDeviceRow("platform", "客户端平台", "读取中…")
+addDeviceRow("player", "本地玩家", "读取中…")
+addDeviceRow("account", "用户 ID / 账号天数", "读取中…")
+addDeviceRow("input", "可用输入方式", "读取中…")
+addDeviceRow("lastInput", "最近输入类型", "读取中…")
+addDeviceRow("sensors", "传感器支持", "读取中…")
+addDeviceRow("vr", "VR 状态", "读取中…")
+addDeviceRow("viewport", "游戏视口与方向", "读取中…")
+addDeviceRow("fps", "FPS 估算", "读取中…")
+addDeviceRow("ping", "Ping（若客户端接口可用）", "读取中…")
+addDeviceRow("memory", "客户端内存（若接口可用）", "读取中…")
+addDeviceRow("camera", "摄像机类型 / 视野", "读取中…")
+addDeviceRow("graphics", "图像质量（若接口可用）", "读取中…")
+addDeviceRow("locale", "Roblox 客户端语言", "读取中…")
+addDeviceRow("inset", "GUI 安全边距", "读取中…")
+addDeviceRow("runtime", "面板运行时间", "读取中…")
+addDeviceRow("model", "设备具体型号", "Roblox 未开放读取")
+addDeviceRow("battery", "电池电量 / 是否充电", "Roblox 未开放读取")
 
-local function enumName(value)
-	if value == nil then
-		return "不可用"
-	end
-	local text = tostring(value)
-	return text:match("%.([^%.]+)$") or text
-end
+createSectionTitle(infoPage, "当前服务器")
+addServerRow("type", "服务器类型")
+addServerRow("players", "当前人数 / 人数上限")
+addServerRow("placeId", "PlaceId")
+addServerRow("gameId", "GameId")
+addServerRow("jobId", "当前实例 JobId")
+addServerRow("placeVersion", "PlaceVersion")
+addServerRow("privateServerId", "PrivateServerId")
+addServerRow("privateOwner", "PrivateServerOwnerId")
+addServerRow("creator", "体验创建者 ID")
+addServerRow("serverIp", "服务器 IP", "Roblox 客户端不会提供")
 
-local fpsFrameCount = 0
-local fpsElapsed = 0
-local fpsEstimate = 0
-
-RunService.RenderStepped:Connect(function(dt)
-	fpsFrameCount += 1
-	fpsElapsed += dt
-
-	if fpsElapsed >= 0.5 then
-		if fpsElapsed > 0 then
-			fpsEstimate = math.floor((fpsFrameCount / fpsElapsed) + 0.5)
-		end
-		fpsFrameCount = 0
-		fpsElapsed = 0
-	end
-end)
-
-local function getPingText()
-	local ok, result = pcall(function()
-		local network = Stats:FindFirstChild("Network")
-		if not network then
-			return nil
-		end
-
-		local serverStats = network:FindFirstChild("ServerStatsItem")
-		if not serverStats then
-			return nil
-		end
-
-		local pingItem = serverStats:FindFirstChild("Data Ping")
-		if not pingItem then
-			return nil
-		end
-
-		return pingItem:GetValueString()
-	end)
-
-	if ok and result then
-		return result
-	end
-	return "客户端未提供"
-end
-
-local function getMemoryText()
-	local ok, value = pcall(function()
-		return Stats:GetTotalMemoryUsageMb()
-	end)
-
-	if ok and tonumber(value) then
-		return string.format("%.1f MB", value)
-	end
-	return "客户端未提供"
-end
-
-local function getGraphicsText()
-	local ok, settings = pcall(function()
-		return UserSettings():GetService("UserGameSettings")
-	end)
-
-	if not ok or not settings then
-		return "客户端未提供"
-	end
-
-	local quality = readProperty(settings, "SavedQualityLevel", nil)
-	if quality ~= nil then
-		return enumName(quality)
-	end
-
-	return "客户端未提供"
-end
-
-local function updateDeviceInfo()
-	local platformValue = "不可用"
-	local platformOk, platformResult = pcall(function()
-		return UserInputService:GetPlatform()
-	end)
-	if platformOk then
-		platformValue = enumName(platformResult)
-	end
-
-	setDeviceRow("platform", platformValue)
-	setDeviceRow("player", player.DisplayName .. "  (@" .. player.Name .. ")")
-	setDeviceRow("account", tostring(player.UserId) .. " / " .. tostring(player.AccountAge) .. " 天")
-
-	local inputModes = {}
-	if readProperty(UserInputService, "TouchEnabled", false) then
-		table.insert(inputModes, "触屏")
-	end
-	if readProperty(UserInputService, "KeyboardEnabled", false) then
-		table.insert(inputModes, "键盘")
-	end
-	if readProperty(UserInputService, "MouseEnabled", false) then
-		table.insert(inputModes, "鼠标")
-	end
-	if readProperty(UserInputService, "GamepadEnabled", false) then
-		table.insert(inputModes, "手柄")
-	end
-	if #inputModes == 0 then
-		table.insert(inputModes, "未报告")
-	end
-	setDeviceRow("input", table.concat(inputModes, " / "))
-
-	local lastInputOk, lastInput = pcall(function()
-		return UserInputService:GetLastInputType()
-	end)
-	setDeviceRow("lastInput", lastInputOk and enumName(lastInput) or "不可用")
-
-	local sensors = {}
-	if readProperty(UserInputService, "AccelerometerEnabled", false) then
-		table.insert(sensors, "加速度计")
-	end
-	if readProperty(UserInputService, "GyroscopeEnabled", false) then
-		table.insert(sensors, "陀螺仪")
-	end
-	setDeviceRow("sensors", #sensors > 0 and table.concat(sensors, " / ") or "未报告 / 不可用")
-
-	local vrEnabled = readProperty(VRService, "VREnabled", false)
-	setDeviceRow("vr", vrEnabled and "已启用" or "未启用")
-
-	local camera = workspace.CurrentCamera
-	if camera then
-		local viewport = camera.ViewportSize
-		local orientation = viewport.X >= viewport.Y and "横向" or "纵向"
-		setDeviceRow(
-			"viewport",
-			string.format("%d × %d px · %s", math.floor(viewport.X), math.floor(viewport.Y), orientation)
-		)
-		setDeviceRow(
-			"camera",
-			enumName(camera.CameraType) .. " · FOV " .. tostring(math.floor(camera.FieldOfView + 0.5)) .. "°"
-		)
-	else
-		setDeviceRow("viewport", "不可用")
-		setDeviceRow("camera", "不可用")
-	end
-
-	setDeviceRow("fps", tostring(fpsEstimate) .. " FPS（估算）")
-	setDeviceRow("ping", getPingText())
-	setDeviceRow("memory", getMemoryText())
-	setDeviceRow("graphics", getGraphicsText())
-
-	local locale = readProperty(LocalizationService, "RobloxLocaleId", "不可用")
-	setDeviceRow("locale", locale)
-
-	local insetOk, topLeft, bottomRight = pcall(function()
-		return GuiService:GetGuiInset()
-	end)
-	if insetOk and topLeft and bottomRight then
-		setDeviceRow(
-			"inset",
-			string.format(
-				"左上 (%d,%d) · 右下 (%d,%d)",
-				math.floor(topLeft.X),
-				math.floor(topLeft.Y),
-				math.floor(bottomRight.X),
-				math.floor(bottomRight.Y)
-			)
-		)
-	else
-		setDeviceRow("inset", "客户端未提供")
-	end
-
-	local elapsed = math.floor(os.clock() - scriptStartedAt)
-	setDeviceRow("runtime", formatTime(elapsed))
-end
-
-----------------------------------------------------------------
--- 当前服务器信息：仅显示客户端可访问的信息
-----------------------------------------------------------------
-
-local serverPage = pages.Server
-
-local serverNote = createLabel(
-	serverPage,
-	"这是当前实例的客户端可见信息；服务器 IP 等信息不会由此脚本读取。",
-	UDim2.new(1, -4, 0, 36),
-	UDim2.new(),
-	"muted",
-	11
-)
-
-local serverRows = {}
-
-local function createServerRow(key, title, initialText)
-	local row = createInfoRow(serverPage, "server_" .. key, title, initialText or "读取中…")
-	serverRows[key] = deviceRows["server_" .. key]
-	return row
-end
-
-createServerRow("type", "服务器类型")
-createServerRow("players", "当前人数 / 人数上限")
-createServerRow("placeId", "PlaceId")
-createServerRow("gameId", "GameId")
-createServerRow("jobId", "当前实例 JobId")
-createServerRow("placeVersion", "体验版本 PlaceVersion")
-createServerRow("privateServerId", "PrivateServerId")
-createServerRow("privateOwner", "PrivateServerOwnerId")
-createServerRow("creator", "体验创建者 ID")
-createServerRow("serverIp", "服务器 IP", "Roblox 客户端不会提供")
-
-local playerListCard = newGui("Frame", serverPage, {
-	Name = "CurrentPlayersCard",
-	Size = UDim2.new(1, -4, 0, 190),
+local playerListCard = newGui("Frame", infoPage, {
+	Name = "ServerPlayerListCard",
+	Size = UDim2.new(1, -4, 0, 150),
 	BorderSizePixel = 0,
 }, "card")
 addCorner(playerListCard, 9)
 
-local playerListTitle = createLabel(
+createLabel(
 	playerListCard,
 	"当前服务器玩家",
-	UDim2.new(1, -16, 0, 22),
-	UDim2.new(0, 9, 0, 5),
+	UDim2.new(1, -16, 0, 20),
 	"text",
-	12
+	{
+		Position = UDim2.new(0, 9, 0, 4),
+		TextSize = 11,
+		Font = Enum.Font.GothamBold,
+	}
 )
-playerListTitle.Font = Enum.Font.GothamBold
 
 local playerListScroll = newGui("ScrollingFrame", playerListCard, {
 	Name = "PlayerList",
-	Size = UDim2.new(1, -16, 1, -36),
-	Position = UDim2.new(0, 8, 0, 30),
+	Size = UDim2.new(1, -16, 1, -32),
+	Position = UDim2.new(0, 8, 0, 27),
 	BackgroundTransparency = 1,
 	BorderSizePixel = 0,
 	CanvasSize = UDim2.new(0, 0, 0, 0),
@@ -1590,6 +1438,193 @@ playerListLayout.Padding = UDim.new(0, 2)
 playerListLayout.SortOrder = Enum.SortOrder.LayoutOrder
 playerListLayout.Parent = playerListScroll
 
+local function readProperty(object, property, fallback)
+	local success, value = pcall(function()
+		return object[property]
+	end)
+
+	if success and value ~= nil then
+		return value
+	end
+
+	return fallback
+end
+
+local function enumName(value)
+	if value == nil then
+		return "不可用"
+	end
+
+	local text = tostring(value)
+	return text:match("%.([^%.]+)$") or text
+end
+
+local function getPingText()
+	local success, result = pcall(function()
+		local network = Stats:FindFirstChild("Network")
+		local serverStats = network and network:FindFirstChild("ServerStatsItem")
+		local pingItem = serverStats and serverStats:FindFirstChild("Data Ping")
+
+		if pingItem then
+			return pingItem:GetValueString()
+		end
+
+		return nil
+	end)
+
+	if success and result then
+		return result
+	end
+
+	return "客户端未提供"
+end
+
+local function getMemoryText()
+	local success, value = pcall(function()
+		return Stats:GetTotalMemoryUsageMb()
+	end)
+
+	if success and tonumber(value) then
+		return string.format("%.1f MB", value)
+	end
+
+	return "客户端未提供"
+end
+
+local function getGraphicsText()
+	local success, settings = pcall(function()
+		return UserSettings():GetService("UserGameSettings")
+	end)
+
+	if not success or not settings then
+		return "客户端未提供"
+	end
+
+	local quality = readProperty(settings, "SavedQualityLevel", nil)
+	if quality ~= nil then
+		return enumName(quality)
+	end
+
+	return "客户端未提供"
+end
+
+local fpsFrameCount = 0
+local fpsElapsed = 0
+local fpsEstimate = 0
+
+RunService.RenderStepped:Connect(function(dt)
+	fpsFrameCount += 1
+	fpsElapsed += dt
+
+	if fpsElapsed >= 0.5 then
+		if fpsElapsed > 0 then
+			fpsEstimate = math.floor(fpsFrameCount / fpsElapsed + 0.5)
+		end
+		fpsFrameCount = 0
+		fpsElapsed = 0
+	end
+end)
+
+local function updateDeviceInfo()
+	local platformText = "不可用"
+	local platformSuccess, platform = pcall(function()
+		return UserInputService:GetPlatform()
+	end)
+	if platformSuccess then
+		platformText = enumName(platform)
+	end
+
+	deviceRows.platform.Text = platformText
+	deviceRows.player.Text =
+		player.DisplayName .. "  (@" .. player.Name .. ")"
+	deviceRows.account.Text =
+		tostring(player.UserId) .. " / " .. tostring(player.AccountAge) .. " 天"
+
+	local inputs = {}
+	if readProperty(UserInputService, "TouchEnabled", false) then
+		table.insert(inputs, "触屏")
+	end
+	if readProperty(UserInputService, "KeyboardEnabled", false) then
+		table.insert(inputs, "键盘")
+	end
+	if readProperty(UserInputService, "MouseEnabled", false) then
+		table.insert(inputs, "鼠标")
+	end
+	if readProperty(UserInputService, "GamepadEnabled", false) then
+		table.insert(inputs, "手柄")
+	end
+	if #inputs == 0 then
+		table.insert(inputs, "未报告")
+	end
+	deviceRows.input.Text = table.concat(inputs, " / ")
+
+	local inputSuccess, lastInput = pcall(function()
+		return UserInputService:GetLastInputType()
+	end)
+	deviceRows.lastInput.Text =
+		inputSuccess and enumName(lastInput) or "不可用"
+
+	local sensors = {}
+	if readProperty(UserInputService, "AccelerometerEnabled", false) then
+		table.insert(sensors, "加速度计")
+	end
+	if readProperty(UserInputService, "GyroscopeEnabled", false) then
+		table.insert(sensors, "陀螺仪")
+	end
+	deviceRows.sensors.Text =
+		#sensors > 0 and table.concat(sensors, " / ") or "未报告 / 不可用"
+
+	deviceRows.vr.Text =
+		readProperty(VRService, "VREnabled", false) and "已启用" or "未启用"
+
+	local camera = workspace.CurrentCamera
+	if camera then
+		local viewport = camera.ViewportSize
+		local orientation = viewport.X >= viewport.Y and "横向" or "纵向"
+
+		deviceRows.viewport.Text = string.format(
+			"%d × %d px · %s",
+			math.floor(viewport.X),
+			math.floor(viewport.Y),
+			orientation
+		)
+
+		deviceRows.camera.Text = string.format(
+			"%s · FOV %d°",
+			enumName(camera.CameraType),
+			math.floor(camera.FieldOfView + 0.5)
+		)
+	else
+		deviceRows.viewport.Text = "不可用"
+		deviceRows.camera.Text = "不可用"
+	end
+
+	deviceRows.fps.Text = tostring(fpsEstimate) .. " FPS（估算）"
+	deviceRows.ping.Text = getPingText()
+	deviceRows.memory.Text = getMemoryText()
+	deviceRows.graphics.Text = getGraphicsText()
+	deviceRows.locale.Text =
+		tostring(readProperty(LocalizationService, "RobloxLocaleId", "不可用"))
+
+	local insetSuccess, topLeft, bottomRight = pcall(function()
+		return GuiService:GetGuiInset()
+	end)
+
+	if insetSuccess and topLeft and bottomRight then
+		deviceRows.inset.Text = string.format(
+			"左上 (%d,%d) · 右下 (%d,%d)",
+			math.floor(topLeft.X),
+			math.floor(topLeft.Y),
+			math.floor(bottomRight.X),
+			math.floor(bottomRight.Y)
+		)
+	else
+		deviceRows.inset.Text = "客户端未提供"
+	end
+
+	deviceRows.runtime.Text = formatTime(os.clock() - scriptStartedAt)
+end
+
 local function updatePlayerList()
 	for _, child in ipairs(playerListScroll:GetChildren()) do
 		if child:IsA("TextLabel") then
@@ -1603,38 +1638,46 @@ local function updatePlayerList()
 	end)
 
 	if #playerList == 0 then
-		local empty = createLabel(
+		createLabel(
 			playerListScroll,
-			"当前没有其他玩家。",
+			"当前没有玩家。",
 			UDim2.new(1, -4, 0, 22),
-			UDim2.new(),
 			"muted",
-			11
+			{ TextSize = 10 }
 		)
-		empty.TextWrapped = false
 		return
 	end
 
 	for _, listedPlayer in ipairs(playerList) do
-		local suffix = listedPlayer == player and " · 你" or ""
-		local teamName = listedPlayer.Team and (" · " .. listedPlayer.Team.Name) or ""
-		local label = createLabel(
+		local teamText =
+			listedPlayer.Team and (" · " .. listedPlayer.Team.Name) or ""
+		local selfText = listedPlayer == player and " · 你" or ""
+
+		createLabel(
 			playerListScroll,
-			listedPlayer.DisplayName .. "  (@" .. listedPlayer.Name .. ")" .. teamName .. suffix,
+			listedPlayer.DisplayName
+				.. "  (@"
+				.. listedPlayer.Name
+				.. ")"
+				.. teamText
+				.. selfText,
 			UDim2.new(1, -4, 0, 22),
-			UDim2.new(),
 			"muted",
-			11
+			{
+				TextSize = 10,
+				TextWrapped = false,
+			}
 		)
-		label.TextWrapped = false
 	end
 end
 
 local function updateServerInfo()
-	local privateServerId = tostring(readProperty(game, "PrivateServerId", "") or "")
-	local privateOwner = tonumber(readProperty(game, "PrivateServerOwnerId", 0)) or 0
-	local isStudio = false
+	local privateServerId =
+		tostring(readProperty(game, "PrivateServerId", "") or "")
+	local privateOwner =
+		tonumber(readProperty(game, "PrivateServerOwnerId", 0)) or 0
 
+	local isStudio = false
 	pcall(function()
 		isStudio = RunService:IsStudio()
 	end)
@@ -1652,47 +1695,50 @@ local function updateServerInfo()
 
 	local maxPlayers = readProperty(Players, "MaxPlayers", nil)
 	local maxText = maxPlayers and tostring(maxPlayers) or "不可读取"
+	local jobId = tostring(readProperty(game, "JobId", "") or "")
 
-	if serverRows.type then
-		serverRows.type.Text = serverType
-		serverRows.players.Text = tostring(#Players:GetPlayers()) .. " / " .. maxText
-		serverRows.placeId.Text = tostring(readProperty(game, "PlaceId", "不可读取"))
-		serverRows.gameId.Text = tostring(readProperty(game, "GameId", "不可读取"))
-
-		local jobId = tostring(readProperty(game, "JobId", "") or "")
-		serverRows.jobId.Text = jobId ~= "" and jobId or "当前环境未提供"
-
-		serverRows.placeVersion.Text = tostring(readProperty(game, "PlaceVersion", "不可读取"))
-		serverRows.privateServerId.Text = privateServerId ~= "" and privateServerId or "无 / 未提供"
-		serverRows.privateOwner.Text = tostring(privateOwner)
-		serverRows.creator.Text = tostring(readProperty(game, "CreatorId", "不可读取"))
-		serverRows.serverIp.Text = "Roblox 客户端不会提供"
-	end
+	serverRows.type.Text = serverType
+	serverRows.players.Text =
+		tostring(#Players:GetPlayers()) .. " / " .. maxText
+	serverRows.placeId.Text =
+		tostring(readProperty(game, "PlaceId", "不可读取"))
+	serverRows.gameId.Text =
+		tostring(readProperty(game, "GameId", "不可读取"))
+	serverRows.jobId.Text =
+		jobId ~= "" and jobId or "当前环境未提供"
+	serverRows.placeVersion.Text =
+		tostring(readProperty(game, "PlaceVersion", "不可读取"))
+	serverRows.privateServerId.Text =
+		privateServerId ~= "" and privateServerId or "无 / 未提供"
+	serverRows.privateOwner.Text = tostring(privateOwner)
+	serverRows.creator.Text =
+		tostring(readProperty(game, "CreatorId", "不可读取"))
+	serverRows.serverIp.Text = "Roblox 客户端不会提供"
 
 	updatePlayerList()
 end
 
-Players.PlayerAdded:Connect(updateServerInfo)
-Players.PlayerRemoving:Connect(updateServerInfo)
-
 ----------------------------------------------------------------
--- 外观：面板大小、强调色、背景色
+-- 外观：大小、强调色和背景色
 ----------------------------------------------------------------
 
-local appearancePage = pages.Appearance
+local visualPage = pages.Visual
+local currentAccentIndex = 1
+local currentBackgroundIndex = 1
+local accentSwatches = {}
+local backgroundSwatches = {}
 
-local appearanceNote = createLabel(
-	appearancePage,
-	"这些外观选项仅在本机当前会话生效，不会更改其他玩家的画面。",
-	UDim2.new(1, -4, 0, 34),
-	UDim2.new(),
+createLabel(
+	visualPage,
+	"外观调整只在本机当前会话生效。",
+	UDim2.new(1, -4, 0, 28),
 	"muted",
-	11
+	{ TextSize = 10 }
 )
 
 local sizeSlider = createSlider(
-	appearancePage,
-	"整体大小",
+	visualPage,
+	"灵动岛整体大小",
 	0.75,
 	1.15,
 	1,
@@ -1701,50 +1747,42 @@ local sizeSlider = createSlider(
 	end,
 	function(value)
 		userScale = value
-		uiScale.Scale = value
+		updateLayout()
 	end,
 	0.05
 )
 
-createLabel(
-	appearancePage,
-	"强调色预设",
-	UDim2.new(1, -4, 0, 21),
-	UDim2.new(),
-	"text",
-	12
-)
+createSectionTitle(visualPage, "强调色")
 
 local function createColorSwatches(parent, presets, recordTable)
 	local row = newGui("Frame", parent, {
-		Size = UDim2.new(1, -4, 0, 38),
+		Size = UDim2.new(1, -4, 0, 36),
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 	}, nil)
 
-	for i, preset in ipairs(presets) do
-		local index = i
-		local swatch = newGui("TextButton", row, {
-			Size = UDim2.new(1 / #presets, -6, 1, -4),
-			Position = UDim2.new((index - 1) / #presets, 3, 0, 2),
+	for index, preset in ipairs(presets) do
+		local button = newGui("TextButton", row, {
+			Size = UDim2.new(1 / #presets, -5, 1, -4),
+			Position = UDim2.new((index - 1) / #presets, 2, 0, 2),
 			BorderSizePixel = 0,
 			BackgroundColor3 = preset.color,
 			AutoButtonColor = false,
 			Text = preset.name,
 			TextColor3 = contrastText(preset.color),
-			TextSize = 10,
+			TextSize = 9,
 			Font = Enum.Font.GothamMedium,
 		}, nil)
-		addCorner(swatch, 8)
+		addCorner(button, 8)
 
 		local stroke = Instance.new("UIStroke")
 		stroke.Thickness = 1
 		stroke.Transparency = 0.15
 		stroke.Color = Color3.new(1, 1, 1)
-		stroke.Parent = swatch
+		stroke.Parent = button
 
 		table.insert(recordTable, {
-			button = swatch,
+			button = button,
 			stroke = stroke,
 		})
 	end
@@ -1752,55 +1790,61 @@ local function createColorSwatches(parent, presets, recordTable)
 	return row
 end
 
-createColorSwatches(appearancePage, accentPresets, accentSwatches)
+createColorSwatches(visualPage, accentPresets, accentSwatches)
 
-createLabel(
-	appearancePage,
-	"背景预设",
-	UDim2.new(1, -4, 0, 21),
-	UDim2.new(),
-	"text",
-	12
-)
+createSectionTitle(visualPage, "背景色")
+createColorSwatches(visualPage, backgroundPresets, backgroundSwatches)
 
-createColorSwatches(appearancePage, backgroundPresets, backgroundSwatches)
-
-local _, accentHexRowButtons = createButtonRow(appearancePage, { "应用强调色 HEX" }, 38)
 local accentHexBox = createTextBox(
-	appearancePage,
-	"输入 #RRGGBB，例如 #1DB954",
-	UDim2.new(1, -4, 0, 38),
-	UDim2.new()
+	visualPage,
+	"强调色 HEX，例如 #1DB954",
+	UDim2.new(1, -4, 0, 36)
 )
-local applyAccentHexButton = accentHexRowButtons[1]
 
-local _, backgroundHexRowButtons = createButtonRow(appearancePage, { "应用背景 HEX" }, 38)
-local backgroundHexBox = createTextBox(
-	appearancePage,
-	"输入背景色 #RRGGBB",
-	UDim2.new(1, -4, 0, 38),
-	UDim2.new()
-)
-local applyBackgroundHexButton = backgroundHexRowButtons[1]
-
-local resetAppearanceButton = createButton(
-	appearancePage,
-	"恢复默认颜色和大小",
-	UDim2.new(1, -4, 0, 38),
+local applyAccentHexButton = createButton(
+	visualPage,
+	"应用强调色",
+	UDim2.new(1, -4, 0, 35),
 	UDim2.new(),
 	"button",
-	12
+	11
+)
+
+local backgroundHexBox = createTextBox(
+	visualPage,
+	"背景色 HEX，例如 #0C0D10",
+	UDim2.new(1, -4, 0, 36)
+)
+
+local applyBackgroundHexButton = createButton(
+	visualPage,
+	"应用背景色",
+	UDim2.new(1, -4, 0, 35),
+	UDim2.new(),
+	"button",
+	11
+)
+
+local resetAppearanceButton = createButton(
+	visualPage,
+	"恢复默认外观",
+	UDim2.new(1, -4, 0, 35),
+	UDim2.new(),
+	"button",
+	11
 )
 
 local function refreshAccentSwatches()
-	for i, record in ipairs(accentSwatches) do
-		record.stroke.Thickness = i == currentAccentIndex and 3 or 1
+	for index, record in ipairs(accentSwatches) do
+		record.stroke.Thickness =
+			index == currentAccentIndex and 3 or 1
 	end
 end
 
 local function refreshBackgroundSwatches()
-	for i, record in ipairs(backgroundSwatches) do
-		record.stroke.Thickness = i == currentBackgroundIndex and 3 or 1
+	for index, record in ipairs(backgroundSwatches) do
+		record.stroke.Thickness =
+			index == currentBackgroundIndex and 3 or 1
 	end
 end
 
@@ -1829,21 +1873,20 @@ local function parseHexColor(text)
 		return nil
 	end
 
-	local red = math.floor(value / 65536)
-	local green = math.floor((value % 65536) / 256)
-	local blue = value % 256
-	return Color3.fromRGB(red, green, blue)
+	return Color3.fromRGB(
+		math.floor(value / 65536),
+		math.floor((value % 65536) / 256),
+		value % 256
+	)
 end
 
-for i, preset in ipairs(accentPresets) do
-	local index = i
+for index, preset in ipairs(accentPresets) do
 	accentSwatches[index].button.Activated:Connect(function()
 		setAccentColor(preset.color, index)
 	end)
 end
 
-for i, preset in ipairs(backgroundPresets) do
-	local index = i
+for index, preset in ipairs(backgroundPresets) do
 	backgroundSwatches[index].button.Activated:Connect(function()
 		setBackgroundColor(preset.color, index)
 	end)
@@ -1854,7 +1897,7 @@ applyAccentHexButton.Activated:Connect(function()
 	if color then
 		setAccentColor(color, 0)
 	else
-		accentHexBox.PlaceholderText = "格式错误，请使用 #RRGGBB"
+		accentHexBox.PlaceholderText = "格式错误：请填写 #RRGGBB"
 	end
 end)
 
@@ -1863,7 +1906,7 @@ applyBackgroundHexButton.Activated:Connect(function()
 	if color then
 		setBackgroundColor(color, 0)
 	else
-		backgroundHexBox.PlaceholderText = "格式错误，请使用 #RRGGBB"
+		backgroundHexBox.PlaceholderText = "格式错误：请填写 #RRGGBB"
 	end
 end)
 
@@ -1874,55 +1917,51 @@ resetAppearanceButton.Activated:Connect(function()
 end)
 
 ----------------------------------------------------------------
--- 画面设置：本机滤镜、模糊和相机视野
+-- 本机画面设置：滤镜、模糊和 FOV
 ----------------------------------------------------------------
 
-local screenPage = pages.Screen
+local colorEffect = Instance.new("ColorCorrectionEffect")
+colorEffect.Name = "IslandLocalColorCorrection"
+colorEffect.Enabled = false
+colorEffect.Parent = Lighting
 
-local screenColorEffect = Instance.new("ColorCorrectionEffect")
-screenColorEffect.Name = "IslandLocalColorCorrection"
-screenColorEffect.Enabled = false
-screenColorEffect.Parent = Lighting
+local blurEffect = Instance.new("BlurEffect")
+blurEffect.Name = "IslandLocalBlur"
+blurEffect.Enabled = false
+blurEffect.Size = 0
+blurEffect.Parent = Lighting
 
-local screenBlurEffect = Instance.new("BlurEffect")
-screenBlurEffect.Name = "IslandLocalBlur"
-screenBlurEffect.Enabled = false
-screenBlurEffect.Size = 0
-screenBlurEffect.Parent = Lighting
-
-local screenNote = createLabel(
-	screenPage,
-	"滤镜、模糊和 FOV 只修改你本机画面；游戏本身可能会覆盖 FOV。",
-	UDim2.new(1, -4, 0, 38),
-	UDim2.new(),
+createLabel(
+	visualPage,
+	"以下画面效果只作用于本机；游戏脚本可能会覆盖 FOV。",
+	UDim2.new(1, -4, 0, 33),
 	"muted",
-	11
+	{ TextSize = 10 }
 )
 
 local screenStatusLabel = createLabel(
-	screenPage,
+	visualPage,
 	"画面效果：关闭",
-	UDim2.new(1, -4, 0, 23),
-	UDim2.new(),
+	UDim2.new(1, -4, 0, 22),
 	"accentText",
-	11
+	{ TextSize = 10 }
 )
 
-createLabel(
-	screenPage,
-	"画面预设",
-	UDim2.new(1, -4, 0, 20),
-	UDim2.new(),
-	"text",
-	12
+createSectionTitle(visualPage, "画面预设")
+
+local _, screenPresetButtons1 = createButtonRow(
+	visualPage,
+	{ "默认", "暖色", "冷色" },
+	35
+)
+local _, screenPresetButtons2 = createButtonRow(
+	visualPage,
+	{ "黑白", "高对比" },
+	35
 )
 
-local _, screenPresetRow1 = createButtonRow(screenPage, { "默认", "暖色", "冷色" }, 38)
-local _, screenPresetRow2 = createButtonRow(screenPage, { "黑白", "高对比" }, 38)
-
-local screenBrightnessSlider
-screenBrightnessSlider = createSlider(
-	screenPage,
+local brightnessSlider = createSlider(
+	visualPage,
 	"亮度微调",
 	-0.2,
 	0.2,
@@ -1931,16 +1970,15 @@ screenBrightnessSlider = createSlider(
 		return string.format("%.2f", value)
 	end,
 	function(value)
-		screenColorEffect.Brightness = value
-		screenColorEffect.Enabled = true
+		colorEffect.Brightness = value
+		colorEffect.Enabled = true
 		screenStatusLabel.Text = "画面效果：自定义"
 	end,
 	0.01
 )
 
-local screenContrastSlider
-screenContrastSlider = createSlider(
-	screenPage,
+local contrastSlider = createSlider(
+	visualPage,
 	"对比度",
 	-0.5,
 	0.5,
@@ -1949,16 +1987,15 @@ screenContrastSlider = createSlider(
 		return string.format("%.2f", value)
 	end,
 	function(value)
-		screenColorEffect.Contrast = value
-		screenColorEffect.Enabled = true
+		colorEffect.Contrast = value
+		colorEffect.Enabled = true
 		screenStatusLabel.Text = "画面效果：自定义"
 	end,
 	0.01
 )
 
-local screenSaturationSlider
-screenSaturationSlider = createSlider(
-	screenPage,
+local saturationSlider = createSlider(
+	visualPage,
 	"饱和度",
 	-1,
 	1,
@@ -1967,16 +2004,15 @@ screenSaturationSlider = createSlider(
 		return string.format("%.2f", value)
 	end,
 	function(value)
-		screenColorEffect.Saturation = value
-		screenColorEffect.Enabled = true
+		colorEffect.Saturation = value
+		colorEffect.Enabled = true
 		screenStatusLabel.Text = "画面效果：自定义"
 	end,
 	0.05
 )
 
-local screenBlurSlider
-screenBlurSlider = createSlider(
-	screenPage,
+local blurSlider = createSlider(
+	visualPage,
 	"本机模糊",
 	0,
 	15,
@@ -1985,24 +2021,24 @@ screenBlurSlider = createSlider(
 		return tostring(math.floor(value + 0.5))
 	end,
 	function(value)
-		screenBlurEffect.Size = value
-		screenBlurEffect.Enabled = value > 0.05
-		screenStatusLabel.Text = value > 0.05 and "画面效果：自定义" or "本机模糊：关闭"
+		blurEffect.Size = value
+		blurEffect.Enabled = value > 0.05
+		screenStatusLabel.Text =
+			value > 0.05 and "本机模糊：开启" or "本机模糊：关闭"
 	end,
 	1
 )
 
+local cameraFovOriginals = setmetatable({}, { __mode = "k" })
 local initialCamera = workspace.CurrentCamera
 local initialFov = initialCamera and initialCamera.FieldOfView or 70
-local savedFovByCamera = setmetatable({}, { __mode = "k" })
 
 if initialCamera then
-	savedFovByCamera[initialCamera] = initialFov
+	cameraFovOriginals[initialCamera] = initialFov
 end
 
-local fovSlider
-fovSlider = createSlider(
-	screenPage,
+local fovSlider = createSlider(
+	visualPage,
 	"本机摄像机 FOV",
 	50,
 	120,
@@ -2022,88 +2058,84 @@ fovSlider = createSlider(
 )
 
 local resetFovButton = createButton(
-	screenPage,
-	"恢复当前摄像机原始 FOV",
-	UDim2.new(1, -4, 0, 38),
+	visualPage,
+	"恢复摄像机原始 FOV",
+	UDim2.new(1, -4, 0, 35),
 	UDim2.new(),
 	"button",
-	12
+	11
 )
 
 local resetScreenButton = createButton(
-	screenPage,
+	visualPage,
 	"关闭滤镜和模糊",
-	UDim2.new(1, -4, 0, 38),
+	UDim2.new(1, -4, 0, 35),
 	UDim2.new(),
 	"button",
-	12
+	11
 )
 
-local function applyScreenPreset(presetName)
+local function applyScreenPreset(name)
 	local brightness = 0
 	local contrast = 0
 	local saturation = 0
 	local tint = Color3.new(1, 1, 1)
-	local blur = 0
 	local enabled = true
 
-	if presetName == "默认" then
+	if name == "默认" then
 		enabled = false
-	elseif presetName == "暖色" then
+	elseif name == "暖色" then
 		brightness = 0.02
 		contrast = 0.04
 		saturation = 0.10
 		tint = Color3.fromRGB(255, 235, 218)
-	elseif presetName == "冷色" then
+	elseif name == "冷色" then
 		brightness = 0.01
 		contrast = 0.04
 		saturation = 0.06
 		tint = Color3.fromRGB(218, 235, 255)
-	elseif presetName == "黑白" then
+	elseif name == "黑白" then
 		saturation = -1
-	elseif presetName == "高对比" then
+	elseif name == "高对比" then
 		contrast = 0.22
 		saturation = 0.12
 	end
 
-	screenColorEffect.Brightness = brightness
-	screenColorEffect.Contrast = contrast
-	screenColorEffect.Saturation = saturation
-	screenColorEffect.TintColor = tint
-	screenColorEffect.Enabled = enabled
+	colorEffect.Brightness = brightness
+	colorEffect.Contrast = contrast
+	colorEffect.Saturation = saturation
+	colorEffect.TintColor = tint
+	colorEffect.Enabled = enabled
 
-	screenBlurEffect.Size = blur
-	screenBlurEffect.Enabled = blur > 0
+	blurEffect.Enabled = false
+	blurEffect.Size = 0
 
-	screenBrightnessSlider:SetValue(brightness, false)
-	screenContrastSlider:SetValue(contrast, false)
-	screenSaturationSlider:SetValue(saturation, false)
-	screenBlurSlider:SetValue(blur, false)
+	brightnessSlider:SetValue(brightness, false)
+	contrastSlider:SetValue(contrast, false)
+	saturationSlider:SetValue(saturation, false)
+	blurSlider:SetValue(0, false)
 
-	if enabled then
-		screenStatusLabel.Text = "画面预设：" .. presetName
-	else
-		screenStatusLabel.Text = "画面效果：关闭"
-	end
+	screenStatusLabel.Text =
+		enabled and ("画面预设：" .. name) or "画面效果：关闭"
 end
 
-screenPresetRow1[1].Activated:Connect(function()
+screenPresetButtons1[1].Activated:Connect(function()
 	applyScreenPreset("默认")
 end)
 
-screenPresetRow1[2].Activated:Connect(function()
+screenPresetButtons1[2].Activated:Connect(function()
 	applyScreenPreset("暖色")
 end)
 
-screenPresetRow1[3].Activated:Connect(function()
+screenPresetButtons1[3].Activated:Connect(function()
 	applyScreenPreset("冷色")
 end)
 
-screenPresetRow2[1].Activated:Connect(function()
+screenPresetButtons2[1].Activated:Connect(function()
 	applyScreenPreset("黑白")
 end)
 
-screenPresetRow2[2].Activated:Connect(function()
+screenPresetButtons2[2].Activated:Connect(function()
 	applyScreenPreset("高对比")
 end)
 
@@ -2116,8 +2148,8 @@ local function captureCameraFov(camera)
 		return
 	end
 
-	if savedFovByCamera[camera] == nil then
-		savedFovByCamera[camera] = camera.FieldOfView
+	if cameraFovOriginals[camera] == nil then
+		cameraFovOriginals[camera] = camera.FieldOfView
 	end
 
 	fovSlider:SetValue(math.clamp(camera.FieldOfView, 50, 120), false)
@@ -2129,77 +2161,156 @@ resetFovButton.Activated:Connect(function()
 		return
 	end
 
-	local original = savedFovByCamera[camera] or 70
+	local original = cameraFovOriginals[camera] or 70
 	pcall(function()
 		camera.FieldOfView = original
 	end)
+
 	fovSlider:SetValue(math.clamp(original, 50, 120), false)
 end)
 
-workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
-	task.defer(function()
-		captureCameraFov(workspace.CurrentCamera)
-	end)
-end)
-
 ----------------------------------------------------------------
--- 防甩飞：仅检测和处理本地玩家角色
+-- 异常迹象检测与本地防甩飞
 ----------------------------------------------------------------
 
-local protectionPage = pages.Protection
+local safetyPage = pages.Safety
 
-local protectionNote = createLabel(
-	protectionPage,
-	"客户端防护只检查你的角色，不操作其他玩家；服务器强制物理效果不保证能完全拦截。",
-	UDim2.new(1, -4, 0, 48),
-	UDim2.new(),
+createLabel(
+	safetyPage,
+	"只读检查本机能看到的角色数据。异常迹象不等于作弊证据；正常技能也可能触发。",
+	UDim2.new(1, -4, 0, 46),
 	"muted",
+	{ TextSize = 10 }
+)
+
+local scannerEnabled = true
+local maxWalkSpeed = 36
+local maxHorizontalSpeed = 120
+local teleportSpeedThreshold = 180
+local jumpPowerThreshold = 110
+local jumpHeightThreshold = 25
+
+local scannerToggle = createButton(
+	safetyPage,
+	"异常检查：开启",
+	UDim2.new(1, -4, 0, 37),
+	UDim2.new(),
+	"accentButton",
 	11
 )
+
+local scannerSummary = createLabel(
+	safetyPage,
+	"正在初始化异常迹象检查…",
+	UDim2.new(1, -4, 0, 30),
+	"accentText",
+	{ TextSize = 10 }
+)
+
+local anomalyList = newGui("Frame", safetyPage, {
+	Name = "AnomalyList",
+	Size = UDim2.new(1, -4, 0, 0),
+	AutomaticSize = Enum.AutomaticSize.Y,
+	BackgroundTransparency = 1,
+	BorderSizePixel = 0,
+}, nil)
+
+local anomalyLayout = Instance.new("UIListLayout")
+anomalyLayout.Padding = UDim.new(0, 6)
+anomalyLayout.SortOrder = Enum.SortOrder.LayoutOrder
+anomalyLayout.Parent = anomalyList
+
+local anomalyEmptyLabel = createLabel(
+	anomalyList,
+	"当前没有检测到明显异常。",
+	UDim2.new(1, 0, 0, 34),
+	"muted",
+	{ TextSize = 10 }
+)
+anomalyEmptyLabel.Name = "AnomalyEmpty"
+anomalyEmptyLabel.LayoutOrder = -1
+
+createSectionTitle(safetyPage, "检查阈值")
+
+local walkThresholdSlider = createSlider(
+	safetyPage,
+	"WalkSpeed 提示阈值",
+	20,
+	120,
+	maxWalkSpeed,
+	function(value)
+		return tostring(math.floor(value + 0.5))
+	end,
+	function(value)
+		maxWalkSpeed = value
+	end,
+	2
+)
+
+local horizontalThresholdSlider = createSlider(
+	safetyPage,
+	"水平速度提示阈值",
+	40,
+	300,
+	maxHorizontalSpeed,
+	function(value)
+		return tostring(math.floor(value + 0.5)) .. " studs/s"
+	end,
+	function(value)
+		maxHorizontalSpeed = value
+	end,
+	10
+)
+
+local teleportThresholdSlider = createSlider(
+	safetyPage,
+	"短时位移提示阈值",
+	80,
+	600,
+	teleportSpeedThreshold,
+	function(value)
+		return tostring(math.floor(value + 0.5)) .. " studs/s"
+	end,
+	function(value)
+		teleportSpeedThreshold = value
+	end,
+	20
+)
+
+createLabel(
+	safetyPage,
+	"跳跃属性提示阈值：JumpPower > 110 或 JumpHeight > 25。可调高阈值以减少正常玩法误报。",
+	UDim2.new(1, -4, 0, 42),
+	"muted",
+	{ TextSize = 10 }
+)
+
+createSectionTitle(safetyPage, "只作用于自己的防甩飞")
 
 local antiFlingEnabled = true
 local antiFlingThreshold = 160
+local antiFlingNoticeAt = 0
 
 local antiFlingToggle = createButton(
-	protectionPage,
-	"",
-	UDim2.new(1, -4, 0, 42),
+	safetyPage,
+	"防甩飞：开启",
+	UDim2.new(1, -4, 0, 37),
 	UDim2.new(),
 	"accentButton",
-	12
-)
-
-local antiFlingStatus = createLabel(
-	protectionPage,
-	"本地角色监测已开启。",
-	UDim2.new(1, -4, 0, 36),
-	UDim2.new(),
-	"accentText",
 	11
 )
 
-local function refreshAntiFlingUI()
-	if antiFlingEnabled then
-		antiFlingToggle.Text = "防甩飞：开启（仅本机角色）"
-		setStyle(antiFlingToggle, "accentButton")
-		if antiFlingStatus.Text == "防甩飞已关闭。" then
-			antiFlingStatus.Text = "本地角色监测已开启。"
-		end
-	else
-		antiFlingToggle.Text = "防甩飞：关闭"
-		setStyle(antiFlingToggle, "button")
-		antiFlingStatus.Text = "防甩飞已关闭。"
-	end
-end
+local antiFlingStatus = createLabel(
+	safetyPage,
+	"只监测自己的角色；服务器强制物理效果不保证能拦截。",
+	UDim2.new(1, -4, 0, 32),
+	"muted",
+	{ TextSize = 10 }
+)
 
-antiFlingToggle.Activated:Connect(function()
-	antiFlingEnabled = not antiFlingEnabled
-	refreshAntiFlingUI()
-end)
-
-local antiFlingThresholdSlider = createSlider(
-	protectionPage,
-	"异常速度触发阈值",
+local antiFlingSlider = createSlider(
+	safetyPage,
+	"本地异常速度处理阈值",
 	80,
 	300,
 	antiFlingThreshold,
@@ -2207,33 +2318,303 @@ local antiFlingThresholdSlider = createSlider(
 		return tostring(math.floor(value + 0.5)) .. " studs/s"
 	end,
 	function(value)
-		antiFlingThreshold = math.floor(value + 0.5)
+		antiFlingThreshold = value
 	end,
 	10
 )
 
-local antiFlingHint = createLabel(
-	protectionPage,
-	"阈值越低，拦截越积极；游戏本身有高速移动、弹射或载具玩法时，可调高阈值或关闭。",
-	UDim2.new(1, -4, 0, 48),
-	UDim2.new(),
-	"muted",
-	11
-)
+antiFlingToggle.Activated:Connect(function()
+	antiFlingEnabled = not antiFlingEnabled
 
-refreshAntiFlingUI()
+	if antiFlingEnabled then
+		antiFlingToggle.Text = "防甩飞：开启"
+		setStyle(antiFlingToggle, "accentButton")
+		antiFlingStatus.Text = "只监测自己的角色；服务器强制物理效果不保证能拦截。"
+	else
+		antiFlingToggle.Text = "防甩飞：关闭"
+		setStyle(antiFlingToggle, "button")
+		antiFlingStatus.Text = "防甩飞已关闭。"
+	end
+end)
 
-local currentCharacter
-local currentHumanoid
-local currentRoot
-local characterBoundAt = 0
-local lastFlingNoticeAt = 0
+local anomalyStates = {}
+local movementSamples = {}
 
-local function bindCharacter(character)
-	currentCharacter = character
-	currentHumanoid = nil
-	currentRoot = nil
-	characterBoundAt = os.clock()
+local function refreshAnomalyList()
+	for _, child in ipairs(anomalyList:GetChildren()) do
+		if child:IsA("Frame") and child.Name == "SuspiciousPlayerRow" then
+			child:Destroy()
+		end
+	end
+
+	if not scannerEnabled then
+		scannerSummary.Text = "异常检查已关闭。"
+		anomalyEmptyLabel.Text = "检查已关闭。"
+		anomalyEmptyLabel.Visible = true
+		return
+	end
+
+	local otherPlayerCount = math.max(#Players:GetPlayers() - 1, 0)
+	local results = {}
+	local now = os.clock()
+
+	for target, state in pairs(anomalyStates) do
+		if target.Parent == Players
+			and state.expires
+			and state.expires > now
+			and #state.reasons > 0 then
+			table.insert(results, {
+				player = target,
+				state = state,
+			})
+		end
+	end
+
+	table.sort(results, function(a, b)
+		return a.state.lastDetected > b.state.lastDetected
+	end)
+
+	scannerSummary.Text = string.format(
+		"检查其他玩家：%d 人 · 有异常迹象：%d 人",
+		otherPlayerCount,
+		#results
+	)
+
+	anomalyEmptyLabel.Visible = #results == 0
+	if #results == 0 then
+		anomalyEmptyLabel.Text = "当前没有检测到明显异常。"
+	end
+
+	local displayCount = math.min(#results, 20)
+
+	for index = 1, displayCount do
+		local result = results[index]
+		local target = result.player
+		local state = result.state
+
+		local row = newGui("Frame", anomalyList, {
+			Name = "SuspiciousPlayerRow",
+			Size = UDim2.new(1, 0, 0, 58),
+			BorderSizePixel = 0,
+			LayoutOrder = index,
+		}, "card")
+		addCorner(row, 9)
+
+		createLabel(
+			row,
+			"⚠ " .. target.DisplayName .. "  (@" .. target.Name .. ")",
+			UDim2.new(1, -14, 0, 20),
+			"accentText",
+			{
+				Position = UDim2.new(0, 8, 0, 4),
+				TextSize = 10,
+				Font = Enum.Font.GothamBold,
+				TextTruncate = Enum.TextTruncate.AtEnd,
+			}
+		)
+
+		createLabel(
+			row,
+			table.concat(state.reasons, " · "),
+			UDim2.new(1, -14, 0, 29),
+			"muted",
+			{
+				Position = UDim2.new(0, 8, 0, 25),
+				TextSize = 9,
+				TextYAlignment = Enum.TextYAlignment.Top,
+			}
+		)
+	end
+
+	if #results > displayCount then
+		createLabel(
+			anomalyList,
+			"还有 " .. tostring(#results - displayCount) .. " 位未显示。",
+			UDim2.new(1, -4, 0, 24),
+			"muted",
+			{ TextSize = 9 }
+		)
+	end
+end
+
+local function scanOtherPlayers()
+	if not scannerEnabled then
+		return
+	end
+
+	local now = os.clock()
+	local seen = {}
+
+	for _, target in ipairs(Players:GetPlayers()) do
+		if target ~= player then
+			seen[target] = true
+
+			local state = anomalyStates[target]
+			if not state then
+				state = {
+					reasons = {},
+					expires = 0,
+					lastDetected = 0,
+				}
+				anomalyStates[target] = state
+			end
+
+			local character = target.Character
+			local humanoid =
+				character and character:FindFirstChildOfClass("Humanoid")
+			local rootPart =
+				character
+				and (
+					character:FindFirstChild("HumanoidRootPart")
+					or character.PrimaryPart
+				)
+
+			if character and humanoid and rootPart and humanoid.Health > 0 then
+				local sample = movementSamples[target]
+
+				if not sample or sample.character ~= character then
+					sample = {
+						character = character,
+						position = rootPart.Position,
+						time = now,
+						spawnedAt = now,
+					}
+					movementSamples[target] = sample
+				end
+
+				local reasons = {}
+				local settled = now - sample.spawnedAt >= 2
+				local seated =
+					humanoid.SeatPart ~= nil or humanoid.Sit
+
+				if settled then
+					local walkSpeed = humanoid.WalkSpeed
+					if walkSpeed > maxWalkSpeed then
+						table.insert(
+							reasons,
+							string.format(
+								"WalkSpeed %.0f > %.0f",
+								walkSpeed,
+								maxWalkSpeed
+							)
+						)
+					end
+
+					if humanoid.UseJumpPower then
+						if humanoid.JumpPower > jumpPowerThreshold then
+							table.insert(
+								reasons,
+								string.format(
+									"JumpPower %.0f > %d",
+									humanoid.JumpPower,
+									jumpPowerThreshold
+								)
+							)
+						end
+					elseif humanoid.JumpHeight > jumpHeightThreshold then
+						table.insert(
+							reasons,
+							string.format(
+								"JumpHeight %.1f > %d",
+								humanoid.JumpHeight,
+								jumpHeightThreshold
+							)
+						)
+					end
+
+					if not seated then
+						local velocity = rootPart.AssemblyLinearVelocity
+						local horizontalSpeed =
+							Vector2.new(velocity.X, velocity.Z).Magnitude
+
+						if horizontalSpeed > maxHorizontalSpeed then
+							table.insert(
+								reasons,
+								string.format(
+									"水平速度 %.0f > %.0f",
+									horizontalSpeed,
+									maxHorizontalSpeed
+								)
+							)
+						end
+
+						local dt = now - sample.time
+						if dt >= 0.15 and dt <= 1.5 then
+							local distance =
+								(rootPart.Position - sample.position).Magnitude
+							local displacementSpeed = distance / dt
+
+							if distance >= 60
+								and displacementSpeed > teleportSpeedThreshold then
+								table.insert(
+									reasons,
+									string.format(
+										"短时位移约 %.0f studs/s",
+										displacementSpeed
+									)
+								)
+							end
+						end
+					end
+				end
+
+				if #reasons > 0 then
+					state.reasons = reasons
+					state.expires = now + 8
+					state.lastDetected = now
+				end
+
+				sample.position = rootPart.Position
+				sample.time = now
+
+				if state.expires <= now then
+					state.reasons = {}
+				end
+			else
+				movementSamples[target] = nil
+
+				if state.expires <= now then
+					state.reasons = {}
+				end
+			end
+		end
+	end
+
+	for target in pairs(anomalyStates) do
+		if not seen[target] then
+			anomalyStates[target] = nil
+			movementSamples[target] = nil
+		end
+	end
+end
+
+scannerToggle.Activated:Connect(function()
+	scannerEnabled = not scannerEnabled
+	scannerToggle.Text =
+		scannerEnabled and "异常检查：开启" or "异常检查：关闭"
+	setStyle(
+		scannerToggle,
+		scannerEnabled and "accentButton" or "button"
+	)
+
+	if not scannerEnabled then
+		table.clear(anomalyStates)
+		table.clear(movementSamples)
+	end
+
+	refreshAnomalyList()
+end)
+
+local localCharacter
+local localHumanoid
+local localRootPart
+local localCharacterBoundAt = 0
+
+local function bindLocalCharacter(character)
+	localCharacter = character
+	localHumanoid = nil
+	localRootPart = nil
+	localCharacterBoundAt = os.clock()
 
 	task.spawn(function()
 		local humanoid = character:WaitForChild("Humanoid", 10)
@@ -2243,70 +2624,66 @@ local function bindCharacter(character)
 			return
 		end
 
-		currentHumanoid = humanoid
-		currentRoot = rootPart
-		characterBoundAt = os.clock()
+		localHumanoid = humanoid
+		localRootPart = rootPart
+		localCharacterBoundAt = os.clock()
 	end)
 end
 
-player.CharacterAdded:Connect(bindCharacter)
+player.CharacterAdded:Connect(bindLocalCharacter)
 
 player.CharacterRemoving:Connect(function(character)
-	if currentCharacter == character then
-		currentCharacter = nil
-		currentHumanoid = nil
-		currentRoot = nil
+	if localCharacter == character then
+		localCharacter = nil
+		localHumanoid = nil
+		localRootPart = nil
 	end
 end)
 
 if player.Character then
-	bindCharacter(player.Character)
+	bindLocalCharacter(player.Character)
 end
 
 ----------------------------------------------------------------
--- 拖动位置、更新界面与本地防甩飞监测
+-- 拖动灵动岛位置
 ----------------------------------------------------------------
 
 local draggingIsland = false
-local dragInput
-local dragStartPointer
-local dragStartPosition
+local dragInput = nil
+local dragStartPointer = nil
+local dragStartX = 0
+local dragStartY = 0
 
-dragHandle.InputBegan:Connect(function(input)
+dragArea.InputBegan:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton1
 		or input.UserInputType == Enum.UserInputType.Touch then
 		draggingIsland = true
 		dragInput = input
-		dragStartPointer = input.Position
-		dragStartPosition = root.Position
+		dragStartPointer = Vector2.new(input.Position.X, input.Position.Y)
+		dragStartX = root.Position.X.Offset
+		dragStartY = root.Position.Y.Offset
 	end
 end)
 
 UserInputService.InputChanged:Connect(function(input)
-	if not draggingIsland or not dragStartPointer or not dragStartPosition then
+	if not draggingIsland or not dragStartPointer then
 		return
 	end
 
 	if input.UserInputType == Enum.UserInputType.MouseMovement
 		or input.UserInputType == Enum.UserInputType.Touch then
-		local delta = input.Position - dragStartPointer
+
+		local pointer = Vector2.new(input.Position.X, input.Position.Y)
+		local delta = pointer - dragStartPointer
 		local viewport = getViewportSize()
 		local halfWidth = root.AbsoluteSize.X / 2
-		local maxHorizontalOffset = math.max(0, (viewport.X / 2) - halfWidth - 6)
 
-		local xOffset = dragStartPosition.X.Offset + delta.X
-		local yOffset = dragStartPosition.Y.Offset + delta.Y
-		xOffset = math.clamp(xOffset, -maxHorizontalOffset, maxHorizontalOffset)
+		local maxX = math.max(0, viewport.X / 2 - halfWidth - 4)
+		local maxY = math.max(4, viewport.Y - root.AbsoluteSize.Y - 8)
 
-		local maxVerticalOffset = math.max(6, viewport.Y - root.AbsoluteSize.Y - 8)
-		yOffset = math.clamp(yOffset, 6, maxVerticalOffset)
-
-		root.Position = UDim2.new(
-			dragStartPosition.X.Scale,
-			xOffset,
-			dragStartPosition.Y.Scale,
-			yOffset
-		)
+		rootOffsetX = math.clamp(dragStartX + delta.X, -maxX, maxX)
+		rootOffsetY = math.clamp(dragStartY + delta.Y, 4, maxY)
+		root.Position = UDim2.new(0.5, rootOffsetX, 0, rootOffsetY)
 	end
 end)
 
@@ -2317,38 +2694,85 @@ UserInputService.InputEnded:Connect(function(input)
 		draggingIsland = false
 		dragInput = nil
 		dragStartPointer = nil
-		dragStartPosition = nil
 	end
 end)
 
-local deviceUpdateTimer = 0
-local serverUpdateTimer = 0
+----------------------------------------------------------------
+-- 刷新与初始化
+----------------------------------------------------------------
+
+local function updateCameraAndLayout()
+	updateLayout()
+	captureCameraFov(workspace.CurrentCamera)
+end
+
+workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(updateCameraAndLayout)
+
+local cameraViewportConnection = nil
+
+local function bindViewportSize()
+	if cameraViewportConnection then
+		cameraViewportConnection:Disconnect()
+		cameraViewportConnection = nil
+	end
+
+	local camera = workspace.CurrentCamera
+	if camera then
+		cameraViewportConnection =
+			camera:GetPropertyChangedSignal("ViewportSize"):Connect(updateLayout)
+	end
+
+	updateLayout()
+end
+
+workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(bindViewportSize)
+bindViewportSize()
+
+Players.PlayerAdded:Connect(function()
+	updateServerInfo()
+end)
+
+Players.PlayerRemoving:Connect(function(leavingPlayer)
+	anomalyStates[leavingPlayer] = nil
+	movementSamples[leavingPlayer] = nil
+	updateServerInfo()
+	refreshAnomalyList()
+end)
+
+local deviceTimer = 0
+local serverTimer = 0
+local scanTimer = 0
+local anomalyUiTimer = 0
 
 RunService.Heartbeat:Connect(function(dt)
-	-- 只监测本地玩家角色，不遍历或修改其他玩家角色。
+	-- 本地防甩飞：只检查本地玩家，不遍历或修改其他角色。
 	if antiFlingEnabled
-		and currentCharacter
-		and currentHumanoid
-		and currentRoot
-		and currentHumanoid.Health > 0
-		and currentRoot.Parent
-		and not currentRoot.Anchored
-		and os.clock() - characterBoundAt > 1
-	then
-		local seated = currentHumanoid.SeatPart ~= nil or currentHumanoid.Sit
+		and localCharacter
+		and localHumanoid
+		and localRootPart
+		and localHumanoid.Health > 0
+		and localRootPart.Parent
+		and not localRootPart.Anchored
+		and os.clock() - localCharacterBoundAt > 1 then
+
+		local seated =
+			localHumanoid.SeatPart ~= nil or localHumanoid.Sit
+
 		if not seated then
-			local linearSpeed = currentRoot.AssemblyLinearVelocity.Magnitude
-			local angularSpeed = currentRoot.AssemblyAngularVelocity.Magnitude
+			local linearSpeed = localRootPart.AssemblyLinearVelocity.Magnitude
+			local angularSpeed =
+				localRootPart.AssemblyAngularVelocity.Magnitude
 			local angularThreshold = math.max(220, antiFlingThreshold * 1.5)
 
-			if linearSpeed > antiFlingThreshold or angularSpeed > angularThreshold then
+			if linearSpeed > antiFlingThreshold
+				or angularSpeed > angularThreshold then
 				pcall(function()
-					currentRoot.AssemblyLinearVelocity = Vector3.zero
-					currentRoot.AssemblyAngularVelocity = Vector3.zero
+					localRootPart.AssemblyLinearVelocity = Vector3.zero
+					localRootPart.AssemblyAngularVelocity = Vector3.zero
 				end)
 
-				if os.clock() - lastFlingNoticeAt > 1.5 then
-					lastFlingNoticeAt = os.clock()
+				if os.clock() - antiFlingNoticeAt > 1.5 then
+					antiFlingNoticeAt = os.clock()
 					antiFlingStatus.Text = string.format(
 						"已处理本地角色异常速度（%.0f studs/s）。",
 						linearSpeed
@@ -2358,34 +2782,42 @@ RunService.Heartbeat:Connect(function(dt)
 		end
 	end
 
-	-- 刷新播放进度。
-	if progressSlider and currentIndex > 0 and sound.TimeLength > 0 and not progressSlider:IsDragging() then
-		local ratio = math.clamp(sound.TimePosition / sound.TimeLength, 0, 1)
-		progressSlider:SetValue(ratio, false)
+	-- 更新歌曲进度。
+	if currentIndex > 0
+		and sound.TimeLength > 0
+		and not progressSlider.IsDragging() then
+		progressSlider:SetValue(
+			math.clamp(sound.TimePosition / sound.TimeLength, 0, 1),
+			false
+		)
 	end
 
-	-- 设备信息每秒刷新；服务器玩家信息每数秒刷新。
-	deviceUpdateTimer += dt
-	serverUpdateTimer += dt
+	deviceTimer += dt
+	serverTimer += dt
+	scanTimer += dt
+	anomalyUiTimer += dt
 
-	if deviceUpdateTimer >= 1 then
-		deviceUpdateTimer = 0
+	if deviceTimer >= 1 then
+		deviceTimer = 0
 		updateDeviceInfo()
 	end
 
-	if serverUpdateTimer >= 3 then
-		serverUpdateTimer = 0
+	if serverTimer >= 3 then
+		serverTimer = 0
 		updateServerInfo()
+	end
+
+	if scanTimer >= 0.5 then
+		scanTimer = 0
+		scanOtherPlayers()
+	end
+
+	if anomalyUiTimer >= 1 then
+		anomalyUiTimer = 0
+		refreshAnomalyList()
 	end
 end)
 
-local function updateMainLayoutForCamera()
-	updateLayout()
-end
-
-workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(updateMainLayoutForCamera)
-
--- 初始状态
 selectTab("Music")
 updateLayout()
 refreshPlaylist()
@@ -2394,5 +2826,6 @@ updatePlaybackButtons()
 applyEQ(1)
 updateDeviceInfo()
 updateServerInfo()
+refreshAnomalyList()
 refreshAccentSwatches()
 refreshBackgroundSwatches()
