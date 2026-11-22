@@ -1,24 +1,11 @@
 
---[[
-    DYNAMIC ISLAND PREMIUM V6.0 ULTIMATE
-    Complete LocalScript
-    Location: StarterPlayer > StarterPlayerScripts
+--========================================================
+-- DYNAMIC ISLAND PREMIUM V6.1 - GLASS EDITION
+-- Complete LocalScript
+-- StarterPlayer > StarterPlayerScripts
+--========================================================
 
-    ORIGINAL FEATURES:
-    Music / Notifications / Device / Time / Network / Settings / Anti-Fling
-
-    NEW V6.0 FEATURES:
-    Performance history / Multiple countdowns / Stopwatch laps
-    Notification categories / Recent music / Theme presets
-    Settings reset / Session statistics
-
-    No exploit or cheating features.
-]]
-
---==================================================
--- 1. SERVICES
---==================================================
-
+-- SERVICES
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
@@ -29,55 +16,229 @@ local Stats = game:GetService("Stats")
 local Player = Players.LocalPlayer
 local PlayerGui = Player:WaitForChild("PlayerGui")
 
---==================================================
--- 2. CONFIGURATION
---==================================================
+--========================================================
+-- CONFIGURATION
+--========================================================
 
 local Config = {
     Accent = Color3.fromRGB(105, 175, 255),
-    Background = Color3.fromRGB(12, 15, 23),
-    Transparency = 0.10,
+    Background = Color3.fromRGB(10, 13, 21),
+    Transparency = 0.08,
+    Volume = 0.5,
+    Scale = 1,
     Compact = false,
     ReducedMotion = false,
     HighContrast = false,
     AntiFling = false,
-    Volume = 0.5,
-    Scale = 1,
-    Width = 570,
-    Height = 465,
     NotificationSound = false,
+    Width = 620,
+    Height = 490,
 }
 
-local Themes = {
+local ThemeColors = {
     Color3.fromRGB(105, 175, 255),
     Color3.fromRGB(180, 125, 255),
-    Color3.fromRGB(100, 225, 175),
+    Color3.fromRGB(90, 220, 170),
     Color3.fromRGB(255, 145, 125),
     Color3.fromRGB(255, 205, 100),
-    Color3.fromRGB(255, 255, 255),
+    Color3.fromRGB(245, 245, 255),
 }
 
 local ThemeIndex = 1
+local Destroyed = false
+local Connections = {}
 
---==================================================
--- 3. STATE
---==================================================
+local function Connect(connection)
+    table.insert(Connections, connection)
+    return connection
+end
+
+--========================================================
+-- HELPERS
+--========================================================
+
+local function New(className, props, parent)
+    local object = Instance.new(className)
+
+    for key, value in pairs(props or {}) do
+        object[key] = value
+    end
+
+    object.Parent = parent
+    return object
+end
+
+local function Round(object, radius)
+    New("UICorner", {
+        CornerRadius = UDim.new(0, radius or 12)
+    }, object)
+end
+
+local function Stroke(object, color, transparency, thickness)
+    return New("UIStroke", {
+        Color = color or Config.Accent,
+        Transparency = transparency or 0.6,
+        Thickness = thickness or 1,
+    }, object)
+end
+
+local function Tween(object, properties, duration)
+    if Config.ReducedMotion then
+        for key, value in pairs(properties) do
+            object[key] = value
+        end
+        return
+    end
+
+    local animation = TweenService:Create(
+        object,
+        TweenInfo.new(
+            duration or 0.2,
+            Enum.EasingStyle.Quint,
+            Enum.EasingDirection.Out
+        ),
+        properties
+    )
+
+    animation:Play()
+    return animation
+end
+
+local function Text(parent, value, size, color, bold)
+    return New("TextLabel", {
+        BackgroundTransparency = 1,
+        Text = tostring(value or ""),
+        TextSize = size or 12,
+        TextColor3 = color or Color3.fromRGB(235, 240, 250),
+        Font = bold and Enum.Font.GothamBold or Enum.Font.GothamMedium,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextYAlignment = Enum.TextYAlignment.Center,
+        TextWrapped = true,
+    }, parent)
+end
+
+local function MakeButton(parent, value, callback, width, height)
+    local button = New("TextButton", {
+        Size = UDim2.fromOffset(width or 100, height or 34),
+        BackgroundColor3 = Color3.fromRGB(35, 43, 59),
+        Text = value,
+        TextColor3 = Color3.fromRGB(240, 244, 255),
+        TextSize = 11,
+        Font = Enum.Font.GothamBold,
+        AutoButtonColor = false,
+        BorderSizePixel = 0,
+    }, parent)
+
+    Round(button, 9)
+
+    button.MouseEnter:Connect(function()
+        Tween(button, {
+            BackgroundColor3 = Color3.fromRGB(54, 66, 87)
+        }, 0.12)
+    end)
+
+    button.MouseLeave:Connect(function()
+        Tween(button, {
+            BackgroundColor3 = Color3.fromRGB(35, 43, 59)
+        }, 0.12)
+    end)
+
+    button.MouseButton1Click:Connect(function()
+        if callback then
+            local success, err = pcall(callback)
+            if not success then
+                warn("[Island] Button:", err)
+            end
+        end
+    end)
+
+    return button
+end
+
+local function MakeCard(parent, height)
+    local card = New("Frame", {
+        Size = UDim2.new(1, 0, 0, height),
+        BackgroundColor3 = Color3.fromRGB(25, 31, 44),
+        BackgroundTransparency = 0.12,
+        BorderSizePixel = 0,
+    }, parent)
+
+    Round(card, 15)
+    Stroke(card, Color3.fromRGB(115, 145, 190), 0.82, 1)
+
+    return card
+end
+
+local function Heading(parent, value)
+    local label = Text(parent, value, 11, Config.Accent, true)
+    label.Size = UDim2.new(1, 0, 0, 25)
+    return label
+end
+
+local function MakeInput(parent, placeholder, default, width)
+    local input = New("TextBox", {
+        Size = UDim2.new(1, -(width or 20), 0, 35),
+        BackgroundColor3 = Color3.fromRGB(13, 17, 26),
+        Text = default or "",
+        PlaceholderText = placeholder,
+        PlaceholderColor3 = Color3.fromRGB(125, 137, 155),
+        TextColor3 = Color3.fromRGB(245, 247, 255),
+        TextSize = 11,
+        Font = Enum.Font.Gotham,
+        ClearTextOnFocus = false,
+        BorderSizePixel = 0,
+    }, parent)
+
+    Round(input, 9)
+    Stroke(input, Color3.fromRGB(90, 110, 145), 0.8)
+
+    return input
+end
+
+local function FormatTime(seconds)
+    seconds = math.max(0, math.floor(seconds))
+
+    local h = math.floor(seconds / 3600)
+    local m = math.floor((seconds % 3600) / 60)
+    local s = seconds % 60
+
+    if h > 0 then
+        return string.format("%02d:%02d:%02d", h, m, s)
+    end
+
+    return string.format("%02d:%02d", m, s)
+end
+
+local function ValidNumber(value)
+    local number = tonumber(value)
+
+    if not number or number ~= number or number == math.huge then
+        return nil
+    end
+
+    return number
+end
+
+--========================================================
+-- STATE
+--========================================================
 
 local Playlist = {}
 local RecentTracks = {}
 local CurrentTrack = 1
-local RandomMode = false
-local RepeatMode = false
+local Shuffle = false
+local RepeatMode = 0
+-- 0 = Off, 1 = All, 2 = One
 
 local Notifications = {}
 local NotificationFilter = "All"
 
-local StopwatchRunning = false
-local StopwatchTime = 0
-local StopwatchLaps = {}
-
 local Timers = {}
-local NextTimerId = 0
+local TimerId = 0
+
+local StopwatchTime = 0
+local StopwatchRunning = false
+local Laps = {}
 
 local FPS = 0
 local Ping = 0
@@ -90,187 +251,20 @@ local AntiFlingCount = 0
 local Expanded = false
 local CurrentPage = "Music"
 
-local Connections = {}
-local Destroyed = false
+--========================================================
+-- MUSIC ENGINE
+--========================================================
 
-local function trackConnection(connection)
-    table.insert(Connections, connection)
-    return connection
-end
-
---==================================================
--- 4. GENERAL HELPERS
---==================================================
-
-local function Create(className, properties, parent)
-    local object = Instance.new(className)
-
-    for property, value in pairs(properties or {}) do
-        object[property] = value
-    end
-
-    object.Parent = parent
-    return object
-end
-
-local function Corner(object, radius)
-    Create("UICorner", {
-        CornerRadius = UDim.new(0, radius or 12),
-    }, object)
-end
-
-local function Outline(object, color, transparency)
-    return Create("UIStroke", {
-        Color = color or Config.Accent,
-        Transparency = transparency or 0.6,
-        Thickness = 1,
-    }, object)
-end
-
-local function Animate(object, properties, duration)
-    if Config.ReducedMotion then
-        for key, value in pairs(properties) do
-            object[key] = value
-        end
-        return nil
-    end
-
-    local tween = TweenService:Create(
-        object,
-        TweenInfo.new(
-            duration or 0.22,
-            Enum.EasingStyle.Quint,
-            Enum.EasingDirection.Out
-        ),
-        properties
-    )
-
-    tween:Play()
-    return tween
-end
-
-local function Label(parent, text, size, color, bold)
-    return Create("TextLabel", {
-        BackgroundTransparency = 1,
-        Text = text or "",
-        TextSize = size or 12,
-        TextColor3 = color or Color3.fromRGB(235, 240, 250),
-        Font = bold and Enum.Font.GothamBold or Enum.Font.Gotham,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        TextYAlignment = Enum.TextYAlignment.Center,
-        TextWrapped = true,
-    }, parent)
-end
-
-local function Button(parent, text, callback, width)
-    local button = Create("TextButton", {
-        Size = UDim2.fromOffset(width or 110, 34),
-        BackgroundColor3 = Color3.fromRGB(36, 43, 57),
-        Text = text,
-        TextColor3 = Color3.fromRGB(245, 247, 255),
-        TextSize = 11,
-        Font = Enum.Font.GothamMedium,
-        AutoButtonColor = false,
-    }, parent)
-
-    Corner(button, 9)
-
-    button.MouseEnter:Connect(function()
-        Animate(button, {
-            BackgroundColor3 = Color3.fromRGB(52, 63, 82),
-        }, 0.12)
-    end)
-
-    button.MouseLeave:Connect(function()
-        Animate(button, {
-            BackgroundColor3 = Color3.fromRGB(36, 43, 57),
-        }, 0.12)
-    end)
-
-    button.MouseButton1Click:Connect(function()
-        if callback then
-            local ok, err = pcall(callback)
-            if not ok then
-                warn("[Dynamic Island] Button error:", err)
-            end
-        end
-    end)
-
-    return button
-end
-
-local function Card(parent, height)
-    local card = Create("Frame", {
-        Size = UDim2.new(1, 0, 0, height),
-        BackgroundColor3 = Color3.fromRGB(24, 29, 40),
-        BackgroundTransparency = 0.08,
-        BorderSizePixel = 0,
-    }, parent)
-
-    Corner(card, 14)
-    Outline(card, Color3.fromRGB(100, 120, 155), 0.82)
-
-    return card
-end
-
-local function Section(parent, text)
-    local label = Label(parent, text, 12, Config.Accent, true)
-    label.Size = UDim2.new(1, 0, 0, 25)
-    return label
-end
-
-local function Input(parent, placeholder, defaultText, width)
-    local box = Create("TextBox", {
-        Size = UDim2.new(1, -(width or 20), 0, 34),
-        BackgroundColor3 = Color3.fromRGB(13, 17, 25),
-        Text = defaultText or "",
-        PlaceholderText = placeholder,
-        PlaceholderColor3 = Color3.fromRGB(125, 135, 150),
-        TextColor3 = Color3.fromRGB(245, 247, 255),
-        TextSize = 11,
-        Font = Enum.Font.Gotham,
-        ClearTextOnFocus = false,
-    }, parent)
-
-    Corner(box, 8)
-    return box
-end
-
-local function FormatTime(seconds)
-    seconds = math.max(0, math.floor(seconds))
-
-    local hours = math.floor(seconds / 3600)
-    local minutes = math.floor((seconds % 3600) / 60)
-    local secs = seconds % 60
-
-    if hours > 0 then
-        return string.format("%02d:%02d:%02d", hours, minutes, secs)
-    end
-
-    return string.format("%02d:%02d", minutes, secs)
-end
-
-local function SafeNumber(value)
-    local number = tonumber(value)
-    if not number or number ~= number or number == math.huge then
-        return nil
-    end
-    return number
-end
-
---==================================================
--- 5. MUSIC ENGINE
---==================================================
-
-local Music = SoundService:FindFirstChild("DynamicIslandV60Music")
+local Music = SoundService:FindFirstChild("DynamicIslandV61Music")
 
 if not Music then
     Music = Instance.new("Sound")
-    Music.Name = "DynamicIslandV60Music"
+    Music.Name = "DynamicIslandV61Music"
     Music.Volume = Config.Volume
-    Music.Looped = false
     Music.Parent = SoundService
 end
+
+Music.Volume = Config.Volume
 
 local function AddRecent(id)
     for i = #RecentTracks, 1, -1 do
@@ -288,12 +282,12 @@ end
 
 local function PlayTrack(index)
     if #Playlist == 0 then
-        return false, "Playlist is empty"
+        return
     end
 
     CurrentTrack = math.clamp(index, 1, #Playlist)
 
-    local id = tostring(Playlist[CurrentTrack])
+    local id = Playlist[CurrentTrack]
 
     Music:Stop()
     Music.SoundId = "rbxassetid://" .. id
@@ -302,26 +296,23 @@ local function PlayTrack(index)
     Music:Play()
 
     AddRecent(id)
-
-    return true
 end
 
 local function NextTrack()
     if #Playlist == 0 then return end
 
-    if RandomMode and #Playlist > 1 then
+    if Shuffle and #Playlist > 1 then
         local nextIndex = CurrentTrack
 
-        for _ = 1, 8 do
+        repeat
             nextIndex = math.random(1, #Playlist)
-            if nextIndex ~= CurrentTrack then
-                break
-            end
-        end
+        until nextIndex ~= CurrentTrack
 
         PlayTrack(nextIndex)
-    else
-        PlayTrack(CurrentTrack % #Playlist + 1)
+    elseif CurrentTrack < #Playlist then
+        PlayTrack(CurrentTrack + 1)
+    elseif RepeatMode == 1 then
+        PlayTrack(1)
     end
 end
 
@@ -333,23 +324,29 @@ local function PreviousTrack()
         return
     end
 
-    PlayTrack((CurrentTrack - 2) % #Playlist + 1)
+    if CurrentTrack > 1 then
+        PlayTrack(CurrentTrack - 1)
+    elseif RepeatMode == 1 then
+        PlayTrack(#Playlist)
+    else
+        Music.TimePosition = 0
+    end
 end
 
-Music.Ended:Connect(function()
+Connect(Music.Ended:Connect(function()
     if Destroyed then return end
 
-    if RepeatMode then
+    if RepeatMode == 2 then
         Music.TimePosition = 0
         Music:Play()
-    elseif #Playlist > 0 then
+    else
         NextTrack()
     end
-end)
+end))
 
---==================================================
--- 6. NOTIFICATION ENGINE
---==================================================
+--========================================================
+-- NOTIFICATIONS
+--========================================================
 
 local function Notify(title, message, category)
     table.insert(Notifications, {
@@ -363,151 +360,163 @@ local function Notify(title, message, category)
     while #Notifications > 60 do
         table.remove(Notifications, 1)
     end
-
-    if Config.NotificationSound then
-        -- Sound is intentionally optional.
-        -- No external sound asset is forced.
-    end
 end
 
---==================================================
--- 7. REMOVE OLD GUI
---==================================================
+--========================================================
+-- CLEAN OLD GUI
+--========================================================
 
-local OldGui = PlayerGui:FindFirstChild("DynamicIslandPremiumV60")
-if OldGui then
-    OldGui:Destroy()
+local Old = PlayerGui:FindFirstChild("DynamicIslandPremiumV61")
+
+if Old then
+    Old:Destroy()
 end
 
-local ScreenGui = Create("ScreenGui", {
-    Name = "DynamicIslandPremiumV60",
+local Gui = New("ScreenGui", {
+    Name = "DynamicIslandPremiumV61",
     ResetOnSpawn = false,
     IgnoreGuiInset = true,
     ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 }, PlayerGui)
 
-local ScaleObject = Create("UIScale", {
-    Scale = Config.Scale,
-}, ScreenGui)
+local UIScale = New("UIScale", {
+    Scale = Config.Scale
+}, Gui)
 
---==================================================
--- 8. MAIN GLASS ISLAND
---==================================================
+--========================================================
+-- MAIN ISLAND
+--========================================================
 
-local Main = Create("Frame", {
-    Name = "Island",
+local Main = New("Frame", {
+    Name = "MainIsland",
     AnchorPoint = Vector2.new(0.5, 0),
     Position = UDim2.new(0.5, 0, 0, 12),
-    Size = UDim2.fromOffset(195, 48),
+    Size = UDim2.fromOffset(210, 54),
     BackgroundColor3 = Config.Background,
     BackgroundTransparency = Config.Transparency,
     BorderSizePixel = 0,
     ClipsDescendants = true,
-}, ScreenGui)
+}, Gui)
 
-Corner(Main, 23)
-Outline(Main, Color3.fromRGB(125, 145, 180), 0.45)
+Round(Main, 25)
+Stroke(Main, Color3.fromRGB(135, 155, 195), 0.35, 1.2)
 
-Create("UIGradient", {
+New("UIGradient", {
     Rotation = 135,
     Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(40, 49, 67)),
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(39, 49, 69)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(19, 24, 36)),
         ColorSequenceKeypoint.new(1, Color3.fromRGB(8, 11, 18)),
     }),
 }, Main)
 
-local TopBar = Create("Frame", {
-    Size = UDim2.new(1, 0, 0, 48),
-    BackgroundTransparency = 1,
+-- Soft glass highlight
+local Highlight = New("Frame", {
+    Position = UDim2.new(0, 12, 0, 2),
+    Size = UDim2.new(1, -24, 0, 1),
+    BackgroundColor3 = Color3.fromRGB(220, 235, 255),
+    BackgroundTransparency = 0.72,
+    BorderSizePixel = 0,
 }, Main)
 
-local TopTitle = Create("TextLabel", {
-    Position = UDim2.new(0, 17, 0, 0),
-    Size = UDim2.new(1, -48, 1, 0),
-    BackgroundTransparency = 1,
-    Text = "◉  DYNAMIC ISLAND",
-    TextColor3 = Color3.fromRGB(245, 247, 255),
-    TextSize = 12,
-    Font = Enum.Font.GothamBold,
-    TextXAlignment = Enum.TextXAlignment.Left,
-}, TopBar)
+Round(Highlight, 2)
 
-local StatusDot = Create("Frame", {
+--========================================================
+-- COLLAPSED ISLAND CONTENT
+--========================================================
+
+local MiniIcon = Text(Main, "M", 15, Config.Accent, true)
+MiniIcon.Position = UDim2.new(0, 15, 0, 4)
+MiniIcon.Size = UDim2.fromOffset(32, 43)
+MiniIcon.TextXAlignment = Enum.TextXAlignment.Center
+
+local MiniTitle = Text(Main, "DYNAMIC ISLAND", 10, Color3.new(1, 1, 1), true)
+MiniTitle.Position = UDim2.new(0, 53, 0, 7)
+MiniTitle.Size = UDim2.new(1, -105, 0, 18)
+
+local MiniStatus = Text(Main, "Premium Glass", 9, Color3.fromRGB(155, 170, 195))
+MiniStatus.Position = UDim2.new(0, 53, 0, 26)
+MiniStatus.Size = UDim2.new(1, -105, 0, 15)
+
+local MiniDot = New("Frame", {
     AnchorPoint = Vector2.new(1, 0.5),
-    Position = UDim2.new(1, -16, 0.5, 0),
-    Size = UDim2.fromOffset(7, 7),
+    Position = UDim2.new(1, -17, 0.5, 0),
+    Size = UDim2.fromOffset(8, 8),
     BackgroundColor3 = Color3.fromRGB(90, 225, 160),
-}, TopBar)
+    BorderSizePixel = 0,
+}, Main)
 
-Corner(StatusDot, 10)
+Round(MiniDot, 10)
 
-local ToggleButton = Create("TextButton", {
+local Toggle = New("TextButton", {
     Size = UDim2.fromScale(1, 1),
     BackgroundTransparency = 1,
     Text = "",
     AutoButtonColor = false,
-}, TopBar)
+}, Main)
 
---==================================================
--- 9. PANEL / SIDEBAR / PAGES
---==================================================
+--========================================================
+-- EXPANDED PANEL
+--========================================================
 
-local Panel = Create("Frame", {
-    Position = UDim2.new(0, 0, 0, 48),
-    Size = UDim2.new(1, 0, 1, -48),
+local Panel = New("Frame", {
+    Position = UDim2.new(0, 0, 0, 54),
+    Size = UDim2.new(1, 0, 1, -54),
     BackgroundTransparency = 1,
 }, Main)
 
-local Sidebar = Create("Frame", {
-    Position = UDim2.new(0, 11, 0, 9),
-    Size = UDim2.new(0, 112, 1, -18),
-    BackgroundColor3 = Color3.fromRGB(17, 21, 30),
-    BackgroundTransparency = 0.12,
+local Sidebar = New("Frame", {
+    Position = UDim2.new(0, 12, 0, 10),
+    Size = UDim2.new(0, 122, 1, -20),
+    BackgroundColor3 = Color3.fromRGB(15, 20, 30),
+    BackgroundTransparency = 0.08,
+    BorderSizePixel = 0,
 }, Panel)
 
-Corner(Sidebar, 14)
+Round(Sidebar, 15)
+Stroke(Sidebar, Color3.fromRGB(100, 120, 155), 0.87)
 
-Create("UIPadding", {
-    PaddingTop = UDim.new(0, 8),
+New("UIPadding", {
+    PaddingTop = UDim.new(0, 9),
     PaddingLeft = UDim.new(0, 7),
     PaddingRight = UDim.new(0, 7),
 }, Sidebar)
 
-Create("UIListLayout", {
-    Padding = UDim.new(0, 5),
+New("UIListLayout", {
+    Padding = UDim.new(0, 6),
     SortOrder = Enum.SortOrder.LayoutOrder,
 }, Sidebar)
 
-local Content = Create("Frame", {
-    Position = UDim2.new(0, 135, 0, 9),
-    Size = UDim2.new(1, -146, 1, -18),
+local Content = New("Frame", {
+    Position = UDim2.new(0, 146, 0, 10),
+    Size = UDim2.new(1, -158, 1, -20),
     BackgroundTransparency = 1,
     ClipsDescendants = true,
 }, Panel)
 
 local Pages = {}
-local Navigation = {}
+local NavButtons = {}
 
 local function CreatePage(name)
-    local page = Create("ScrollingFrame", {
+    local page = New("ScrollingFrame", {
         Name = name,
         Size = UDim2.fromScale(1, 1),
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
         ScrollBarThickness = 3,
         ScrollBarImageColor3 = Config.Accent,
-        CanvasSize = UDim2.new(),
         AutomaticCanvasSize = Enum.AutomaticSize.Y,
+        CanvasSize = UDim2.new(),
         Visible = false,
     }, Content)
 
-    Create("UIPadding", {
-        PaddingRight = UDim.new(0, 7),
+    New("UIPadding", {
+        PaddingRight = UDim.new(0, 6),
         PaddingBottom = UDim.new(0, 12),
     }, page)
 
-    Create("UIListLayout", {
-        Padding = UDim.new(0, 8),
+    New("UIListLayout", {
+        Padding = UDim.new(0, 9),
         SortOrder = Enum.SortOrder.LayoutOrder,
     }, page)
 
@@ -524,41 +533,41 @@ local function OpenPage(name)
         page.Visible = pageName == name
     end
 
-    for pageName, button in pairs(Navigation) do
+    for pageName, button in pairs(NavButtons) do
         local selected = pageName == name
 
         button.BackgroundColor3 = selected
-            and Color3.fromRGB(43, 58, 80)
-            or Color3.fromRGB(25, 30, 41)
+            and Color3.fromRGB(45, 63, 88)
+            or Color3.fromRGB(23, 29, 41)
 
         button.TextColor3 = selected
             and Config.Accent
-            or Color3.fromRGB(195, 202, 215)
+            or Color3.fromRGB(190, 200, 215)
     end
 
-    TopTitle.Text = Expanded
-        and ("◉  DYNAMIC ISLAND  •  " .. name:upper())
-        or "◉  DYNAMIC ISLAND"
+    MiniTitle.Text = "DYNAMIC ISLAND"
+    MiniStatus.Text = name .. "  /  V6.1"
 end
 
-local function AddNav(name, symbol)
-    local button = Create("TextButton", {
-        Size = UDim2.new(1, 0, 0, 36),
-        BackgroundColor3 = Color3.fromRGB(25, 30, 41),
-        Text = symbol .. "  " .. name,
-        TextColor3 = Color3.fromRGB(195, 202, 215),
+local function AddNavigation(name, symbol)
+    local button = New("TextButton", {
+        Size = UDim2.new(1, 0, 0, 38),
+        BackgroundColor3 = Color3.fromRGB(23, 29, 41),
+        Text = symbol .. "    " .. name,
+        TextColor3 = Color3.fromRGB(190, 200, 215),
         TextSize = 11,
-        Font = Enum.Font.GothamMedium,
+        Font = Enum.Font.GothamBold,
         AutoButtonColor = false,
+        BorderSizePixel = 0,
     }, Sidebar)
 
-    Corner(button, 9)
+    Round(button, 10)
 
     button.MouseButton1Click:Connect(function()
         OpenPage(name)
     end)
 
-    Navigation[name] = button
+    NavButtons[name] = button
 end
 
 local MusicPage = CreatePage("Music")
@@ -568,216 +577,378 @@ local TimePage = CreatePage("Time")
 local NetworkPage = CreatePage("Network")
 local SettingsPage = CreatePage("Settings")
 
-AddNav("Music", "♫")
-AddNav("Notifications", "◉")
-AddNav("Device", "▣")
-AddNav("Time", "◷")
-AddNav("Network", "⌁")
-AddNav("Settings", "⚙")
+-- Simple glyphs plus text labels: no emoji dependency.
+AddNavigation("Music", "M")
+AddNavigation("Notifications", "N")
+AddNavigation("Device", "D")
+AddNavigation("Time", "T")
+AddNavigation("Network", "P")
+AddNavigation("Settings", "S")
 
---==================================================
--- 10. MUSIC PAGE
---==================================================
+--========================================================
+-- MUSIC PAGE - PREMIUM PLAYER
+--========================================================
 
-Section(MusicPage, "NOW PLAYING")
+Heading(MusicPage, "MUSIC PLAYER")
 
-local MusicCard = Card(MusicPage, 132)
+local PlayerCard = MakeCard(MusicPage, 174)
 
-local Cover = Create("ImageLabel", {
-    Position = UDim2.new(0, 11, 0, 11),
-    Size = UDim2.fromOffset(78, 78),
-    BackgroundColor3 = Color3.fromRGB(42, 52, 72),
-    Image = "",
-    ScaleType = Enum.ScaleType.Crop,
-}, MusicCard)
+local Album = New("Frame", {
+    Position = UDim2.new(0, 13, 0, 13),
+    Size = UDim2.fromOffset(105, 105),
+    BackgroundColor3 = Color3.fromRGB(45, 61, 88),
+    BorderSizePixel = 0,
+}, PlayerCard)
 
-Corner(Cover, 12)
+Round(Album, 15)
 
-local CoverSymbol = Create("TextLabel", {
-    Size = UDim2.fromScale(1, 1),
-    BackgroundTransparency = 1,
-    Text = "♫",
-    TextColor3 = Config.Accent,
-    TextSize = 32,
-    Font = Enum.Font.GothamBold,
-}, Cover)
+New("UIGradient", {
+    Rotation = 45,
+    Color = ColorSequence.new(
+        Config.Accent,
+        Color3.fromRGB(35, 42, 75)
+    ),
+}, Album)
 
-local TrackTitle = Label(MusicCard, "No Track", 13, Color3.new(1, 1, 1), true)
-TrackTitle.Position = UDim2.new(0, 101, 0, 12)
-TrackTitle.Size = UDim2.new(1, -110, 0, 23)
+local AlbumSymbol = Text(Album, "MUSIC", 16, Color3.new(1, 1, 1), true)
+AlbumSymbol.Size = UDim2.fromScale(1, 1)
+AlbumSymbol.TextXAlignment = Enum.TextXAlignment.Center
 
-local TrackStatus = Label(MusicCard, "Ready to play", 10, Color3.fromRGB(160, 175, 195))
-TrackStatus.Position = UDim2.new(0, 101, 0, 37)
-TrackStatus.Size = UDim2.new(1, -110, 0, 20)
+local SongName = Text(PlayerCard, "No song selected", 13, Color3.new(1, 1, 1), true)
+SongName.Position = UDim2.new(0, 130, 0, 12)
+SongName.Size = UDim2.new(1, -142, 0, 24)
 
-local PlayButton
-PlayButton = Button(MusicCard, "▶ Play", function()
-    if Music.IsPlaying then
-        Music:Pause()
-        PlayButton.Text = "▶ Play"
-    elseif Music.SoundId ~= "" then
-        Music:Resume()
-        PlayButton.Text = "Ⅱ Pause"
-    else
-        Notify("Music", "Add an Audio ID first", "Music")
-    end
-end, 78)
+local SongState = Text(PlayerCard, "Add an Audio ID to begin", 9, Color3.fromRGB(160, 175, 195))
+SongState.Position = UDim2.new(0, 130, 0, 37)
+SongState.Size = UDim2.new(1, -142, 0, 20)
 
-PlayButton.Position = UDim2.new(0, 101, 0, 68)
+local ProgressBack = New("Frame", {
+    Position = UDim2.new(0, 130, 0, 72),
+    Size = UDim2.new(1, -145, 0, 6),
+    BackgroundColor3 = Color3.fromRGB(63, 73, 91),
+    BorderSizePixel = 0,
+}, PlayerCard)
 
-local PrevButton = Button(MusicCard, "◀", PreviousTrack, 32)
-PrevButton.Position = UDim2.new(0, 11, 1, -34)
+Round(ProgressBack, 6)
 
-local NextButton = Button(MusicCard, "▶▶", NextTrack, 43)
-NextButton.Position = UDim2.new(0, 50, 1, -34)
-
-local MusicInputCard = Card(MusicPage, 104)
-
-local MusicInput = Input(MusicInputCard, "Enter Roblox Audio ID", "", 20)
-MusicInput.Position = UDim2.new(0, 10, 0, 10)
-
-local AddTrackButton = Button(MusicInputCard, "+ Add Track", function()
-    local id = MusicInput.Text:gsub("%s+", "")
-
-    if not id:match("^%d+$") then
-        Notify("Music", "Audio ID must contain numbers only", "Music")
-        return
-    end
-
-    table.insert(Playlist, id)
-    MusicInput.Text = ""
-
-    Notify("Music", "Added Audio ID " .. id, "Music")
-
-    if #Playlist == 1 then
-        PlayTrack(1)
-    end
-end, 105)
-
-AddTrackButton.Position = UDim2.new(0, 10, 0, 55)
-
-local ShuffleButton
-ShuffleButton = Button(MusicInputCard, "Shuffle: OFF", function()
-    RandomMode = not RandomMode
-    ShuffleButton.Text = RandomMode and "Shuffle: ON" or "Shuffle: OFF"
-end, 105)
-
-ShuffleButton.Position = UDim2.new(0, 123, 0, 55)
-
-local RepeatButton
-RepeatButton = Button(MusicInputCard, "Repeat: OFF", function()
-    RepeatMode = not RepeatMode
-    RepeatButton.Text = RepeatMode and "Repeat: ON" or "Repeat: OFF"
-end, 105)
-
-RepeatButton.Position = UDim2.new(0, 236, 0, 55)
-
-local PlaylistCard = Card(MusicPage, 120)
-
-local PlaylistTitle = Label(PlaylistCard, "PLAYLIST (0)", 11, Config.Accent, true)
-PlaylistTitle.Position = UDim2.new(0, 11, 0, 7)
-PlaylistTitle.Size = UDim2.new(1, -22, 0, 20)
-
-local PlaylistText = Label(PlaylistCard, "No tracks added", 10)
-PlaylistText.Position = UDim2.new(0, 11, 0, 30)
-PlaylistText.Size = UDim2.new(1, -22, 0, 80)
-PlaylistText.TextYAlignment = Enum.TextYAlignment.Top
-
-local RecentCard = Card(MusicPage, 90)
-
-local RecentTitle = Label(RecentCard, "RECENTLY PLAYED", 11, Config.Accent, true)
-RecentTitle.Position = UDim2.new(0, 11, 0, 7)
-
-local RecentText = Label(RecentCard, "Nothing played yet", 10)
-RecentText.Position = UDim2.new(0, 11, 0, 30)
-RecentText.Size = UDim2.new(1, -22, 0, 52)
-RecentText.TextYAlignment = Enum.TextYAlignment.Top
-
-local VolumeCard = Card(MusicPage, 68)
-
-Label(VolumeCard, "VOLUME", 10, Config.Accent, true).Position =
-    UDim2.new(0, 11, 0, 7)
-
-local VolumeBar = Create("Frame", {
-    Position = UDim2.new(0, 11, 0, 37),
-    Size = UDim2.new(1, -22, 0, 9),
-    BackgroundColor3 = Color3.fromRGB(60, 68, 85),
-}, VolumeCard)
-
-Corner(VolumeBar, 8)
-
-local VolumeFill = Create("Frame", {
-    Size = UDim2.new(Config.Volume, 0, 1, 0),
+local ProgressFill = New("Frame", {
+    Size = UDim2.new(0, 0, 1, 0),
     BackgroundColor3 = Config.Accent,
-}, VolumeBar)
+    BorderSizePixel = 0,
+}, ProgressBack)
 
-Corner(VolumeFill, 8)
+Round(ProgressFill, 6)
 
-local function SetVolume(value)
-    Config.Volume = math.clamp(value, 0, 1)
-    Music.Volume = Config.Volume
-    VolumeFill.Size = UDim2.new(Config.Volume, 0, 1, 0)
+local TimeCurrent = Text(PlayerCard, "00:00", 9, Color3.fromRGB(170, 185, 205))
+TimeCurrent.Position = UDim2.new(0, 130, 0, 82)
+TimeCurrent.Size = UDim2.fromOffset(55, 16)
+
+local TimeTotal = Text(PlayerCard, "00:00", 9, Color3.fromRGB(170, 185, 205))
+TimeTotal.Position = UDim2.new(1, -65, 0, 82)
+TimeTotal.Size = UDim2.fromOffset(55, 16)
+TimeTotal.TextXAlignment = Enum.TextXAlignment.Right
+
+local function SeekTo(position)
+    if not Music.IsLoaded or Music.TimeLength <= 0 then return end
+
+    local percent = math.clamp(
+        (position.X - ProgressBack.AbsolutePosition.X)
+        / math.max(1, ProgressBack.AbsoluteSize.X),
+        0,
+        1
+    )
+
+    Music.TimePosition = Music.TimeLength * percent
 end
 
-VolumeBar.InputBegan:Connect(function(input)
+ProgressBack.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+        SeekTo(input.Position)
+    end
+end)
+
+local SeekMove
+local SeekEnd
+
+ProgressBack.InputBegan:Connect(function(input)
     if input.UserInputType ~= Enum.UserInputType.MouseButton1
         and input.UserInputType ~= Enum.UserInputType.Touch then
         return
     end
 
-    local function update(position)
-        local relative = (position.X - VolumeBar.AbsolutePosition.X)
-            / math.max(1, VolumeBar.AbsoluteSize.X)
-
-        SetVolume(relative)
-    end
-
-    update(input.Position)
-
-    local moveConnection
-    local endConnection
-
-    moveConnection = UserInputService.InputChanged:Connect(function(changed)
+    SeekMove = UserInputService.InputChanged:Connect(function(changed)
         if changed.UserInputType == Enum.UserInputType.MouseMovement
             or changed.UserInputType == Enum.UserInputType.Touch then
-            update(changed.Position)
+            SeekTo(changed.Position)
         end
     end)
 
-    endConnection = UserInputService.InputEnded:Connect(function(ended)
+    SeekEnd = UserInputService.InputEnded:Connect(function(ended)
         if ended.UserInputType == Enum.UserInputType.MouseButton1
             or ended.UserInputType == Enum.UserInputType.Touch then
-            if moveConnection then moveConnection:Disconnect() end
-            if endConnection then endConnection:Disconnect() end
+
+            if SeekMove then SeekMove:Disconnect() end
+            if SeekEnd then SeekEnd:Disconnect() end
         end
     end)
 end)
 
---==================================================
--- 11. NOTIFICATIONS PAGE
---==================================================
+local Previous = MakeButton(PlayerCard, "|<", PreviousTrack, 43, 30)
+Previous.Position = UDim2.new(0, 130, 0, 119)
 
-Section(NotificationsPage, "NOTIFICATION CENTER")
+local PlayPause
+PlayPause = MakeButton(PlayerCard, "PLAY", function()
+    if Music.IsPlaying then
+        Music:Pause()
+    elseif Music.SoundId ~= "" then
+        Music:Resume()
+    else
+        Notify("Music", "Add a song first", "Music")
+    end
+end, 72, 30)
 
-local NotificationCard = Card(NotificationsPage, 80)
+PlayPause.Position = UDim2.new(0, 179, 0, 119)
 
-local NotificationCount = Label(NotificationCard, "0 Notifications", 17, Color3.new(1, 1, 1), true)
-NotificationCount.Position = UDim2.new(0, 11, 0, 8)
+local Next = MakeButton(PlayerCard, ">|", NextTrack, 43, 30)
+Next.Position = UDim2.new(0, 257, 0, 119)
 
-local UnreadCount = Label(NotificationCard, "Unread: 0", 10, Config.Accent)
-UnreadCount.Position = UDim2.new(0, 11, 0, 38)
+local ShuffleButton
+ShuffleButton = MakeButton(PlayerCard, "SHUFFLE OFF", function()
+    Shuffle = not Shuffle
+    ShuffleButton.Text = Shuffle and "SHUFFLE ON" or "SHUFFLE OFF"
+end, 94, 30)
 
-local ClearButton = Button(NotificationCard, "Clear All", function()
+ShuffleButton.Position = UDim2.new(1, -105, 0, 119)
+
+local RepeatButton
+RepeatButton = MakeButton(PlayerCard, "REPEAT OFF", function()
+    RepeatMode = (RepeatMode + 1) % 3
+
+    local names = {
+        "REPEAT OFF",
+        "REPEAT ALL",
+        "REPEAT ONE",
+    }
+
+    RepeatButton.Text = names[RepeatMode + 1]
+end, 94, 30)
+
+RepeatButton.Position = UDim2.new(1, -105, 0, 151)
+
+local AddCard = MakeCard(MusicPage, 91)
+
+Heading(AddCard, "ADD MUSIC ID").Position = UDim2.new(0, 11, 0, 4)
+
+local AudioInput = MakeInput(AddCard, "Roblox Audio ID", "", 130)
+AudioInput.Position = UDim2.new(0, 11, 0, 37)
+AudioInput.Size = UDim2.new(1, -135, 0, 35)
+
+local function AddSong()
+    local id = AudioInput.Text:gsub("%s+", "")
+
+    if not id:match("^%d+$") then
+        Notify("Music", "Please enter a valid numeric Audio ID", "Music")
+        return
+    end
+
+    table.insert(Playlist, id)
+    AudioInput.Text = ""
+
+    Notify("Music", "Track added to queue", "Music")
+
+    if #Playlist == 1 then
+        PlayTrack(1)
+    end
+end
+
+MakeButton(AddCard, "ADD", AddSong, 75).Position =
+    UDim2.new(1, -86, 0, 37)
+
+local VolumeCard = MakeCard(MusicPage, 65)
+
+Heading(VolumeCard, "VOLUME").Position = UDim2.new(0, 11, 0, 3)
+
+local VolumeBack = New("Frame", {
+    Position = UDim2.new(0, 11, 0, 39),
+    Size = UDim2.new(1, -22, 0, 9),
+    BackgroundColor3 = Color3.fromRGB(62, 72, 91),
+    BorderSizePixel = 0,
+}, VolumeCard)
+
+Round(VolumeBack, 8)
+
+local VolumeFill = New("Frame", {
+    Size = UDim2.new(Config.Volume, 0, 1, 0),
+    BackgroundColor3 = Config.Accent,
+    BorderSizePixel = 0,
+}, VolumeBack)
+
+Round(VolumeFill, 8)
+
+local function SetVolumeFromPosition(position)
+    local percent = math.clamp(
+        (position.X - VolumeBack.AbsolutePosition.X)
+        / math.max(1, VolumeBack.AbsoluteSize.X),
+        0,
+        1
+    )
+
+    Config.Volume = percent
+    Music.Volume = percent
+    VolumeFill.Size = UDim2.new(percent, 0, 1, 0)
+end
+
+VolumeBack.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+
+        SetVolumeFromPosition(input.Position)
+    end
+end)
+
+local QueueCard = MakeCard(MusicPage, 205)
+
+Heading(QueueCard, "PLAY QUEUE").Position = UDim2.new(0, 11, 0, 5)
+
+local QueueList = New("ScrollingFrame", {
+    Position = UDim2.new(0, 9, 0, 32),
+    Size = UDim2.new(1, -18, 1, -42),
+    BackgroundTransparency = 1,
+    BorderSizePixel = 0,
+    ScrollBarThickness = 3,
+    AutomaticCanvasSize = Enum.AutomaticSize.Y,
+    CanvasSize = UDim2.new(),
+}, QueueCard)
+
+New("UIListLayout", {
+    Padding = UDim.new(0, 5),
+    SortOrder = Enum.SortOrder.LayoutOrder,
+}, QueueList)
+
+local QueueRows = {}
+
+local function RefreshQueue()
+    for _, row in ipairs(QueueRows) do
+        row:Destroy()
+    end
+
+    table.clear(QueueRows)
+
+    for index, id in ipairs(Playlist) do
+        local row = New("Frame", {
+            Size = UDim2.new(1, -5, 0, 32),
+            BackgroundColor3 = index == CurrentTrack
+                and Color3.fromRGB(42, 57, 79)
+                or Color3.fromRGB(19, 25, 36),
+            BorderSizePixel = 0,
+        }, QueueList)
+
+        Round(row, 8)
+
+        local play = New("TextButton", {
+            Position = UDim2.new(0, 7, 0, 0),
+            Size = UDim2.new(1, -65, 1, 0),
+            BackgroundTransparency = 1,
+            Text = (index == CurrentTrack and "> " or "") .. "Track " .. index .. "  |  " .. id,
+            TextColor3 = Color3.fromRGB(230, 237, 248),
+            TextSize = 10,
+            Font = Enum.Font.GothamMedium,
+            TextXAlignment = Enum.TextXAlignment.Left,
+        }, row)
+
+        play.MouseButton1Click:Connect(function()
+            PlayTrack(index)
+        end)
+
+        local remove = New("TextButton", {
+            AnchorPoint = Vector2.new(1, 0.5),
+            Position = UDim2.new(1, -5, 0.5, 0),
+            Size = UDim2.fromOffset(42, 25),
+            BackgroundColor3 = Color3.fromRGB(100, 47, 55),
+            Text = "DEL",
+            TextColor3 = Color3.new(1, 1, 1),
+            TextSize = 9,
+            Font = Enum.Font.GothamBold,
+            BorderSizePixel = 0,
+        }, row)
+
+        Round(remove, 7)
+
+        remove.MouseButton1Click:Connect(function()
+            table.remove(Playlist, index)
+
+            if #Playlist == 0 then
+                CurrentTrack = 1
+                Music:Stop()
+            elseif index < CurrentTrack then
+                CurrentTrack -= 1
+            elseif index == CurrentTrack then
+                CurrentTrack = math.min(CurrentTrack, #Playlist)
+                PlayTrack(CurrentTrack)
+            end
+
+            RefreshQueue()
+        end)
+
+        table.insert(QueueRows, row)
+    end
+
+    if #Playlist == 0 then
+        local empty = Text(QueueList, "Queue is empty. Add an Audio ID above.", 10,
+            Color3.fromRGB(150, 165, 185))
+        empty.Size = UDim2.new(1, -8, 0, 32)
+        table.insert(QueueRows, empty)
+    end
+end
+
+local QueueActions = MakeCard(MusicPage, 48)
+
+MakeButton(QueueActions, "CLEAR QUEUE", function()
+    table.clear(Playlist)
+    CurrentTrack = 1
+    Music:Stop()
+    RefreshQueue()
+end, 115).Position = UDim2.new(0, 10, 0, 7)
+
+MakeButton(QueueActions, "PLAY FIRST", function()
+    if #Playlist > 0 then
+        PlayTrack(1)
+    end
+end, 105).Position = UDim2.new(0, 135, 0, 7)
+
+local RecentCard = MakeCard(MusicPage, 105)
+
+Heading(RecentCard, "RECENTLY PLAYED").Position = UDim2.new(0, 11, 0, 5)
+
+local RecentText = Text(RecentCard, "No recent tracks", 10)
+RecentText.Position = UDim2.new(0, 11, 0, 32)
+RecentText.Size = UDim2.new(1, -22, 0, 65)
+RecentText.TextYAlignment = Enum.TextYAlignment.Top
+
+--========================================================
+-- NOTIFICATIONS PAGE
+--========================================================
+
+Heading(NotificationsPage, "NOTIFICATION CENTER")
+
+local NotificationSummary = MakeCard(NotificationsPage, 75)
+
+local NotificationCount = Text(NotificationSummary, "0 Notifications", 17,
+    Color3.new(1, 1, 1), true)
+NotificationCount.Position = UDim2.new(0, 12, 0, 7)
+
+local UnreadCount = Text(NotificationSummary, "Unread: 0", 10, Config.Accent)
+UnreadCount.Position = UDim2.new(0, 12, 0, 39)
+
+MakeButton(NotificationSummary, "CLEAR ALL", function()
     table.clear(Notifications)
-    Notify("System", "Notification list cleared", "System")
-end, 90)
+end, 90).Position = UDim2.new(1, -101, 0, 20)
 
-ClearButton.Position = UDim2.new(1, -101, 0, 20)
-
-local FilterCard = Card(NotificationsPage, 48)
+local FilterCard = MakeCard(NotificationsPage, 48)
 
 local FilterButton
-FilterButton = Button(FilterCard, "Filter: All", function()
+FilterButton = MakeButton(FilterCard, "FILTER: ALL", function()
     if NotificationFilter == "All" then
         NotificationFilter = "Music"
     elseif NotificationFilter == "Music" then
@@ -786,357 +957,411 @@ FilterButton = Button(FilterCard, "Filter: All", function()
         NotificationFilter = "All"
     end
 
-    FilterButton.Text = "Filter: " .. NotificationFilter
-end, 120)
+    FilterButton.Text = "FILTER: " .. NotificationFilter:upper()
+end, 130)
 
-FilterButton.Position = UDim2.new(0, 11, 0, 7)
+FilterButton.Position = UDim2.new(0, 10, 0, 7)
 
-local NotificationListCard = Card(NotificationsPage, 210)
+local NotificationCard = MakeCard(NotificationsPage, 290)
 
-local NotificationListText = Label(NotificationListCard, "No notifications", 10)
-NotificationListText.Position = UDim2.new(0, 11, 0, 10)
-NotificationListText.Size = UDim2.new(1, -22, 1, -20)
-NotificationListText.TextYAlignment = Enum.TextYAlignment.Top
+local NotificationList = New("ScrollingFrame", {
+    Position = UDim2.new(0, 10, 0, 9),
+    Size = UDim2.new(1, -20, 1, -18),
+    BackgroundTransparency = 1,
+    BorderSizePixel = 0,
+    ScrollBarThickness = 3,
+    AutomaticCanvasSize = Enum.AutomaticSize.Y,
+    CanvasSize = UDim2.new(),
+}, NotificationCard)
 
---==================================================
--- 12. DEVICE PAGE
---==================================================
+New("UIListLayout", {
+    Padding = UDim.new(0, 6),
+}, NotificationList)
 
-Section(DevicePage, "DEVICE INFORMATION")
+--========================================================
+-- DEVICE PAGE
+--========================================================
 
-local DeviceCard = Card(DevicePage, 300)
+Heading(DevicePage, "DEVICE INFORMATION")
 
-local DeviceText = Label(DeviceCard, "Loading...", 10)
-DeviceText.Position = UDim2.new(0, 11, 0, 10)
-DeviceText.Size = UDim2.new(1, -22, 1, -50)
+local DeviceCard = MakeCard(DevicePage, 340)
+
+local DeviceText = Text(DeviceCard, "Loading...", 11)
+DeviceText.Position = UDim2.new(0, 12, 0, 12)
+DeviceText.Size = UDim2.new(1, -24, 1, -55)
 DeviceText.TextYAlignment = Enum.TextYAlignment.Top
 
 local function RefreshDevice()
-    local camera = workspace.CurrentCamera
     local resolution = "Unavailable"
 
-    if camera then
-        local viewport = camera.ViewportSize
-        resolution = math.floor(viewport.X) .. " x " .. math.floor(viewport.Y)
+    if workspace.CurrentCamera then
+        local v = workspace.CurrentCamera.ViewportSize
+        resolution = math.floor(v.X) .. " x " .. math.floor(v.Y)
     end
 
-    local platform = tostring(UserInputService:GetPlatform())
+    local input = "Keyboard / Mouse"
 
-    local inputType = UserInputService.TouchEnabled
-        and "Touch"
-        or "Keyboard / Mouse"
+    if UserInputService.TouchEnabled then
+        input = "Touch"
+    end
 
     if UserInputService.GamepadEnabled then
-        inputType = inputType .. " + Gamepad"
+        input = input .. " + Gamepad"
     end
 
     DeviceText.Text =
-        "PLAYER\n" ..
+        "PLAYER INFORMATION\n\n" ..
         "Name: " .. Player.Name .. "\n" ..
         "Display Name: " .. Player.DisplayName .. "\n" ..
         "User ID: " .. Player.UserId .. "\n\n" ..
-        "DEVICE\n" ..
-        "Platform: " .. platform .. "\n" ..
-        "Input: " .. inputType .. "\n" ..
+        "DEVICE INFORMATION\n\n" ..
+        "Platform: " .. tostring(UserInputService:GetPlatform()) .. "\n" ..
+        "Input: " .. input .. "\n" ..
         "Resolution: " .. resolution .. "\n" ..
-        "Touch: " .. tostring(UserInputService.TouchEnabled) .. "\n" ..
-        "Keyboard: " .. tostring(UserInputService.KeyboardEnabled) .. "\n" ..
-        "Gamepad: " .. tostring(UserInputService.GamepadEnabled) .. "\n\n" ..
-        "HARDWARE\n" ..
+        "Touch Enabled: " .. tostring(UserInputService.TouchEnabled) .. "\n" ..
+        "Keyboard Enabled: " .. tostring(UserInputService.KeyboardEnabled) .. "\n" ..
+        "Gamepad Enabled: " .. tostring(UserInputService.GamepadEnabled) .. "\n\n" ..
+        "HARDWARE INFORMATION\n\n" ..
         "CPU Model: Unavailable\n" ..
         "GPU Model: Unavailable\n" ..
-        "IMEI / Serial: Unavailable\n" ..
-        "Battery: Unavailable"
+        "IMEI: Unavailable\n" ..
+        "Serial Number: Unavailable\n" ..
+        "Battery: Unavailable\n\n" ..
+        "Hardware identifiers are not exposed by Roblox."
 end
 
-Button(DeviceCard, "Refresh", RefreshDevice, 85).Position =
-    UDim2.new(1, -96, 1, -40)
+MakeButton(DeviceCard, "REFRESH INFO", RefreshDevice, 120)
+    .Position = UDim2.new(0, 12, 1, -43)
 
 RefreshDevice()
 
---==================================================
--- 13. TIME PAGE
---==================================================
+--========================================================
+-- TIME PAGE
+--========================================================
 
-Section(TimePage, "CLOCK")
+Heading(TimePage, "CLOCK")
 
-local ClockCard = Card(TimePage, 80)
+local ClockCard = MakeCard(TimePage, 83)
 
-local ClockLabel = Label(ClockCard, "--:--:--", 25, Color3.new(1, 1, 1), true)
-ClockLabel.Position = UDim2.new(0, 11, 0, 5)
+local ClockText = Text(ClockCard, "--:--:--", 25, Color3.new(1, 1, 1), true)
+ClockText.Position = UDim2.new(0, 12, 0, 5)
 
-local DateLabel = Label(ClockCard, "", 10, Color3.fromRGB(165, 180, 200))
-DateLabel.Position = UDim2.new(0, 11, 0, 43)
+local DateText = Text(ClockCard, "", 10, Color3.fromRGB(160, 175, 195))
+DateText.Position = UDim2.new(0, 12, 0, 48)
 
-Section(TimePage, "STOPWATCH")
+Heading(TimePage, "STOPWATCH")
 
-local StopwatchCard = Card(TimePage, 115)
+local StopwatchCard = MakeCard(TimePage, 130)
 
-local StopwatchLabel = Label(StopwatchCard, "00:00", 23, Color3.new(1, 1, 1), true)
-StopwatchLabel.Position = UDim2.new(0, 11, 0, 5)
+local StopwatchText = Text(StopwatchCard, "00:00", 25, Color3.new(1, 1, 1), true)
+StopwatchText.Position = UDim2.new(0, 12, 0, 5)
 
-local StopwatchStart
-StopwatchStart = Button(StopwatchCard, "Start", function()
+local StopwatchButton
+StopwatchButton = MakeButton(StopwatchCard, "START", function()
     StopwatchRunning = not StopwatchRunning
-    StopwatchStart.Text = StopwatchRunning and "Pause" or "Resume"
-end, 75)
+    StopwatchButton.Text = StopwatchRunning and "PAUSE" or "RESUME"
+end, 80)
 
-StopwatchStart.Position = UDim2.new(0, 11, 0, 47)
+StopwatchButton.Position = UDim2.new(0, 12, 0, 52)
 
-Button(StopwatchCard, "Reset", function()
+MakeButton(StopwatchCard, "RESET", function()
     StopwatchRunning = false
     StopwatchTime = 0
-    table.clear(StopwatchLaps)
-    StopwatchLabel.Text = "00:00"
-    StopwatchStart.Text = "Start"
-end, 75).Position = UDim2.new(0, 94, 0, 47)
+    table.clear(Laps)
+    StopwatchButton.Text = "START"
+end, 75).Position = UDim2.new(0, 100, 0, 52)
 
-local LapButton
-LapButton = Button(StopwatchCard, "Lap", function()
-    if not StopwatchRunning then return end
+MakeButton(StopwatchCard, "LAP", function()
+    if StopwatchRunning then
+        table.insert(Laps, StopwatchTime)
 
-    table.insert(StopwatchLaps, StopwatchTime)
-
-    if #StopwatchLaps > 8 then
-        table.remove(StopwatchLaps, 1)
+        while #Laps > 8 do
+            table.remove(Laps, 1)
+        end
     end
-end, 65)
+end, 65).Position = UDim2.new(0, 183, 0, 52)
 
-LapButton.Position = UDim2.new(0, 177, 0, 47)
+local LapText = Text(StopwatchCard, "Laps: 0", 9, Config.Accent)
+LapText.Position = UDim2.new(0, 12, 0, 95)
 
-local LapLabel = Label(StopwatchCard, "Laps: 0", 9, Config.Accent)
-LapLabel.Position = UDim2.new(0, 11, 0, 88)
+Heading(TimePage, "MULTIPLE COUNTDOWNS")
 
-Section(TimePage, "MULTIPLE COUNTDOWNS")
+local TimerInputCard = MakeCard(TimePage, 83)
 
-local TimerInputCard = Card(TimePage, 85)
-
-local TimerInput = Input(TimerInputCard, "Seconds", "60", 20)
+local TimerInput = MakeInput(TimerInputCard, "Seconds", "60", 130)
 TimerInput.Position = UDim2.new(0, 10, 0, 10)
-TimerInput.Size = UDim2.new(0, 100, 0, 32)
+TimerInput.Size = UDim2.new(0, 115, 0, 34)
 
-local AddTimerButton
-AddTimerButton = Button(TimerInputCard, "＋ Add Timer", function()
-    local seconds = SafeNumber(TimerInput.Text)
+MakeButton(TimerInputCard, "ADD TIMER", function()
+    local value = ValidNumber(TimerInput.Text)
 
-    if not seconds or seconds <= 0 or seconds > 86400 then
-        Notify("Timer", "Enter 1 to 86400 seconds", "System")
+    if not value or value <= 0 or value > 86400 then
+        Notify("Timer", "Enter a number between 1 and 86400", "System")
         return
     end
 
-    NextTimerId += 1
+    TimerId += 1
 
     table.insert(Timers, {
-        Id = NextTimerId,
-        Remaining = math.floor(seconds),
+        Id = TimerId,
+        Remaining = math.floor(value),
         Running = true,
     })
 
-    Notify("Timer", "Countdown added", "System")
-end, 105)
+    TimerInput.Text = "60"
+end, 105).Position = UDim2.new(0, 135, 0, 10)
 
-AddTimerButton.Position = UDim2.new(0, 120, 0, 10)
+local TimerListCard = MakeCard(TimePage, 230)
 
-local TimerListCard = Card(TimePage, 150)
+local TimerList = New("ScrollingFrame", {
+    Position = UDim2.new(0, 9, 0, 9),
+    Size = UDim2.new(1, -18, 1, -18),
+    BackgroundTransparency = 1,
+    BorderSizePixel = 0,
+    ScrollBarThickness = 3,
+    AutomaticCanvasSize = Enum.AutomaticSize.Y,
+    CanvasSize = UDim2.new(),
+}, TimerListCard)
 
-local TimerListText = Label(TimerListCard, "No active timers", 10)
-TimerListText.Position = UDim2.new(0, 11, 0, 10)
-TimerListText.Size = UDim2.new(1, -22, 1, -20)
-TimerListText.TextYAlignment = Enum.TextYAlignment.Top
+New("UIListLayout", {
+    Padding = UDim.new(0, 6),
+}, TimerList)
 
-local SessionCard = Card(TimePage, 55)
+local TimerRows = {}
 
-local SessionLabel = Label(SessionCard, "SESSION: 00:00", 13, Config.Accent, true)
-SessionLabel.Position = UDim2.new(0, 11, 0, 13)
+local function RefreshTimers()
+    for _, row in ipairs(TimerRows) do
+        row:Destroy()
+    end
 
---==================================================
--- 14. NETWORK / PERFORMANCE PAGE
---==================================================
+    table.clear(TimerRows)
 
-Section(NetworkPage, "LIVE PERFORMANCE")
+    for index, timer in ipairs(Timers) do
+        local row = New("Frame", {
+            Size = UDim2.new(1, -4, 0, 40),
+            BackgroundColor3 = Color3.fromRGB(20, 26, 38),
+            BorderSizePixel = 0,
+        }, TimerList)
 
-local PerformanceCard = Card(NetworkPage, 160)
+        Round(row, 9)
 
-local PerformanceText = Label(PerformanceCard, "Loading...", 12)
-PerformanceText.Position = UDim2.new(0, 11, 0, 10)
-PerformanceText.Size = UDim2.new(1, -22, 1, -20)
+        local info = Text(row,
+            "#" .. timer.Id .. "  " .. FormatTime(timer.Remaining),
+            10, Color3.new(1, 1, 1), true)
+
+        info.Position = UDim2.new(0, 8, 0, 0)
+        info.Size = UDim2.new(1, -135, 1, 0)
+
+        local toggle = MakeButton(row,
+            timer.Running and "PAUSE" or "RESUME",
+            function()
+                timer.Running = not timer.Running
+                RefreshTimers()
+            end, 62, 27)
+
+        toggle.Position = UDim2.new(1, -128, 0.5, -13)
+
+        local delete = MakeButton(row, "DEL", function()
+            table.remove(Timers, index)
+            RefreshTimers()
+        end, 48, 27)
+
+        delete.Position = UDim2.new(1, -58, 0.5, -13)
+
+        table.insert(TimerRows, row)
+    end
+
+    if #Timers == 0 then
+        local empty = Text(TimerList, "No active countdowns", 10,
+            Color3.fromRGB(150, 165, 185))
+        empty.Size = UDim2.new(1, -5, 0, 35)
+        table.insert(TimerRows, empty)
+    end
+end
+
+local SessionCard = MakeCard(TimePage, 53)
+
+local SessionText = Text(SessionCard, "SESSION: 00:00", 13, Config.Accent, true)
+SessionText.Position = UDim2.new(0, 12, 0, 8)
+
+--========================================================
+-- NETWORK PAGE
+--========================================================
+
+Heading(NetworkPage, "LIVE PERFORMANCE")
+
+local PerformanceCard = MakeCard(NetworkPage, 160)
+
+local PerformanceText = Text(PerformanceCard, "Loading...", 12)
+PerformanceText.Position = UDim2.new(0, 12, 0, 10)
+PerformanceText.Size = UDim2.new(1, -24, 1, -20)
 PerformanceText.TextYAlignment = Enum.TextYAlignment.Top
 
-local HistoryCard = Card(NetworkPage, 145)
+local HistoryCard = MakeCard(NetworkPage, 170)
 
-local HistoryTitle = Label(HistoryCard, "PERFORMANCE HISTORY", 11, Config.Accent, true)
-HistoryTitle.Position = UDim2.new(0, 11, 0, 7)
+Heading(HistoryCard, "PERFORMANCE HISTORY").Position =
+    UDim2.new(0, 12, 0, 5)
 
-local HistoryText = Label(HistoryCard, "No history yet", 10)
-HistoryText.Position = UDim2.new(0, 11, 0, 30)
-HistoryText.Size = UDim2.new(1, -22, 1, -38)
+local HistoryText = Text(HistoryCard, "Collecting performance data...", 10)
+HistoryText.Position = UDim2.new(0, 12, 0, 32)
+HistoryText.Size = UDim2.new(1, -24, 1, -40)
 HistoryText.TextYAlignment = Enum.TextYAlignment.Top
 
-local PerformanceWarning = Card(NetworkPage, 58)
+local WarningCard = MakeCard(NetworkPage, 57)
 
-local WarningText = Label(PerformanceWarning, "Monitoring active", 11, Config.Accent, true)
-WarningText.Position = UDim2.new(0, 11, 0, 10)
-WarningText.Size = UDim2.new(1, -22, 1, -20)
+local WarningText = Text(WarningCard, "Monitoring active", 11, Config.Accent, true)
+WarningText.Position = UDim2.new(0, 12, 0, 10)
 
---==================================================
--- 15. SETTINGS PAGE
---==================================================
+--========================================================
+-- SETTINGS PAGE
+--========================================================
 
-Section(SettingsPage, "APPEARANCE")
+Heading(SettingsPage, "APPEARANCE")
 
-local ThemeCard = Card(SettingsPage, 145)
+local AppearanceCard = MakeCard(SettingsPage, 155)
 
-local ThemeLabel = Label(ThemeCard, "Theme Color", 11, Config.Accent, true)
-ThemeLabel.Position = UDim2.new(0, 11, 0, 7)
+local ThemeLabel = Text(AppearanceCard, "Theme Color", 11, Config.Accent, true)
+ThemeLabel.Position = UDim2.new(0, 12, 0, 5)
 
-local ThemeButton
-ThemeButton = Button(ThemeCard, "Next Theme", function()
-    ThemeIndex = ThemeIndex % #Themes + 1
-    Config.Accent = Themes[ThemeIndex]
+MakeButton(AppearanceCard, "NEXT THEME", function()
+    ThemeIndex = ThemeIndex % #ThemeColors + 1
+    Config.Accent = ThemeColors[ThemeIndex]
+
     ThemeLabel.TextColor3 = Config.Accent
+    ProgressFill.BackgroundColor3 = Config.Accent
     VolumeFill.BackgroundColor3 = Config.Accent
+    MiniIcon.TextColor3 = Config.Accent
+
     Notify("Settings", "Theme changed", "System")
-end, 115)
+end, 115).Position = UDim2.new(0, 12, 0, 34)
 
-ThemeButton.Position = UDim2.new(0, 11, 0, 34)
-
-local TransparencyButton
-TransparencyButton = Button(ThemeCard, "Transparency +", function()
+MakeButton(AppearanceCard, "MORE TRANSPARENT", function()
     Config.Transparency = math.clamp(Config.Transparency + 0.05, 0, 0.7)
     Main.BackgroundTransparency = Config.Transparency
-end, 120)
+end, 145).Position = UDim2.new(0, 137, 0, 34)
 
-TransparencyButton.Position = UDim2.new(0, 136, 0, 34)
-
-Button(ThemeCard, "Transparency -", function()
+MakeButton(AppearanceCard, "LESS TRANSPARENT", function()
     Config.Transparency = math.clamp(Config.Transparency - 0.05, 0, 0.7)
     Main.BackgroundTransparency = Config.Transparency
-end, 120).Position = UDim2.new(0, 11, 0, 77)
+end, 145).Position = UDim2.new(0, 12, 0, 77)
 
 local CompactButton
-CompactButton = Button(ThemeCard, "Compact: OFF", function()
+CompactButton = MakeButton(AppearanceCard, "COMPACT OFF", function()
     Config.Compact = not Config.Compact
-    CompactButton.Text = Config.Compact and "Compact: ON" or "Compact: OFF"
+    CompactButton.Text = Config.Compact and "COMPACT ON" or "COMPACT OFF"
+
     if Expanded then
-        Main.Size = UDim2.fromOffset(Config.Width, Config.Compact and 340 or Config.Height)
+        Main.Size = UDim2.fromOffset(
+            Config.Width,
+            Config.Compact and 380 or Config.Height
+        )
     end
-end, 120)
+end, 125)
 
-CompactButton.Position = UDim2.new(0, 136, 0, 77)
+CompactButton.Position = UDim2.new(0, 167, 0, 77)
 
-Section(SettingsPage, "INTERFACE")
+Heading(SettingsPage, "INTERFACE")
 
-local InterfaceCard = Card(SettingsPage, 145)
+local InterfaceCard = MakeCard(SettingsPage, 155)
 
 local MotionButton
-MotionButton = Button(InterfaceCard, "Reduced Motion: OFF", function()
+MotionButton = MakeButton(InterfaceCard, "REDUCED MOTION OFF", function()
     Config.ReducedMotion = not Config.ReducedMotion
     MotionButton.Text = Config.ReducedMotion
-        and "Reduced Motion: ON"
-        or "Reduced Motion: OFF"
-end, 170)
+        and "REDUCED MOTION ON"
+        or "REDUCED MOTION OFF"
+end, 175)
 
-MotionButton.Position = UDim2.new(0, 11, 0, 10)
+MotionButton.Position = UDim2.new(0, 12, 0, 10)
 
 local ContrastButton
-ContrastButton = Button(InterfaceCard, "High Contrast: OFF", function()
+ContrastButton = MakeButton(InterfaceCard, "HIGH CONTRAST OFF", function()
     Config.HighContrast = not Config.HighContrast
+
     ContrastButton.Text = Config.HighContrast
-        and "High Contrast: ON"
-        or "High Contrast: OFF"
+        and "HIGH CONTRAST ON"
+        or "HIGH CONTRAST OFF"
 
     Main.BackgroundColor3 = Config.HighContrast
         and Color3.fromRGB(0, 0, 0)
         or Config.Background
-end, 170)
+end, 175)
 
-ContrastButton.Position = UDim2.new(0, 11, 0, 52)
+ContrastButton.Position = UDim2.new(0, 12, 0, 52)
 
-local ScalePlus = Button(InterfaceCard, "Scale +", function()
+MakeButton(InterfaceCard, "SCALE +", function()
     Config.Scale = math.clamp(Config.Scale + 0.05, 0.7, 1.3)
-    ScaleObject.Scale = Config.Scale
-end, 75)
+    UIScale.Scale = Config.Scale
+end, 75).Position = UDim2.new(0, 12, 0, 96)
 
-ScalePlus.Position = UDim2.new(0, 11, 0, 94)
-
-local ScaleMinus = Button(InterfaceCard, "Scale -", function()
+MakeButton(InterfaceCard, "SCALE -", function()
     Config.Scale = math.clamp(Config.Scale - 0.05, 0.7, 1.3)
-    ScaleObject.Scale = Config.Scale
-end, 75)
+    UIScale.Scale = Config.Scale
+end, 75).Position = UDim2.new(0, 95, 0, 96)
 
-ScaleMinus.Position = UDim2.new(0, 94, 0, 94)
+Heading(SettingsPage, "ANTI-FLING")
 
-local NotificationSoundButton
-NotificationSoundButton = Button(InterfaceCard, "Notification Sound: OFF", function()
-    Config.NotificationSound = not Config.NotificationSound
-    NotificationSoundButton.Text = Config.NotificationSound
-        and "Notification Sound: ON"
-        or "Notification Sound: OFF"
-end, 190)
+local AntiFlingCard = MakeCard(SettingsPage, 100)
 
-NotificationSoundButton.Position = UDim2.new(0, 177, 0, 94)
-
-Section(SettingsPage, "ANTI-FLING")
-
-local AntiFlingCard = Card(SettingsPage, 110)
-
-local AntiFlingStatus = Label(AntiFlingCard, "Protection: OFF", 11, Config.Accent, true)
-AntiFlingStatus.Position = UDim2.new(0, 11, 0, 8)
+local AntiFlingStatus = Text(AntiFlingCard, "Protection: OFF", 11, Config.Accent, true)
+AntiFlingStatus.Position = UDim2.new(0, 12, 0, 5)
 
 local AntiFlingButton
-AntiFlingButton = Button(AntiFlingCard, "Enable Protection", function()
+AntiFlingButton = MakeButton(AntiFlingCard, "ENABLE", function()
     Config.AntiFling = not Config.AntiFling
 
-    AntiFlingButton.Text = Config.AntiFling
-        and "Disable Protection"
-        or "Enable Protection"
-
+    AntiFlingButton.Text = Config.AntiFling and "DISABLE" or "ENABLE"
     AntiFlingStatus.Text = Config.AntiFling
         and "Protection: ON"
         or "Protection: OFF"
 
-    Notify("Anti-Fling", Config.AntiFling and "Enabled" or "Disabled", "System")
-end, 150)
+    Notify("Anti-Fling",
+        Config.AntiFling and "Protection enabled" or "Protection disabled",
+        "System")
+end, 100)
 
-AntiFlingButton.Position = UDim2.new(0, 11, 0, 38)
+AntiFlingButton.Position = UDim2.new(0, 12, 0, 35)
 
-local AntiFlingCountLabel = Label(AntiFlingCard, "Detections: 0", 10, Config.Accent)
-AntiFlingCountLabel.Position = UDim2.new(0, 11, 0, 78)
+local AntiFlingCountText = Text(AntiFlingCard, "Detections: 0", 10, Config.Accent)
+AntiFlingCountText.Position = UDim2.new(0, 125, 0, 43)
 
-Section(SettingsPage, "RESET")
+Heading(SettingsPage, "RESET")
 
-local ResetCard = Card(SettingsPage, 55)
+local ResetCard = MakeCard(SettingsPage, 55)
 
-Button(ResetCard, "Restore Defaults", function()
-    Config.Accent = Themes[1]
-    Config.Background = Color3.fromRGB(12, 15, 23)
-    Config.Transparency = 0.10
+MakeButton(ResetCard, "RESTORE DEFAULT SETTINGS", function()
+    Config.Accent = ThemeColors[1]
+    Config.Background = Color3.fromRGB(10, 13, 21)
+    Config.Transparency = 0.08
+    Config.Volume = 0.5
+    Config.Scale = 1
     Config.Compact = false
     Config.ReducedMotion = false
     Config.HighContrast = false
-    Config.Scale = 1
-    Config.Volume = 0.5
 
     ThemeIndex = 1
 
     Main.BackgroundColor3 = Config.Background
     Main.BackgroundTransparency = Config.Transparency
-    ScaleObject.Scale = 1
+    UIScale.Scale = 1
     Music.Volume = Config.Volume
+
     VolumeFill.Size = UDim2.new(Config.Volume, 0, 1, 0)
     VolumeFill.BackgroundColor3 = Config.Accent
-
+    ProgressFill.BackgroundColor3 = Config.Accent
+    MiniIcon.TextColor3 = Config.Accent
     ThemeLabel.TextColor3 = Config.Accent
-    CompactButton.Text = "Compact: OFF"
-    MotionButton.Text = "Reduced Motion: OFF"
-    ContrastButton.Text = "High Contrast: OFF"
 
-    Notify("Settings", "Default settings restored", "System")
-end, 145).Position = UDim2.new(0, 11, 0, 10)
+    CompactButton.Text = "COMPACT OFF"
+    MotionButton.Text = "REDUCED MOTION OFF"
+    ContrastButton.Text = "HIGH CONTRAST OFF"
 
---==================================================
--- 16. EXPAND / COLLAPSE
---==================================================
+    Notify("Settings", "Defaults restored", "System")
+end, 205).Position = UDim2.new(0, 12, 0, 10)
+
+--========================================================
+-- EXPAND / COLLAPSE
+--========================================================
 
 local function SetExpanded(value)
     Expanded = value
@@ -1144,39 +1369,40 @@ local function SetExpanded(value)
     if Expanded then
         Main.Size = UDim2.fromOffset(
             Config.Width,
-            Config.Compact and 340 or Config.Height
+            Config.Compact and 380 or Config.Height
         )
 
-        TopTitle.Text = "◉  DYNAMIC ISLAND  •  " .. CurrentPage:upper()
+        Panel.Visible = true
     else
-        Main.Size = UDim2.fromOffset(195, 48)
-        TopTitle.Text = "◉  DYNAMIC ISLAND"
+        Main.Size = UDim2.fromOffset(210, 54)
     end
 end
 
-ToggleButton.MouseButton1Click:Connect(function()
+Toggle.MouseButton1Click:Connect(function()
     SetExpanded(not Expanded)
 end)
 
---==================================================
--- 17. DRAG
---==================================================
+--========================================================
+-- DRAG SUPPORT
+--========================================================
 
 local Dragging = false
-local DragStart = nil
-local StartPosition = nil
+local DragStart
+local StartPosition
 
-TopBar.InputBegan:Connect(function(input)
+Main.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1
         or input.UserInputType == Enum.UserInputType.Touch then
 
-        Dragging = true
-        DragStart = input.Position
-        StartPosition = Main.Position
+        if input.Position.Y <= Main.AbsolutePosition.Y + 54 then
+            Dragging = true
+            DragStart = input.Position
+            StartPosition = Main.Position
+        end
     end
 end)
 
-trackConnection(UserInputService.InputChanged:Connect(function(input)
+Connect(UserInputService.InputChanged:Connect(function(input)
     if not Dragging then return end
 
     if input.UserInputType == Enum.UserInputType.MouseMovement
@@ -1193,16 +1419,16 @@ trackConnection(UserInputService.InputChanged:Connect(function(input)
     end
 end))
 
-trackConnection(UserInputService.InputEnded:Connect(function(input)
+Connect(UserInputService.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1
         or input.UserInputType == Enum.UserInputType.Touch then
         Dragging = false
     end
 end))
 
---==================================================
--- 18. RESPONSIVE LAYOUT
---==================================================
+--========================================================
+-- RESPONSIVE SIZE
+--========================================================
 
 local function UpdateResponsive()
     local camera = workspace.CurrentCamera
@@ -1210,22 +1436,22 @@ local function UpdateResponsive()
 
     local width = camera.ViewportSize.X
 
-    if width < 520 then
-        Config.Width = math.max(320, width - 18)
-        Sidebar.Size = UDim2.new(0, 94, 1, -18)
-        Content.Position = UDim2.new(0, 113, 0, 9)
-        Content.Size = UDim2.new(1, -124, 1, -18)
+    if width < 560 then
+        Config.Width = math.max(330, width - 18)
+        Sidebar.Size = UDim2.new(0, 100, 1, -20)
+        Content.Position = UDim2.new(0, 122, 0, 10)
+        Content.Size = UDim2.new(1, -134, 1, -20)
     else
-        Config.Width = 570
-        Sidebar.Size = UDim2.new(0, 112, 1, -18)
-        Content.Position = UDim2.new(0, 135, 0, 9)
-        Content.Size = UDim2.new(1, -146, 1, -18)
+        Config.Width = 620
+        Sidebar.Size = UDim2.new(0, 122, 1, -20)
+        Content.Position = UDim2.new(0, 146, 0, 10)
+        Content.Size = UDim2.new(1, -158, 1, -20)
     end
 
     if Expanded then
         Main.Size = UDim2.fromOffset(
             Config.Width,
-            Config.Compact and 340 or Config.Height
+            Config.Compact and 380 or Config.Height
         )
     end
 end
@@ -1233,34 +1459,31 @@ end
 local function BindCamera(camera)
     if not camera then return end
 
-    trackConnection(camera:GetPropertyChangedSignal("ViewportSize"):Connect(
-        UpdateResponsive
-    ))
-
+    Connect(camera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateResponsive))
     UpdateResponsive()
 end
 
 BindCamera(workspace.CurrentCamera)
 
-trackConnection(workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+Connect(workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
     BindCamera(workspace.CurrentCamera)
 end))
 
---==================================================
--- 19. PERFORMANCE DATA
---==================================================
+--========================================================
+-- PERFORMANCE MONITOR
+--========================================================
 
 local frameCount = 0
-local frameElapsed = 0
+local frameTime = 0
 
-trackConnection(RunService.RenderStepped:Connect(function(dt)
+Connect(RunService.RenderStepped:Connect(function(dt)
     frameCount += 1
-    frameElapsed += dt
+    frameTime += dt
 
-    if frameElapsed >= 1 then
-        FPS = math.floor(frameCount / frameElapsed + 0.5)
+    if frameTime >= 1 then
+        FPS = math.floor(frameCount / frameTime + 0.5)
         frameCount = 0
-        frameElapsed = 0
+        frameTime = 0
     end
 end))
 
@@ -1288,18 +1511,17 @@ local function ReadMemory()
     return 0
 end
 
---==================================================
--- 20. ANTI-FLING CHARACTER HANDLING
---==================================================
+--========================================================
+-- ANTI-FLING
+--========================================================
 
-local CurrentRoot = nil
+local CurrentRoot
 local CharacterGeneration = 0
-local LastFlingCheck = 0
+local LastDetection = 0
 
 local function SetupCharacter(character)
     CharacterGeneration += 1
     local generation = CharacterGeneration
-
     CurrentRoot = nil
 
     task.spawn(function()
@@ -1315,9 +1537,9 @@ local function SetupCharacter(character)
     end)
 end
 
-trackConnection(Player.CharacterAdded:Connect(SetupCharacter))
+Connect(Player.CharacterAdded:Connect(SetupCharacter))
 
-trackConnection(Player.CharacterRemoving:Connect(function()
+Connect(Player.CharacterRemoving:Connect(function()
     CharacterGeneration += 1
     CurrentRoot = nil
 end))
@@ -1326,18 +1548,11 @@ if Player.Character then
     SetupCharacter(Player.Character)
 end
 
--- Client-side best-effort detection only.
--- Does not bypass server physics or anti-cheat systems.
-trackConnection(RunService.Heartbeat:Connect(function()
-    if not Config.AntiFling or not CurrentRoot then
-        return
-    end
+Connect(RunService.Heartbeat:Connect(function()
+    if not Config.AntiFling or not CurrentRoot then return end
+    if os.clock() - LastDetection < 0.2 then return end
 
-    if os.clock() - LastFlingCheck < 0.2 then
-        return
-    end
-
-    LastFlingCheck = os.clock()
+    LastDetection = os.clock()
 
     local character = Player.Character
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -1354,16 +1569,15 @@ trackConnection(RunService.Heartbeat:Connect(function()
     end
 
     local speed = root.AssemblyLinearVelocity.Magnitude
-    local spin = root.AssemblyAngularVelocity.Magnitude
+    local angular = root.AssemblyAngularVelocity.Magnitude
 
-    -- Conservative thresholds to reduce false positives.
-    if speed > 180 or spin > 100 then
+    if speed > 180 or angular > 100 then
         AntiFlingCount += 1
-        AntiFlingCountLabel.Text = "Detections: " .. AntiFlingCount
+        AntiFlingCountText.Text = "Detections: " .. AntiFlingCount
 
         Notify("Anti-Fling", "Abnormal movement detected", "System")
 
-        -- Attempt local stabilization. Server may override this.
+        -- Local best-effort stabilization only.
         pcall(function()
             root.AssemblyLinearVelocity = Vector3.zero
             root.AssemblyAngularVelocity = Vector3.zero
@@ -1371,13 +1585,45 @@ trackConnection(RunService.Heartbeat:Connect(function()
     end
 end))
 
---==================================================
--- 21. UI REFRESH
---==================================================
+--========================================================
+-- REFRESH FUNCTIONS
+--========================================================
+
+local function RefreshQueueText()
+    local lines = {}
+
+    for i, id in ipairs(Playlist) do
+        table.insert(lines, i .. ". " .. id)
+    end
+
+    if #lines == 0 then
+        return "Queue is empty"
+    end
+
+    return table.concat(lines, "\n")
+end
+
+local function RefreshRecent()
+    local lines = {}
+
+    for i = 1, math.min(5, #RecentTracks) do
+        table.insert(lines, i .. ". " .. RecentTracks[i])
+    end
+
+    RecentText.Text = #lines > 0
+        and table.concat(lines, "\n")
+        or "No recent tracks"
+end
 
 local function RefreshNotifications()
+    for _, child in ipairs(NotificationList:GetChildren()) do
+        if child:IsA("Frame") or child:IsA("TextLabel") then
+            child:Destroy()
+        end
+    end
+
     local unread = 0
-    local lines = {}
+    local shown = 0
 
     for _, item in ipairs(Notifications) do
         if not item.Read then
@@ -1385,88 +1631,93 @@ local function RefreshNotifications()
         end
     end
 
+    NotificationCount.Text = #Notifications .. " Notifications"
+    UnreadCount.Text = "Unread: " .. unread
+
     for i = #Notifications, 1, -1 do
         local item = Notifications[i]
 
         if NotificationFilter == "All"
             or item.Category == NotificationFilter then
 
-            table.insert(lines,
-                "[" .. item.Time .. "] " ..
-                "[" .. item.Category .. "] " ..
-                item.Title .. ": " .. item.Message
-            )
-        end
+            shown += 1
 
-        if #lines >= 9 then
-            break
+            if shown > 12 then break end
+
+            local row = New("Frame", {
+                Size = UDim2.new(1, -5, 0, 58),
+                BackgroundColor3 = Color3.fromRGB(20, 26, 38),
+                BorderSizePixel = 0,
+            }, NotificationList)
+
+            Round(row, 9)
+
+            local title = Text(row,
+                item.Title .. "  •  " .. item.Time,
+                10, Config.Accent, true)
+
+            title.Position = UDim2.new(0, 9, 0, 4)
+            title.Size = UDim2.new(1, -65, 0, 18)
+
+            local message = Text(row, item.Message, 9)
+            message.Position = UDim2.new(0, 9, 0, 24)
+            message.Size = UDim2.new(1, -65, 0, 28)
+
+            local read = MakeButton(row,
+                item.Read and "READ" or "NEW",
+                function()
+                    item.Read = true
+                    RefreshNotifications()
+                end, 47, 25)
+
+            read.Position = UDim2.new(1, -53, 0.5, -12)
         end
     end
 
-    NotificationCount.Text = #Notifications .. " Notifications"
-    UnreadCount.Text = "Unread: " .. unread
+    if shown == 0 then
+        local empty = Text(NotificationList, "No notifications", 10,
+            Color3.fromRGB(150, 165, 185))
 
-    NotificationListText.Text = #lines > 0
-        and table.concat(lines, "\n\n")
-        or "No notifications"
+        empty.Size = UDim2.new(1, -5, 0, 35)
+    end
 end
 
 local function RefreshMusic()
-    PlaylistTitle.Text = "PLAYLIST (" .. #Playlist .. ")"
-
-    local lines = {}
-
-    for i, id in ipairs(Playlist) do
-        local marker = i == CurrentTrack and " ▶ " or "   "
-        table.insert(lines, marker .. i .. ". " .. id)
-    end
-
-    PlaylistText.Text = #lines > 0
-        and table.concat(lines, "\n")
-        or "No tracks added"
-
-    local recentLines = {}
-
-    for i = 1, math.min(5, #RecentTracks) do
-        table.insert(recentLines, i .. ". " .. RecentTracks[i])
-    end
-
-    RecentText.Text = #recentLines > 0
-        and table.concat(recentLines, "\n")
-        or "Nothing played yet"
+    RefreshQueue()
+    RefreshRecent()
 
     if Music.IsPlaying then
-        PlayButton.Text = "Ⅱ Pause"
+        PlayPause.Text = "PAUSE"
+        MiniIcon.Text = "♫"
+        MiniStatus.Text = "NOW PLAYING"
 
         local id = Playlist[CurrentTrack]
-        TrackTitle.Text = id and ("Audio ID: " .. id) or "Playing"
-        TrackStatus.Text = "Playing • " .. FormatTime(Music.TimePosition)
+        SongName.Text = id and ("Audio ID: " .. id) or "Playing"
+        SongState.Text = "Playing"
+
     else
-        PlayButton.Text = "▶ Play"
+        PlayPause.Text = "PLAY"
+        MiniIcon.Text = "M"
+        MiniStatus.Text = "Premium Glass"
 
-        if Music.SoundId == "" then
-            TrackTitle.Text = "No Track"
-            TrackStatus.Text = "Ready to play"
-        else
-            TrackStatus.Text = "Paused / Stopped"
-        end
-    end
-end
+        SongName.Text = Playlist[CurrentTrack]
+            and ("Audio ID: " .. Playlist[CurrentTrack])
+            or "No song selected"
 
-local function RefreshTimers()
-    local lines = {}
-
-    for _, timer in ipairs(Timers) do
-        table.insert(lines,
-            "#" .. timer.Id .. "  " ..
-            FormatTime(timer.Remaining) ..
-            (timer.Running and "  • RUNNING" or "  • PAUSED")
-        )
+        SongState.Text = "Paused / Ready"
     end
 
-    TimerListText.Text = #lines > 0
-        and table.concat(lines, "\n\n")
-        or "No active timers"
+    if Music.IsLoaded and Music.TimeLength > 0 then
+        local percent = math.clamp(Music.TimePosition / Music.TimeLength, 0, 1)
+
+        ProgressFill.Size = UDim2.new(percent, 0, 1, 0)
+        TimeCurrent.Text = FormatTime(Music.TimePosition)
+        TimeTotal.Text = FormatTime(Music.TimeLength)
+    else
+        ProgressFill.Size = UDim2.new(0, 0, 1, 0)
+        TimeCurrent.Text = "00:00"
+        TimeTotal.Text = "00:00"
+    end
 end
 
 local function RefreshPerformance()
@@ -1476,48 +1727,49 @@ local function RefreshPerformance()
         "MEMORY:    " .. Memory .. " MB\n\n" ..
         "SESSION:   " .. FormatTime(os.clock() - SessionStart)
 
-    local historyLines = {}
+    local lines = {}
 
-    for i = #PerformanceHistory, math.max(1, #PerformanceHistory - 5), -1 do
+    for i = #PerformanceHistory,
+        math.max(1, #PerformanceHistory - 6), -1 do
+
         local item = PerformanceHistory[i]
 
-        table.insert(historyLines,
+        table.insert(lines,
             "FPS " .. item.FPS ..
-            "  |  Ping " .. item.Ping .. " ms"
+            "   |   PING " .. item.Ping .. " ms"
         )
     end
 
-    HistoryText.Text = #historyLines > 0
-        and table.concat(historyLines, "\n")
-        or "No history yet"
+    HistoryText.Text = #lines > 0
+        and table.concat(lines, "\n")
+        or "Collecting data..."
 
     if FPS > 0 and FPS < 25 then
-        WarningText.Text = "Warning: Low FPS"
+        WarningText.Text = "WARNING: LOW FPS"
     elseif Ping > 250 then
-        WarningText.Text = "Warning: High network latency"
+        WarningText.Text = "WARNING: HIGH PING"
     else
         WarningText.Text = "Performance monitoring active"
     end
 end
 
---==================================================
--- 22. MAIN UPDATE LOOP
---==================================================
+--========================================================
+-- UPDATE LOOP
+--========================================================
 
-local updateAccumulator = 0
+local accumulator = 0
+local timerRefresh = 0
 
-trackConnection(RunService.Heartbeat:Connect(function(dt)
+Connect(RunService.Heartbeat:Connect(function(dt)
     if Destroyed then return end
 
     if StopwatchRunning then
         StopwatchTime += dt
-        StopwatchLabel.Text = FormatTime(StopwatchTime)
-        LapLabel.Text = "Laps: " .. #StopwatchLaps
+        StopwatchText.Text = FormatTime(StopwatchTime)
+        LapText.Text = "Laps: " .. #Laps
     end
 
-    for i = #Timers, 1, -1 do
-        local timer = Timers[i]
-
+    for _, timer in ipairs(Timers) do
         if timer.Running then
             timer.Remaining -= dt
 
@@ -1530,15 +1782,17 @@ trackConnection(RunService.Heartbeat:Connect(function(dt)
         end
     end
 
-    updateAccumulator += dt
+    accumulator += dt
+    timerRefresh += dt
 
-    if updateAccumulator >= 1 then
-        updateAccumulator = 0
+    if accumulator >= 1 then
+        accumulator = 0
 
-        ClockLabel.Text = os.date("%H:%M:%S")
-        DateLabel.Text = os.date("%A, %B %d, %Y")
+        ClockText.Text = os.date("%H:%M:%S")
+        DateText.Text = os.date("%A, %B %d, %Y")
 
-        SessionLabel.Text = "SESSION: " .. FormatTime(os.clock() - SessionStart)
+        SessionText.Text = "SESSION: " ..
+            FormatTime(os.clock() - SessionStart)
 
         Ping = ReadPing()
         Memory = ReadMemory()
@@ -1548,39 +1802,43 @@ trackConnection(RunService.Heartbeat:Connect(function(dt)
             Ping = Ping,
         })
 
-        while #PerformanceHistory > 20 do
+        while #PerformanceHistory > 30 do
             table.remove(PerformanceHistory, 1)
         end
 
-        RefreshMusic()
-        RefreshNotifications()
-        RefreshTimers()
         RefreshPerformance()
+        RefreshNotifications()
+        RefreshMusic()
+    end
+
+    if timerRefresh >= 0.25 then
+        timerRefresh = 0
+        RefreshTimers()
     end
 end))
 
---==================================================
--- 23. NOTIFICATION EVENT BRIDGE
---==================================================
+--========================================================
+-- NOTIFICATION EVENT BRIDGE
+--========================================================
 
-local NotifyEvent = Create("BindableEvent", {
+local NotifyEvent = New("BindableEvent", {
     Name = "IslandNotify",
-}, ScreenGui)
+}, Gui)
 
 NotifyEvent.Event:Connect(function(title, message, category)
     Notify(title, message, category)
 end)
 
--- Other LocalScripts can use:
--- PlayerGui.DynamicIslandPremiumV60.IslandNotify:Fire(
---     "Quest", "Quest completed", "Game"
+-- Example:
+-- PlayerGui.DynamicIslandPremiumV61.IslandNotify:Fire(
+--     "Quest", "Quest completed", "System"
 -- )
 
---==================================================
--- 24. CLEANUP
---==================================================
+--========================================================
+-- CLEANUP
+--========================================================
 
-ScreenGui.Destroying:Connect(function()
+Gui.Destroying:Connect(function()
     Destroyed = true
 
     for _, connection in ipairs(Connections) do
@@ -1592,14 +1850,19 @@ ScreenGui.Destroying:Connect(function()
     table.clear(Connections)
 end)
 
---==================================================
--- 25. START
---==================================================
+--========================================================
+-- INITIALIZE
+--========================================================
 
+RefreshQueue()
+RefreshNotifications()
+RefreshTimers()
+RefreshMusic()
+RefreshDevice()
 OpenPage("Music")
 SetExpanded(false)
 UpdateResponsive()
 
-Notify("Dynamic Island", "Premium V6.0 loaded", "System")
+Notify("Dynamic Island", "Premium V6.1 Glass Edition loaded", "System")
 
-print("Dynamic Island Premium V6.0 Ultimate loaded.")
+print("Dynamic Island Premium V6.1 Glass Edition loaded.")
