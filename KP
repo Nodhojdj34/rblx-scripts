@@ -1,128 +1,137 @@
 
---========================================================
--- DYNAMIC ISLAND PREMIUM V4.0 | SPOTIFY EDITION
--- PC + MOBILE | ONE LOCAL SCRIPT
---
--- 放置位置：
--- StarterPlayer > StarterPlayerScripts > LocalScript
---========================================================
+--[[
+    Roblox Dynamic Island Premium V5.0
+    Layout: Wide | Position: Top | Theme: Apple Glass
+    PC + Mobile | Music | Notifications | Device | Clock | Network | Settings
 
---==================== SERVICES ====================
+    放置位置：
+    StarterPlayer > StarterPlayerScripts > LocalScript
+
+    音乐资源：
+    将 PLAYLIST 中的 SoundId 和 ImageId 替换为你有权限使用的 Roblox 资源 ID。
+]]
+
+--==================================================
+-- SERVICES
+--==================================================
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 local SoundService = game:GetService("SoundService")
 local Stats = game:GetService("Stats")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local Player = Players.LocalPlayer
-local PlayerGui = Player:WaitForChild("PlayerGui")
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
 
---==================== CONFIG ====================
+--==================================================
+-- CONFIG
+--==================================================
 
 local CONFIG = {
-    CompactWidth = 150,
-    CompactHeight = 42,
-
-    ExpandedWidth = 350,
-    ExpandedHeight = 430,
-
-    Top = 10,
-    AnimationTime = 0.4,
-
-    Volume = 0.65,
-
-    ShowClock = true,
-    ShowPing = true,
-    ShowBattery = true,
-
-    NotificationDuration = 4,
+    ExpandedWidth = 620,
+    ExpandedHeight = 420,
+    MobileWidthScale = 0.94,
+    MobileHeightScale = 0.76,
+    AnimationTime = 0.28,
+    NotificationLimit = 20,
+    StartExpanded = false,
 }
 
---==================== PLAYLIST ====================
--- 把 SoundId 换成你自己的 Roblox 音频 ID
--- 把 ImageId 换成每首歌曲自己的封面图片 ID
+--==================================================
+-- PLAYLIST
+--==================================================
 
 local PLAYLIST = {
     {
-        Name = "Midnight Dreams",
-        Artist = "Your Artist",
+        Name = "Midnight Drive",
+        Artist = "Roblox Music",
         SoundId = "rbxassetid://0",
         ImageId = "rbxassetid://0",
     },
-
     {
         Name = "Ocean Lights",
-        Artist = "Dream Music",
+        Artist = "Roblox Music",
         SoundId = "rbxassetid://0",
         ImageId = "rbxassetid://0",
     },
-
     {
-        Name = "Night Drive",
-        Artist = "Electronic Studio",
-        SoundId = "rbxassetid://0",
-        ImageId = "rbxassetid://0",
-    },
-
-    {
-        Name = "Golden Hour",
-        Artist = "Chill Records",
+        Name = "Dreams",
+        Artist = "Roblox Music",
         SoundId = "rbxassetid://0",
         ImageId = "rbxassetid://0",
     },
 }
 
---==================== COLORS ====================
+--==================================================
+-- THEME
+--==================================================
 
-local C = {
-    Black = Color3.fromRGB(5, 6, 8),
-    Panel = Color3.fromRGB(20, 22, 27),
-    Card = Color3.fromRGB(32, 35, 42),
+local THEMES = {
+    glass = {
+        Background = Color3.fromRGB(15, 16, 20),
+        Sidebar = Color3.fromRGB(20, 21, 26),
+        Card = Color3.fromRGB(29, 30, 36),
+        Button = Color3.fromRGB(43, 44, 51),
+        Accent = Color3.fromRGB(255, 255, 255),
+        Text = Color3.fromRGB(245, 245, 248),
+        SubText = Color3.fromRGB(155, 157, 166),
+        Green = Color3.fromRGB(30, 215, 96),
+        Border = Color3.fromRGB(80, 82, 92),
+    },
 
-    White = Color3.fromRGB(255, 255, 255),
-    Gray = Color3.fromRGB(155, 160, 170),
+    spotify = {
+        Background = Color3.fromRGB(18, 18, 18),
+        Sidebar = Color3.fromRGB(24, 24, 24),
+        Card = Color3.fromRGB(35, 35, 35),
+        Button = Color3.fromRGB(50, 50, 50),
+        Accent = Color3.fromRGB(30, 215, 96),
+        Text = Color3.fromRGB(255, 255, 255),
+        SubText = Color3.fromRGB(170, 170, 170),
+        Green = Color3.fromRGB(30, 215, 96),
+        Border = Color3.fromRGB(70, 70, 70),
+    },
 
-    Green = Color3.fromRGB(30, 190, 85),
-    Dark = Color3.fromRGB(55, 58, 65),
+    light = {
+        Background = Color3.fromRGB(238, 239, 243),
+        Sidebar = Color3.fromRGB(225, 227, 233),
+        Card = Color3.fromRGB(255, 255, 255),
+        Button = Color3.fromRGB(225, 227, 233),
+        Accent = Color3.fromRGB(25, 25, 30),
+        Text = Color3.fromRGB(25, 25, 30),
+        SubText = Color3.fromRGB(100, 103, 112),
+        Green = Color3.fromRGB(25, 170, 85),
+        Border = Color3.fromRGB(195, 198, 207),
+    },
 }
 
---==================== CLEAN OLD GUI ====================
+local currentThemeName = "glass"
+local theme = THEMES[currentThemeName]
 
-local oldGui = PlayerGui:FindFirstChild("DynamicIslandPremium")
+--==================================================
+-- CLEAN OLD GUI
+--==================================================
+
+local oldGui = playerGui:FindFirstChild("DynamicIslandPremium")
 if oldGui then
     oldGui:Destroy()
 end
 
-local oldSound = SoundService:FindFirstChild("DI_Music")
+local oldSound = SoundService:FindFirstChild("DynamicIslandMusic")
 if oldSound then
     oldSound:Destroy()
 end
 
---==================== STATE ====================
-
-local currentIndex = 1
-local isPlaying = false
-local isExpanded = false
-local isAnimating = false
-
-local shuffleEnabled = false
-local repeatMode = "all" -- all / one / off
-
-local volume = CONFIG.Volume
-local notificationToken = 0
-local songToken = 0
-
-local draggingProgress = false
-local draggingVolume = false
-
---==================== HELPERS ====================
+--==================================================
+-- HELPERS
+--==================================================
 
 local function create(className, properties, parent)
     local obj = Instance.new(className)
 
-    for key, value in pairs(properties) do
+    for key, value in pairs(properties or {}) do
         obj[key] = value
     end
 
@@ -132,1258 +141,1492 @@ end
 
 local function corner(parent, radius)
     return create("UICorner", {
-        CornerRadius = UDim.new(0, radius)
+        CornerRadius = UDim.new(0, radius or 12)
     }, parent)
 end
 
 local function stroke(parent, color, transparency, thickness)
     return create("UIStroke", {
-        Color = color,
-        Transparency = transparency,
-        Thickness = thickness,
+        Color = color or theme.Border,
+        Transparency = transparency or 0.5,
+        Thickness = thickness or 1,
     }, parent)
 end
 
-local function tween(object, duration, properties)
-    local t = TweenService:Create(
-        object,
-        TweenInfo.new(
-            duration,
-            Enum.EasingStyle.Quint,
-            Enum.EasingDirection.Out
-        ),
-        properties
+local function tween(object, duration, properties, style)
+    local info = TweenInfo.new(
+        duration or CONFIG.AnimationTime,
+        style or Enum.EasingStyle.Quint,
+        Enum.EasingDirection.Out
     )
 
-    t:Play()
-    return t
+    local animation = TweenService:Create(object, info, properties)
+    animation:Play()
+    return animation
 end
 
-local function makeLabel(parent, name, text, position, size, textSize, color, font)
+local function makeLabel(parent, text, size, position, font, color)
     return create("TextLabel", {
-        Name = name,
-        Position = position,
-        Size = size,
-
         BackgroundTransparency = 1,
-
-        Text = text,
-        TextColor3 = color or C.White,
-        TextSize = textSize,
-
-        Font = font or Enum.Font.GothamMedium,
-
+        Text = text or "",
+        Size = size,
+        Position = position or UDim2.new(),
+        Font = font or Enum.Font.Gotham,
+        TextSize = 14,
+        TextColor3 = color or theme.Text,
         TextXAlignment = Enum.TextXAlignment.Left,
         TextYAlignment = Enum.TextYAlignment.Center,
-
-        TextTruncate = Enum.TextTruncate.AtEnd,
     }, parent)
 end
 
-local function makeButton(parent, name, text, position, size, color)
-    return create("TextButton", {
-        Name = name,
-        Position = position,
+local function makeButton(parent, text, size, position)
+    local button = create("TextButton", {
         Size = size,
-
-        BackgroundColor3 = color or C.Card,
-        BorderSizePixel = 0,
-
+        Position = position or UDim2.new(),
+        BackgroundColor3 = theme.Button,
         Text = text,
-        TextColor3 = C.White,
-        TextSize = 16,
-
-        Font = Enum.Font.GothamBold,
-        AutoButtonColor = false,
+        TextColor3 = theme.Text,
+        TextSize = 14,
+        Font = Enum.Font.GothamMedium,
+        AutoButtonColor = true,
+        BorderSizePixel = 0,
     }, parent)
+
+    corner(button, 10)
+    return button
 end
 
 local function formatTime(seconds)
     seconds = math.max(0, math.floor(seconds or 0))
+    return string.format("%d:%02d", math.floor(seconds / 60), seconds % 60)
+end
 
-    return string.format(
-        "%d:%02d",
-        math.floor(seconds / 60),
-        seconds % 60
+--==================================================
+-- SCREEN GUI
+--==================================================
+
+local gui = create("ScreenGui", {
+    Name = "DynamicIslandPremium",
+    ResetOnSpawn = false,
+    IgnoreGuiInset = false,
+    ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+}, playerGui)
+
+local scale = create("UIScale", {
+    Scale = 1,
+}, gui)
+
+--==================================================
+-- MAIN ISLAND
+--==================================================
+
+local main = create("Frame", {
+    Name = "Main",
+    AnchorPoint = Vector2.new(0.5, 0),
+    Position = UDim2.new(0.5, 0, 0, 8),
+    Size = UDim2.fromOffset(190, 48),
+    BackgroundColor3 = Color3.fromRGB(8, 9, 12),
+    BorderSizePixel = 0,
+    ClipsDescendants = true,
+}, gui)
+
+corner(main, 25)
+stroke(main, Color3.fromRGB(105, 108, 120), 0.45, 1)
+
+local compactButton = create("TextButton", {
+    Name = "CompactButton",
+    Size = UDim2.fromScale(1, 1),
+    BackgroundTransparency = 1,
+    Text = "",
+    AutoButtonColor = false,
+    ZIndex = 10,
+}, main)
+
+local compactTitle = makeLabel(
+    main,
+    "♪   Dynamic Island",
+    UDim2.new(1, -24, 1, 0),
+    UDim2.fromOffset(12, 0),
+    Enum.Font.GothamMedium,
+    Color3.fromRGB(245, 245, 248)
+)
+compactTitle.TextSize = 13
+compactTitle.ZIndex = 2
+
+local compactStatus = create("Frame", {
+    Size = UDim2.fromOffset(7, 7),
+    Position = UDim2.new(1, -18, 0.5, -3),
+    BackgroundColor3 = Color3.fromRGB(30, 215, 96),
+    BorderSizePixel = 0,
+    ZIndex = 3,
+}, main)
+corner(compactStatus, 10)
+
+--==================================================
+-- EXPANDED PANEL
+--==================================================
+
+local expanded = false
+local switchingPage = false
+
+local panel = create("Frame", {
+    Name = "WidePanel",
+    Position = UDim2.fromOffset(0, 0),
+    Size = UDim2.fromOffset(CONFIG.ExpandedWidth, CONFIG.ExpandedHeight),
+    BackgroundColor3 = theme.Background,
+    BorderSizePixel = 0,
+    Visible = false,
+    ClipsDescendants = true,
+    ZIndex = 1,
+}, main)
+
+corner(panel, 22)
+stroke(panel, theme.Border, 0.35, 1)
+
+--==================================================
+-- TOP BAR
+--==================================================
+
+local topBar = create("Frame", {
+    Size = UDim2.new(1, 0, 0, 48),
+    BackgroundTransparency = 1,
+}, panel)
+
+local brand = makeLabel(
+    topBar,
+    "DYNAMIC ISLAND",
+    UDim2.new(0, 180, 1, 0),
+    UDim2.fromOffset(18, 0),
+    Enum.Font.GothamBold,
+    theme.Text
+)
+brand.TextSize = 12
+
+local topClock = makeLabel(
+    topBar,
+    "--:--",
+    UDim2.fromOffset(75, 32),
+    UDim2.new(1, -116, 0, 8),
+    Enum.Font.GothamMedium,
+    theme.SubText
+)
+topClock.TextXAlignment = Enum.TextXAlignment.Right
+
+local closeButton = makeButton(
+    topBar,
+    "×",
+    UDim2.fromOffset(30, 30),
+    UDim2.new(1, -42, 0, 9)
+)
+closeButton.TextSize = 20
+
+local topDivider = create("Frame", {
+    Size = UDim2.new(1, -24, 0, 1),
+    Position = UDim2.fromOffset(12, 47),
+    BackgroundColor3 = theme.Border,
+    BackgroundTransparency = 0.65,
+    BorderSizePixel = 0,
+}, panel)
+
+--==================================================
+-- SIDEBAR
+--==================================================
+
+local sidebar = create("Frame", {
+    Name = "Sidebar",
+    Position = UDim2.fromOffset(0, 48),
+    Size = UDim2.new(0, 132, 1, -48),
+    BackgroundColor3 = theme.Sidebar,
+    BorderSizePixel = 0,
+}, panel)
+
+local sidebarPadding = create("UIPadding", {
+    PaddingTop = UDim.new(0, 13),
+    PaddingLeft = UDim.new(0, 10),
+    PaddingRight = UDim.new(0, 10),
+}, sidebar)
+
+local sideLayout = create("UIListLayout", {
+    Padding = UDim.new(0, 7),
+    SortOrder = Enum.SortOrder.LayoutOrder,
+}, sidebar)
+
+local sideButtons = {}
+local pages = {}
+local selectedPage = "Music"
+
+--==================================================
+-- CONTENT AREA
+--==================================================
+
+local content = create("Frame", {
+    Name = "Content",
+    Position = UDim2.fromOffset(132, 48),
+    Size = UDim2.new(1, -132, 1, -48),
+    BackgroundTransparency = 1,
+    ClipsDescendants = true,
+}, panel)
+
+local function makePage(name)
+    local page = create("Frame", {
+        Name = name,
+        Size = UDim2.fromScale(1, 1),
+        BackgroundTransparency = 1,
+        Visible = false,
+    }, content)
+
+    pages[name] = page
+    return page
+end
+
+local musicPage = makePage("Music")
+local notificationsPage = makePage("Notifications")
+local devicePage = makePage("Device")
+local timePage = makePage("Time")
+local networkPage = makePage("Network")
+local settingsPage = makePage("Settings")
+
+--==================================================
+-- PAGE NAVIGATION
+--==================================================
+
+local pageDefinitions = {
+    {Name = "Music", Icon = "♫"},
+    {Name = "Notifications", Icon = "♧"},
+    {Name = "Device", Icon = "▣"},
+    {Name = "Time", Icon = "◷"},
+    {Name = "Network", Icon = "⌁"},
+    {Name = "Settings", Icon = "⚙"},
+}
+
+local function selectPage(name)
+    if switchingPage or not pages[name] then
+        return
+    end
+
+    switchingPage = true
+    selectedPage = name
+
+    for pageName, page in pairs(pages) do
+        page.Visible = pageName == name
+        page.Position = UDim2.fromOffset(10, 0)
+    end
+
+    for pageName, button in pairs(sideButtons) do
+        local active = pageName == name
+        tween(button, 0.16, {
+            BackgroundColor3 = active and theme.Button or theme.Sidebar
+        })
+
+        local accent = button:FindFirstChild("ActiveMark")
+        if accent then
+            accent.BackgroundTransparency = active and 0 or 1
+        end
+    end
+
+    local activePage = pages[name]
+    activePage.Visible = true
+    tween(activePage, 0.2, {
+        Position = UDim2.fromOffset(0, 0)
+    })
+
+    task.delay(0.22, function()
+        switchingPage = false
+    end)
+end
+
+for index, definition in ipairs(pageDefinitions) do
+    local button = create("TextButton", {
+        Name = definition.Name .. "Button",
+        Size = UDim2.new(1, 0, 0, 42),
+        BackgroundColor3 = theme.Sidebar,
+        BorderSizePixel = 0,
+        Text = "",
+        LayoutOrder = index,
+        AutoButtonColor = false,
+    }, sidebar)
+
+    corner(button, 10)
+
+    local mark = create("Frame", {
+        Name = "ActiveMark",
+        Size = UDim2.fromOffset(3, 20),
+        Position = UDim2.new(0, 0, 0.5, -10),
+        BackgroundColor3 = theme.Accent,
+        BackgroundTransparency = definition.Name == "Music" and 0 or 1,
+        BorderSizePixel = 0,
+    }, button)
+    corner(mark, 4)
+
+    local icon = makeLabel(
+        button,
+        definition.Icon,
+        UDim2.fromOffset(25, 42),
+        UDim2.fromOffset(12, 0),
+        Enum.Font.GothamBold,
+        theme.Text
     )
+    icon.TextSize = 17
+    icon.TextXAlignment = Enum.TextXAlignment.Center
+
+    local label = makeLabel(
+        button,
+        definition.Name,
+        UDim2.new(1, -48, 1, 0),
+        UDim2.fromOffset(43, 0),
+        Enum.Font.GothamMedium,
+        theme.Text
+    )
+    label.TextSize = 12
+
+    sideButtons[definition.Name] = button
+    button.Activated:Connect(function()
+        selectPage(definition.Name)
+    end)
 end
 
-local function getSong()
-    return PLAYLIST[currentIndex]
-end
+--==================================================
+-- MUSIC PAGE
+--==================================================
 
-local function validAsset(id)
-    return typeof(id) == "string"
-        and id ~= ""
-        and id ~= "rbxassetid://0"
-end
+local musicTitle = makeLabel(
+    musicPage,
+    "Now Playing",
+    UDim2.new(1, -30, 0, 28),
+    UDim2.fromOffset(16, 8),
+    Enum.Font.GothamBold,
+    theme.Text
+)
+musicTitle.TextSize = 18
 
---==================== SOUND ====================
+local cover = create("ImageLabel", {
+    Size = UDim2.fromOffset(128, 128),
+    Position = UDim2.fromOffset(18, 48),
+    BackgroundColor3 = theme.Card,
+    BorderSizePixel = 0,
+    Image = "",
+    ScaleType = Enum.ScaleType.Crop,
+}, musicPage)
+corner(cover, 13)
 
-local Music = create("Sound", {
-    Name = "DI_Music",
-    Volume = volume,
+local songName = makeLabel(
+    musicPage,
+    "No song selected",
+    UDim2.new(1, -180, 0, 28),
+    UDim2.fromOffset(164, 54),
+    Enum.Font.GothamBold,
+    theme.Text
+)
+songName.TextSize = 17
+
+local artistName = makeLabel(
+    musicPage,
+    "Choose a track from playlist",
+    UDim2.new(1, -180, 0, 22),
+    UDim2.fromOffset(164, 83),
+    Enum.Font.Gotham,
+    theme.SubText
+)
+artistName.TextSize = 12
+
+local songStatus = makeLabel(
+    musicPage,
+    "READY TO PLAY",
+    UDim2.new(1, -180, 0, 20),
+    UDim2.fromOffset(164, 110),
+    Enum.Font.GothamMedium,
+    theme.Green
+)
+songStatus.TextSize = 10
+
+local progressBackground = create("Frame", {
+    Size = UDim2.new(1, -190, 0, 5),
+    Position = UDim2.fromOffset(164, 151),
+    BackgroundColor3 = theme.Button,
+    BorderSizePixel = 0,
+}, musicPage)
+corner(progressBackground, 5)
+
+local progressFill = create("Frame", {
+    Size = UDim2.new(0, 0, 1, 0),
+    BackgroundColor3 = theme.Accent,
+    BorderSizePixel = 0,
+}, progressBackground)
+corner(progressFill, 5)
+
+local progressHit = create("TextButton", {
+    Size = UDim2.new(1, 0, 0, 24),
+    Position = UDim2.new(0, 0, 0.5, -12),
+    BackgroundTransparency = 1,
+    Text = "",
+    AutoButtonColor = false,
+    ZIndex = 5,
+}, progressBackground)
+
+local currentTimeLabel = makeLabel(
+    musicPage,
+    "0:00",
+    UDim2.fromOffset(50, 18),
+    UDim2.fromOffset(164, 160),
+    Enum.Font.Gotham,
+    theme.SubText
+)
+currentTimeLabel.TextSize = 10
+
+local totalTimeLabel = makeLabel(
+    musicPage,
+    "0:00",
+    UDim2.fromOffset(50, 18),
+    UDim2.new(1, -66, 0, 160),
+    Enum.Font.Gotham,
+    theme.SubText
+)
+totalTimeLabel.TextSize = 10
+totalTimeLabel.TextXAlignment = Enum.TextXAlignment.Right
+
+-- Music sound
+
+local musicSound = create("Sound", {
+    Name = "DynamicIslandMusic",
+    Volume = 0.5,
     Looped = false,
 }, SoundService)
 
---==================== SCREEN GUI ====================
+local currentIndex = 1
+local isPlaying = false
+local shuffleEnabled = false
+local repeatEnabled = false
+local draggingProgress = false
 
-local GUI = create("ScreenGui", {
-    Name = "DynamicIslandPremium",
-    ResetOnSpawn = false,
-    IgnoreGuiInset = true,
-    DisplayOrder = 999,
-    ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-}, PlayerGui)
-
---==================== SHADOW ====================
-
-local Shadow = create("Frame", {
-    Name = "Shadow",
-
-    AnchorPoint = Vector2.new(0.5, 0),
-    Position = UDim2.new(0.5, 0, 0, CONFIG.Top + 5),
-
-    Size = UDim2.fromOffset(
-        CONFIG.CompactWidth + 14,
-        CONFIG.CompactHeight + 14
-    ),
-
-    BackgroundColor3 = Color3.new(0, 0, 0),
-    BackgroundTransparency = 0.35,
-
-    BorderSizePixel = 0,
-    ZIndex = 1,
-}, GUI)
-
-corner(Shadow, 30)
-
---==================== MAIN ISLAND ====================
-
-local Main = create("Frame", {
-    Name = "MainIsland",
-
-    AnchorPoint = Vector2.new(0.5, 0),
-    Position = UDim2.new(0.5, 0, 0, CONFIG.Top),
-
-    Size = UDim2.fromOffset(
-        CONFIG.CompactWidth,
-        CONFIG.CompactHeight
-    ),
-
-    BackgroundColor3 = C.Black,
-    BorderSizePixel = 0,
-
-    ClipsDescendants = true,
-    ZIndex = 5,
-}, GUI)
-
-local MainCorner = corner(Main, 30)
-local MainStroke = stroke(Main, C.Gray, 0.45, 1)
-
-create("UIGradient", {
-    Rotation = 90,
-    Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(27, 29, 35)),
-        ColorSequenceKeypoint.new(1, C.Black),
-    }),
-}, Main)
-
-local Scale = create("UIScale", {
-    Scale = 1,
-}, Main)
-
---==================== COMPACT VIEW ====================
-
-local Compact = create("Frame", {
-    Name = "Compact",
-    Size = UDim2.new(1, 0, 0, CONFIG.CompactHeight),
-    BackgroundTransparency = 1,
-    ZIndex = 10,
-}, Main)
-
-local CompactIcon = makeLabel(
-    Compact, "MusicIcon", "♫",
-    UDim2.fromOffset(12, 0),
-    UDim2.fromOffset(28, 42),
-    22, C.Green
-)
-
-local CompactText = makeLabel(
-    Compact, "CompactText", "SPOTIFY",
-    UDim2.fromOffset(45, 0),
-    UDim2.fromOffset(72, 42),
-    9, C.Gray
-)
-
-local Wave = create("Frame", {
-    Position = UDim2.new(1, -33, 0, 10),
-    Size = UDim2.fromOffset(24, 22),
-    BackgroundTransparency = 1,
-}, Compact)
-
-local WaveBars = {}
-
-for i = 1, 4 do
-    local bar = create("Frame", {
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        Position = UDim2.new((i - 0.5) / 4, 0, 0.5, 0),
-        Size = UDim2.fromOffset(3, 4),
-        BackgroundColor3 = C.Green,
-        BorderSizePixel = 0,
-    }, Wave)
-
-    corner(bar, 5)
-    table.insert(WaveBars, bar)
+local function getCurrentSong()
+    return PLAYLIST[currentIndex]
 end
 
-local CompactButton = makeButton(
-    Compact, "CompactButton", "",
-    UDim2.fromScale(0, 0),
-    UDim2.fromScale(1, 1),
-    C.Black
-)
+local function updateSongDisplay()
+    local song = getCurrentSong()
+    if not song then
+        return
+    end
 
-CompactButton.BackgroundTransparency = 1
-CompactButton.ZIndex = 20
+    songName.Text = song.Name or "Unknown"
+    artistName.Text = song.Artist or "Unknown Artist"
+    cover.Image = song.ImageId or ""
+    totalTimeLabel.Text = formatTime(musicSound.TimeLength)
+end
 
---==================== EXPANDED VIEW ====================
+local function loadSong(index, shouldPlay)
+    if #PLAYLIST == 0 then
+        return
+    end
 
-local Expanded = create("Frame", {
-    Name = "Expanded",
-    Position = UDim2.fromOffset(0, 45),
-    Size = UDim2.new(1, 0, 1, -45),
+    currentIndex = ((index - 1) % #PLAYLIST) + 1
+
+    local song = getCurrentSong()
+    musicSound:Stop()
+    musicSound.SoundId = song.SoundId or ""
+    musicSound.TimePosition = 0
+
+    updateSongDisplay()
+    progressFill.Size = UDim2.new(0, 0, 1, 0)
+    currentTimeLabel.Text = "0:00"
+
+    if shouldPlay then
+        local ok = pcall(function()
+            musicSound:Play()
+        end)
+
+        isPlaying = ok
+        songStatus.Text = ok and "PLAYING" or "UNABLE TO PLAY"
+    else
+        isPlaying = false
+        songStatus.Text = "READY TO PLAY"
+    end
+end
+
+local function playPause()
+    if #PLAYLIST == 0 then
+        return
+    end
+
+    if musicSound.SoundId == "" or musicSound.SoundId == "rbxassetid://0" then
+        loadSong(currentIndex, false)
+        songStatus.Text = "SET A VALID SOUND ID"
+        return
+    end
+
+    if musicSound.IsPlaying then
+        musicSound:Pause()
+        isPlaying = false
+        songStatus.Text = "PAUSED"
+    else
+        if musicSound.TimeLength > 0 and musicSound.TimePosition >= musicSound.TimeLength then
+            musicSound.TimePosition = 0
+        end
+
+        local ok = pcall(function()
+            musicSound:Play()
+        end)
+
+        isPlaying = ok
+        songStatus.Text = ok and "PLAYING" or "UNABLE TO PLAY"
+    end
+end
+
+local function nextSong()
+    if #PLAYLIST == 0 then
+        return
+    end
+
+    local nextIndex = currentIndex + 1
+
+    if shuffleEnabled and #PLAYLIST > 1 then
+        repeat
+            nextIndex = math.random(1, #PLAYLIST)
+        until nextIndex ~= currentIndex
+    end
+
+    loadSong(nextIndex, true)
+end
+
+local function previousSong()
+    if musicSound.TimePosition > 3 then
+        musicSound.TimePosition = 0
+        return
+    end
+
+    loadSong(currentIndex - 1, true)
+end
+
+local controls = create("Frame", {
+    Size = UDim2.new(1, -180, 0, 43),
+    Position = UDim2.fromOffset(160, 190),
     BackgroundTransparency = 1,
-    Visible = false,
-    ZIndex = 11,
-}, Main)
+}, musicPage)
 
---==================== HEADER ====================
+local controlsLayout = create("UIListLayout", {
+    FillDirection = Enum.FillDirection.Horizontal,
+    HorizontalAlignment = Enum.HorizontalAlignment.Left,
+    VerticalAlignment = Enum.VerticalAlignment.Center,
+    Padding = UDim.new(0, 9),
+}, controls)
 
-local Header = makeLabel(
-    Expanded, "Header", "NOW PLAYING",
-    UDim2.fromOffset(18, 0),
-    UDim2.fromOffset(190, 24),
-    10, C.Gray
+local shuffleButton = makeButton(controls, "⇄", UDim2.fromOffset(35, 35))
+local previousButton = makeButton(controls, "◀", UDim2.fromOffset(35, 35))
+local playButton = makeButton(controls, "▶", UDim2.fromOffset(48, 40))
+local nextButton = makeButton(controls, "▶|", UDim2.fromOffset(35, 35))
+local repeatButton = makeButton(controls, "↻", UDim2.fromOffset(35, 35))
+
+shuffleButton.Activated:Connect(function()
+    shuffleEnabled = not shuffleEnabled
+    shuffleButton.BackgroundColor3 = shuffleEnabled and theme.Green or theme.Button
+end)
+
+previousButton.Activated:Connect(previousSong)
+
+playButton.Activated:Connect(function()
+    playPause()
+    playButton.Text = musicSound.IsPlaying and "Ⅱ" or "▶"
+end)
+
+nextButton.Activated:Connect(nextSong)
+
+repeatButton.Activated:Connect(function()
+    repeatEnabled = not repeatEnabled
+    musicSound.Looped = repeatEnabled
+    repeatButton.BackgroundColor3 = repeatEnabled and theme.Green or theme.Button
+end)
+
+local volumeLabel = makeLabel(
+    musicPage,
+    "VOLUME",
+    UDim2.fromOffset(65, 20),
+    UDim2.fromOffset(164, 242),
+    Enum.Font.GothamMedium,
+    theme.SubText
 )
+volumeLabel.TextSize = 10
 
-local CloseButton = makeButton(
-    Expanded, "CloseButton", "×",
-    UDim2.new(1, -45, 0, -2),
-    UDim2.fromOffset(28, 28)
-)
-
-corner(CloseButton, 10)
-
---==================== NOTIFICATION TEXT ====================
-
-local NotificationText = makeLabel(
-    Expanded, "NotificationText", "",
-    UDim2.fromOffset(18, 24),
-    UDim2.new(1, -36, 0, 20),
-    9, C.Green
-)
-
-NotificationText.Visible = false
-
---==================== ALBUM CARD ====================
-
-local AlbumCard = create("Frame", {
-    Position = UDim2.fromOffset(15, 30),
-    Size = UDim2.new(1, -30, 0, 105),
-
-    BackgroundColor3 = C.Card,
+local volumeBackground = create("Frame", {
+    Size = UDim2.new(1, -245, 0, 5),
+    Position = UDim2.fromOffset(225, 249),
+    BackgroundColor3 = theme.Button,
     BorderSizePixel = 0,
-}, Expanded)
+}, musicPage)
+corner(volumeBackground, 5)
 
-corner(AlbumCard, 16)
-
-local AlbumImage = create("ImageLabel", {
-    Position = UDim2.fromOffset(10, 10),
-    Size = UDim2.fromOffset(85, 85),
-
-    BackgroundColor3 = Color3.fromRGB(48, 54, 75),
+local volumeFill = create("Frame", {
+    Size = UDim2.new(musicSound.Volume, 0, 1, 0),
+    BackgroundColor3 = theme.Accent,
     BorderSizePixel = 0,
+}, volumeBackground)
+corner(volumeFill, 5)
 
-    Image = "",
-    ScaleType = Enum.ScaleType.Crop,
-}, AlbumCard)
-
-corner(AlbumImage, 12)
-
-local AlbumFallback = makeLabel(
-    AlbumImage, "Fallback", "♫",
-    UDim2.fromScale(0, 0),
-    UDim2.fromScale(1, 1),
-    34, C.White
-)
-
-AlbumFallback.TextXAlignment = Enum.TextXAlignment.Center
-
-local SongTitle = makeLabel(
-    AlbumCard, "SongTitle", "Song Name",
-    UDim2.fromOffset(108, 19),
-    UDim2.new(1, -120, 0, 24),
-    14, C.White, Enum.Font.GothamBold
-)
-
-local SongArtist = makeLabel(
-    AlbumCard, "SongArtist", "Artist Name",
-    UDim2.fromOffset(108, 44),
-    UDim2.new(1, -120, 0, 20),
-    11, C.Gray
-)
-
-local PlayingTag = makeLabel(
-    AlbumCard, "PlayingTag", "● SPOTIFY STYLE",
-    UDim2.fromOffset(108, 70),
-    UDim2.new(1, -120, 0, 17),
-    8, C.Green
-)
-
---==================== PROGRESS BAR ====================
-
-local ProgressBackground = create("Frame", {
-    Position = UDim2.fromOffset(18, 147),
-    Size = UDim2.new(1, -36, 0, 5),
-
-    BackgroundColor3 = C.Dark,
-    BorderSizePixel = 0,
-}, Expanded)
-
-corner(ProgressBackground, 5)
-
-local ProgressFill = create("Frame", {
-    Size = UDim2.new(0, 0, 1, 0),
-    BackgroundColor3 = C.Green,
-    BorderSizePixel = 0,
-}, ProgressBackground)
-
-corner(ProgressFill, 5)
-
-local ProgressButton = makeButton(
-    Expanded, "ProgressButton", "",
-    UDim2.fromOffset(18, 140),
-    UDim2.new(1, -36, 0, 10),
-    C.Black
-)
-
-ProgressButton.BackgroundTransparency = 1
-ProgressButton.ZIndex = 30
-
-local CurrentTime = makeLabel(
-    Expanded, "CurrentTime", "0:00",
-    UDim2.fromOffset(18, 155),
-    UDim2.fromOffset(65, 17),
-    9, C.Gray
-)
-
-local TotalTime = makeLabel(
-    Expanded, "TotalTime", "0:00",
-    UDim2.new(1, -83, 0, 155),
-    UDim2.fromOffset(65, 17),
-    9, C.Gray
-)
-
-TotalTime.TextXAlignment = Enum.TextXAlignment.Right
-
---==================== PLAYBACK CONTROLS ====================
-
-local Controls = create("Frame", {
-    Position = UDim2.fromOffset(15, 180),
-    Size = UDim2.new(1, -30, 0, 43),
+local volumeHit = create("TextButton", {
+    Size = UDim2.new(1, 0, 0, 24),
+    Position = UDim2.new(0, 0, 0.5, -12),
     BackgroundTransparency = 1,
-}, Expanded)
+    Text = "",
+    AutoButtonColor = false,
+    ZIndex = 5,
+}, volumeBackground)
 
-local ShuffleButton = makeButton(
-    Controls, "Shuffle", "⤨",
-    UDim2.fromOffset(5, 4),
-    UDim2.fromOffset(32, 35),
-    C.Black
+-- Playlist area
+
+local playlistTitle = makeLabel(
+    musicPage,
+    "PLAYLIST",
+    UDim2.new(1, -30, 0, 20),
+    UDim2.fromOffset(16, 280),
+    Enum.Font.GothamBold,
+    theme.SubText
 )
+playlistTitle.TextSize = 10
 
-ShuffleButton.TextColor3 = C.Gray
-ShuffleButton.TextSize = 21
-
-local PreviousButton = makeButton(
-    Controls, "Previous", "◀◀",
-    UDim2.fromOffset(65, 4),
-    UDim2.fromOffset(35, 35),
-    C.Black
-)
-
-PreviousButton.TextSize = 15
-
-local PlayButton = makeButton(
-    Controls, "PlayPause", "▶",
-    UDim2.new(0.5, -22, 0, 0),
-    UDim2.fromOffset(44, 43),
-    C.White
-)
-
-PlayButton.TextColor3 = C.Black
-PlayButton.TextSize = 19
-corner(PlayButton, 24)
-
-local NextButton = makeButton(
-    Controls, "Next", "▶▶",
-    UDim2.new(1, -100, 0, 4),
-    UDim2.fromOffset(35, 35),
-    C.Black
-)
-
-NextButton.TextSize = 15
-
-local RepeatButton = makeButton(
-    Controls, "Repeat", "↻",
-    UDim2.new(1, -37, 0, 4),
-    UDim2.fromOffset(32, 35),
-    C.Black
-)
-
-RepeatButton.TextColor3 = C.Green
-RepeatButton.TextSize = 21
-
---==================== VOLUME ====================
-
-makeLabel(
-    Expanded, "VolumeLabel", "VOL",
-    UDim2.fromOffset(18, 232),
-    UDim2.fromOffset(35, 20),
-    9, C.Gray
-)
-
-local VolumeBackground = create("Frame", {
-    Position = UDim2.fromOffset(60, 239),
-    Size = UDim2.new(1, -115, 0, 4),
-
-    BackgroundColor3 = C.Dark,
-    BorderSizePixel = 0,
-}, Expanded)
-
-corner(VolumeBackground, 5)
-
-local VolumeFill = create("Frame", {
-    Size = UDim2.new(volume, 0, 1, 0),
-    BackgroundColor3 = C.Green,
-    BorderSizePixel = 0,
-}, VolumeBackground)
-
-corner(VolumeFill, 5)
-
-local VolumePercent = makeLabel(
-    Expanded, "VolumePercent", "65%",
-    UDim2.new(1, -48, 0, 231),
-    UDim2.fromOffset(35, 20),
-    9, C.Gray
-)
-
-local VolumeButton = makeButton(
-    Expanded, "VolumeButton", "",
-    UDim2.fromOffset(55, 228),
-    UDim2.new(1, -100, 0, 24),
-    C.Black
-)
-
-VolumeButton.BackgroundTransparency = 1
-VolumeButton.ZIndex = 30
-
---==================== PLAYLIST ====================
-
-makeLabel(
-    Expanded, "PlaylistTitle", "YOUR PLAYLIST",
-    UDim2.fromOffset(18, 263),
-    UDim2.fromOffset(180, 20),
-    9, C.Gray
-)
-
-local PlaylistScroll = create("ScrollingFrame", {
-    Name = "Playlist",
-
-    Position = UDim2.fromOffset(14, 285),
-    Size = UDim2.new(1, -28, 0, 90),
-
-    BackgroundColor3 = C.Card,
-    BackgroundTransparency = 0.2,
-
+local playlistFrame = create("ScrollingFrame", {
+    Size = UDim2.new(1, -28, 0, 82),
+    Position = UDim2.fromOffset(14, 305),
+    BackgroundColor3 = theme.Card,
     BorderSizePixel = 0,
     ScrollBarThickness = 3,
-    ScrollBarImageColor3 = C.Green,
-
-    CanvasSize = UDim2.fromOffset(0, 0),
+    CanvasSize = UDim2.new(),
     AutomaticCanvasSize = Enum.AutomaticSize.Y,
-}, Expanded)
+}, musicPage)
+corner(playlistFrame, 10)
 
-corner(PlaylistScroll, 12)
-
-create("UIListLayout", {
-    Padding = UDim.new(0, 3),
+local playlistLayout = create("UIListLayout", {
+    Padding = UDim.new(0, 4),
     SortOrder = Enum.SortOrder.LayoutOrder,
-}, PlaylistScroll)
+}, playlistFrame)
 
---==================== FOOTER ====================
-
-local Footer = makeLabel(
-    Expanded, "Footer", "● SYSTEM READY",
-    UDim2.fromOffset(18, 382),
-    UDim2.new(1, -36, 0, 20),
-    8, C.Green
-)
-
---==================== SONG UI ====================
-
-local PlaylistRows = {}
-
-local function updateSongUI()
-
-    local song = getSong()
-    if not song then
-        return
-    end
-
-    SongTitle.Text = song.Name
-    SongArtist.Text = song.Artist
-
-    if validAsset(song.ImageId) then
-        AlbumImage.Image = song.ImageId
-        AlbumFallback.Visible = false
-    else
-        AlbumImage.Image = ""
-        AlbumFallback.Visible = true
-    end
-
-    for index, row in ipairs(PlaylistRows) do
-
-        local active = index == currentIndex
-
-        row.Title.TextColor3 = active and C.Green or C.White
-        row.Number.TextColor3 = active and C.Green or C.Gray
-        row.Playing.Visible = active
-
-    end
-
-end
-
---==================== LOAD SONG ====================
-
-local function loadSong(autoplay)
-
-    local song = getSong()
-    if not song then
-        return
-    end
-
-    songToken += 1
-    local token = songToken
-
-    isPlaying = false
-
-    Music:Stop()
-    Music.TimePosition = 0
-    Music.SoundId = song.SoundId
-
-    PlayButton.Text = "▶"
-    CompactText.Text = "SPOTIFY"
-
-    CurrentTime.Text = "0:00"
-    TotalTime.Text = "0:00"
-    ProgressFill.Size = UDim2.new(0, 0, 1, 0)
-
-    updateSongUI()
-
-    if autoplay then
-
-        if not validAsset(song.SoundId) then
-            Footer.Text = "● PLEASE SET A VALID MUSIC ID"
-            return
-        end
-
-        Music:Play()
-        isPlaying = true
-        PlayButton.Text = "Ⅱ"
-        CompactText.Text = "PLAYING"
-
-    end
-
-    task.spawn(function()
-
-        local start = os.clock()
-
-        while GUI.Parent
-            and token == songToken
-            and Music.TimeLength <= 0
-            and os.clock() - start < 20 do
-
-            task.wait(0.2)
-
-        end
-
-        if token ~= songToken then
-            return
-        end
-
-        if Music.TimeLength > 0 then
-            TotalTime.Text = formatTime(Music.TimeLength)
-        end
-
-    end)
-
-end
-
---==================== PLAYLIST ROWS ====================
+local playlistPadding = create("UIPadding", {
+    PaddingTop = UDim.new(0, 5),
+    PaddingLeft = UDim.new(0, 6),
+    PaddingRight = UDim.new(0, 6),
+}, playlistFrame)
 
 local function buildPlaylist()
-
-    for _, child in ipairs(PlaylistScroll:GetChildren()) do
+    for _, child in ipairs(playlistFrame:GetChildren()) do
         if child:IsA("TextButton") then
             child:Destroy()
         end
     end
 
-    table.clear(PlaylistRows)
-
     for index, song in ipairs(PLAYLIST) do
+        local button = create("TextButton", {
+            Size = UDim2.new(1, -4, 0, 29),
+            BackgroundColor3 = index == currentIndex and theme.Button or theme.Card,
+            BorderSizePixel = 0,
+            Text = string.format("  %02d   %s  —  %s", index, song.Name, song.Artist),
+            TextColor3 = theme.Text,
+            TextSize = 11,
+            Font = Enum.Font.Gotham,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            LayoutOrder = index,
+        }, playlistFrame)
+        corner(button, 7)
 
-        local row = makeButton(
-            PlaylistScroll,
-            "Song_" .. index,
-            "",
-            UDim2.fromOffset(0, 0),
-            UDim2.new(1, -6, 0, 43),
-            C.Card
-        )
-
-        row.LayoutOrder = index
-        row.BackgroundTransparency = 0.2
-
-        corner(row, 9)
-
-        local number = makeLabel(
-            row, "Number", tostring(index),
-            UDim2.fromOffset(10, 0),
-            UDim2.fromOffset(20, 43),
-            10, C.Gray
-        )
-
-        local title = makeLabel(
-            row, "Title", song.Name,
-            UDim2.fromOffset(37, 3),
-            UDim2.new(1, -75, 0, 20),
-            10, C.White
-        )
-
-        local artist = makeLabel(
-            row, "Artist", song.Artist,
-            UDim2.fromOffset(37, 21),
-            UDim2.new(1, -75, 0, 16),
-            8, C.Gray
-        )
-
-        local playing = makeLabel(
-            row, "Playing", "♫",
-            UDim2.new(1, -33, 0, 0),
-            UDim2.fromOffset(25, 43),
-            14, C.Green
-        )
-
-        playing.TextXAlignment = Enum.TextXAlignment.Center
-        playing.Visible = false
-
-        PlaylistRows[index] = {
-            Button = row,
-            Number = number,
-            Title = title,
-            Artist = artist,
-            Playing = playing,
-        }
-
-        row.Activated:Connect(function()
-
-            currentIndex = index
-            loadSong(true)
-
+        button.Activated:Connect(function()
+            loadSong(index, true)
+            buildPlaylist()
         end)
-
     end
-
 end
 
---==================== PLAY / PAUSE ====================
+buildPlaylist()
+loadSong(1, false)
 
-local function playPause()
+-- Progress and volume touch/mouse handling
 
-    if not validAsset(getSong().SoundId) then
-        Footer.Text = "● SET YOUR MUSIC ID FIRST"
+local function setProgressFromX(x)
+    local width = progressBackground.AbsoluteSize.X
+    if width <= 0 or musicSound.TimeLength <= 0 then
         return
     end
 
-    if isPlaying then
-
-        Music:Pause()
-        isPlaying = false
-
-        PlayButton.Text = "▶"
-        CompactText.Text = "PAUSED"
-
-    else
-
-        if Music.TimePosition > 0 then
-            Music:Resume()
-        else
-            Music:Play()
-        end
-
-        isPlaying = true
-
-        PlayButton.Text = "Ⅱ"
-        CompactText.Text = "PLAYING"
-
-    end
-
-end
-
---==================== NEXT / PREVIOUS ====================
-
-local function nextSong()
-
-    if #PLAYLIST == 0 then
-        return
-    end
-
-    if shuffleEnabled and #PLAYLIST > 1 then
-
-        local nextIndex = currentIndex
-
-        while nextIndex == currentIndex do
-            nextIndex = math.random(1, #PLAYLIST)
-        end
-
-        currentIndex = nextIndex
-
-    else
-
-        currentIndex += 1
-
-        if currentIndex > #PLAYLIST then
-
-            if repeatMode == "all" then
-                currentIndex = 1
-            else
-                currentIndex = #PLAYLIST
-                Music:Stop()
-                isPlaying = false
-                PlayButton.Text = "▶"
-                return
-            end
-
-        end
-
-    end
-
-    loadSong(true)
-
-end
-
-local function previousSong()
-
-    if Music.TimePosition > 3 then
-        Music.TimePosition = 0
-        return
-    end
-
-    currentIndex -= 1
-
-    if currentIndex < 1 then
-        currentIndex = #PLAYLIST
-    end
-
-    loadSong(true)
-
-end
-
---==================== BUTTON EVENTS ====================
-
-PlayButton.Activated:Connect(playPause)
-NextButton.Activated:Connect(nextSong)
-PreviousButton.Activated:Connect(previousSong)
-
-ShuffleButton.Activated:Connect(function()
-
-    shuffleEnabled = not shuffleEnabled
-
-    ShuffleButton.TextColor3 = shuffleEnabled
-        and C.Green
-        or C.Gray
-
-end)
-
-RepeatButton.Activated:Connect(function()
-
-    if repeatMode == "all" then
-        repeatMode = "one"
-        RepeatButton.Text = "↻¹"
-
-    elseif repeatMode == "one" then
-        repeatMode = "off"
-        RepeatButton.Text = "↻"
-
-    else
-        repeatMode = "all"
-        RepeatButton.Text = "↻"
-
-    end
-
-    RepeatButton.TextColor3 = repeatMode ~= "off"
-        and C.Green
-        or C.Gray
-
-end)
-
---==================== SONG ENDED ====================
-
-Music.Ended:Connect(function()
-
-    if repeatMode == "one" then
-
-        Music.TimePosition = 0
-        Music:Play()
-        isPlaying = true
-        return
-
-    end
-
-    if repeatMode == "off" then
-
-        if currentIndex < #PLAYLIST then
-            currentIndex += 1
-            loadSong(true)
-        else
-            isPlaying = false
-            PlayButton.Text = "▶"
-        end
-
-        return
-
-    end
-
-    nextSong()
-
-end)
-
---==================== PROGRESS SEEK ====================
-
-local function seekTo(screenX)
-
-    local duration = Music.TimeLength
-    if duration <= 0 then
-        return
-    end
-
-    local startX = ProgressBackground.AbsolutePosition.X
-    local width = ProgressBackground.AbsoluteSize.X
-
-    local alpha = math.clamp(
-        (screenX - startX) / width,
+    local fraction = math.clamp(
+        (x - progressBackground.AbsolutePosition.X) / width,
         0,
         1
     )
 
-    Music.TimePosition = alpha * duration
-
+    musicSound.TimePosition = fraction * musicSound.TimeLength
 end
 
---==================== VOLUME CONTROL ====================
+local function setVolumeFromX(x)
+    local width = volumeBackground.AbsoluteSize.X
+    if width <= 0 then
+        return
+    end
 
-local function setVolume(screenX)
-
-    local startX = VolumeBackground.AbsolutePosition.X
-    local width = VolumeBackground.AbsoluteSize.X
-
-    local alpha = math.clamp(
-        (screenX - startX) / width,
+    local fraction = math.clamp(
+        (x - volumeBackground.AbsolutePosition.X) / width,
         0,
         1
     )
 
-    volume = alpha
-    Music.Volume = volume
-
-    VolumeFill.Size = UDim2.new(volume, 0, 1, 0)
-    VolumePercent.Text = math.floor(volume * 100) .. "%"
-
+    musicSound.Volume = fraction
+    volumeFill.Size = UDim2.new(fraction, 0, 1, 0)
 end
 
-ProgressButton.InputBegan:Connect(function(input)
-
+progressHit.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1
         or input.UserInputType == Enum.UserInputType.Touch then
-
         draggingProgress = true
-        seekTo(input.Position.X)
-
+        setProgressFromX(input.Position.X)
     end
-
 end)
 
-VolumeButton.InputBegan:Connect(function(input)
-
+volumeHit.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1
         or input.UserInputType == Enum.UserInputType.Touch then
-
-        draggingVolume = true
-        setVolume(input.Position.X)
-
+        setVolumeFromX(input.Position.X)
     end
-
 end)
 
 UserInputService.InputChanged:Connect(function(input)
-
-    if input.UserInputType == Enum.UserInputType.MouseMovement
-        or input.UserInputType == Enum.UserInputType.Touch then
-
-        if draggingProgress then
-            seekTo(input.Position.X)
-        elseif draggingVolume then
-            setVolume(input.Position.X)
-        end
-
+    if draggingProgress and (
+        input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch
+    ) then
+        setProgressFromX(input.Position.X)
     end
 
+    if input.UserInputType == Enum.UserInputType.MouseMovement then
+        -- Volume is changed by clicking or dragging on its bar.
+    end
 end)
 
 UserInputService.InputEnded:Connect(function(input)
-
     if input.UserInputType == Enum.UserInputType.MouseButton1
         or input.UserInputType == Enum.UserInputType.Touch then
-
         draggingProgress = false
-        draggingVolume = false
-
     end
-
 end)
 
---==================== LIVE PROGRESS ====================
+--==================================================
+-- NOTIFICATIONS PAGE
+--==================================================
 
-task.spawn(function()
+local notificationTitle = makeLabel(
+    notificationsPage,
+    "Notifications",
+    UDim2.new(1, -30, 0, 30),
+    UDim2.fromOffset(16, 10),
+    Enum.Font.GothamBold,
+    theme.Text
+)
+notificationTitle.TextSize = 18
 
-    while GUI.Parent do
+local notificationHint = makeLabel(
+    notificationsPage,
+    "Your recent in-game notifications",
+    UDim2.new(1, -30, 0, 22),
+    UDim2.fromOffset(16, 40),
+    Enum.Font.Gotham,
+    theme.SubText
+)
+notificationHint.TextSize = 11
 
-        if Music.TimeLength > 0 then
+local notificationList = create("ScrollingFrame", {
+    Size = UDim2.new(1, -28, 1, -90),
+    Position = UDim2.fromOffset(14, 76),
+    BackgroundColor3 = theme.Card,
+    BorderSizePixel = 0,
+    ScrollBarThickness = 4,
+    CanvasSize = UDim2.new(),
+    AutomaticCanvasSize = Enum.AutomaticSize.Y,
+}, notificationsPage)
+corner(notificationList, 12)
 
-            local duration = Music.TimeLength
-            local position = Music.TimePosition
+create("UIPadding", {
+    PaddingTop = UDim.new(0, 8),
+    PaddingLeft = UDim.new(0, 8),
+    PaddingRight = UDim.new(0, 8),
+}, notificationList)
 
-            local alpha = math.clamp(position / duration, 0, 1)
+create("UIListLayout", {
+    Padding = UDim.new(0, 7),
+    SortOrder = Enum.SortOrder.LayoutOrder,
+}, notificationList)
 
-            ProgressFill.Size = UDim2.new(alpha, 0, 1, 0)
+local notificationRecords = {}
 
-            CurrentTime.Text = formatTime(position)
-            TotalTime.Text = formatTime(duration)
+local function addNotification(title, message)
+    title = tostring(title or "Notification")
+    message = tostring(message or "")
 
+    local record = {
+        Title = title,
+        Message = message,
+        Time = os.date("%H:%M"),
+    }
+
+    table.insert(notificationRecords, 1, record)
+
+    while #notificationRecords > CONFIG.NotificationLimit do
+        table.remove(notificationRecords)
+    end
+
+    for _, child in ipairs(notificationList:GetChildren()) do
+        if child:IsA("Frame") then
+            child:Destroy()
         end
-
-        task.wait(0.2)
-
     end
 
-end)
+    for index, item in ipairs(notificationRecords) do
+        local card = create("Frame", {
+            Size = UDim2.new(1, -5, 0, 58),
+            BackgroundColor3 = theme.Button,
+            BorderSizePixel = 0,
+            LayoutOrder = index,
+        }, notificationList)
+        corner(card, 9)
 
---==================== WAVE ANIMATION ====================
-
-task.spawn(function()
-
-    while GUI.Parent do
-
-        for _, bar in ipairs(WaveBars) do
-
-            local height = isPlaying and math.random(5, 20) or 4
-
-            tween(bar, 0.2, {
-                Size = UDim2.fromOffset(3, height)
-            })
-
-        end
-
-        task.wait(0.2)
-
-    end
-
-end)
-
---==================== EXPAND ====================
-
-local function expand()
-
-    if isExpanded or isAnimating then
-        return
-    end
-
-    isAnimating = true
-    isExpanded = true
-
-    Expanded.Visible = true
-
-    tween(MainCorner, CONFIG.AnimationTime, {
-        CornerRadius = UDim.new(0, 25)
-    })
-
-    tween(Shadow, CONFIG.AnimationTime, {
-        Size = UDim2.fromOffset(
-            CONFIG.ExpandedWidth + 18,
-            CONFIG.ExpandedHeight + 18
+        local titleLabel = makeLabel(
+            card,
+            item.Title,
+            UDim2.new(1, -75, 0, 23),
+            UDim2.fromOffset(10, 5),
+            Enum.Font.GothamBold,
+            theme.Text
         )
-    })
+        titleLabel.TextSize = 12
 
-    tween(MainStroke, CONFIG.AnimationTime, {
-        Transparency = 0.2,
-        Color = C.Green
-    })
-
-    local t = tween(Main, CONFIG.AnimationTime, {
-        Size = UDim2.fromOffset(
-            CONFIG.ExpandedWidth,
-            CONFIG.ExpandedHeight
+        local messageLabel = makeLabel(
+            card,
+            item.Message,
+            UDim2.new(1, -20, 0, 20),
+            UDim2.fromOffset(10, 29),
+            Enum.Font.Gotham,
+            theme.SubText
         )
-    })
+        messageLabel.TextSize = 10
+        messageLabel.TextTruncate = Enum.TextTruncate.AtEnd
 
-    t.Completed:Connect(function()
-        isAnimating = false
-    end)
-
+        local timeLabel = makeLabel(
+            card,
+            item.Time,
+            UDim2.fromOffset(55, 20),
+            UDim2.new(1, -63, 0, 5),
+            Enum.Font.Gotham,
+            theme.SubText
+        )
+        timeLabel.TextSize = 9
+        timeLabel.TextXAlignment = Enum.TextXAlignment.Right
+    end
 end
 
---==================== COLLAPSE ====================
+-- Public notification API:
+-- playerGui.DynamicIslandPremium.DynamicIslandNotify:Fire("Title", "Message")
 
-local function collapse()
+local notifyEvent = create("BindableEvent", {
+    Name = "DynamicIslandNotify",
+}, gui)
 
-    if not isExpanded or isAnimating then
-        return
-    end
-
-    isAnimating = true
-
-    tween(MainCorner, CONFIG.AnimationTime, {
-        CornerRadius = UDim.new(1, 0)
-    })
-
-    tween(Shadow, CONFIG.AnimationTime, {
-        Size = UDim2.fromOffset(
-            CONFIG.CompactWidth + 14,
-            CONFIG.CompactHeight + 14
-        )
-    })
-
-    tween(MainStroke, CONFIG.AnimationTime, {
-        Transparency = 0.45,
-        Color = C.Gray
-    })
-
-    local t = tween(Main, CONFIG.AnimationTime, {
-        Size = UDim2.fromOffset(
-            CONFIG.CompactWidth,
-            CONFIG.CompactHeight
-        )
-    })
-
-    t.Completed:Connect(function()
-
-        Expanded.Visible = false
-        isExpanded = false
-        isAnimating = false
-
-    end)
-
-end
-
-CompactButton.Activated:Connect(expand)
-CloseButton.Activated:Connect(collapse)
-
---==================== NOTIFICATIONS ====================
-
-local function notify(title, message)
-
-    notificationToken += 1
-    local token = notificationToken
-
-    NotificationText.Text = tostring(title or "NOTIFICATION")
-        .. "  •  "
-        .. tostring(message or "")
-
-    NotificationText.Visible = true
-
-    Header.Text = "NOTIFICATION"
-
-    expand()
-
-    task.delay(CONFIG.NotificationDuration, function()
-
-        if token ~= notificationToken then
-            return
-        end
-
-        NotificationText.Visible = false
-        Header.Text = "NOW PLAYING"
-
-        collapse()
-
-    end)
-
-end
-
--- Local notification event:
--- PlayerGui.DynamicIslandPremium.DynamicIslandNotify:Fire("标题","内容")
-
-local NotifyEvent = create("BindableEvent", {
-    Name = "DynamicIslandNotify"
-}, GUI)
-
-NotifyEvent.Event:Connect(notify)
+notifyEvent.Event:Connect(addNotification)
 
 -- Optional server notification:
 -- Create a RemoteEvent named DynamicIslandRemote in ReplicatedStorage.
 
-local Remote = ReplicatedStorage:FindFirstChild("DynamicIslandRemote")
-
-if Remote and Remote:IsA("RemoteEvent") then
-
-    Remote.OnClientEvent:Connect(notify)
-
+local remote = ReplicatedStorage:FindFirstChild("DynamicIslandRemote")
+if remote and remote:IsA("RemoteEvent") then
+    remote.OnClientEvent:Connect(function(title, message)
+        addNotification(title, message)
+    end)
 end
 
---==================== CLOCK / PING / BATTERY ====================
+--==================================================
+-- DEVICE PAGE
+--==================================================
 
-task.spawn(function()
+local deviceTitle = makeLabel(
+    devicePage,
+    "Device",
+    UDim2.new(1, -30, 0, 30),
+    UDim2.fromOffset(16, 12),
+    Enum.Font.GothamBold,
+    theme.Text
+)
+deviceTitle.TextSize = 18
 
-    while GUI.Parent do
+local batteryCard = create("Frame", {
+    Size = UDim2.new(1, -30, 0, 105),
+    Position = UDim2.fromOffset(15, 58),
+    BackgroundColor3 = theme.Card,
+    BorderSizePixel = 0,
+}, devicePage)
+corner(batteryCard, 13)
 
-        local parts = {}
+local batteryTitle = makeLabel(
+    batteryCard,
+    "BATTERY",
+    UDim2.new(1, -20, 0, 22),
+    UDim2.fromOffset(14, 10),
+    Enum.Font.GothamBold,
+    theme.SubText
+)
+batteryTitle.TextSize = 10
 
-        if CONFIG.ShowClock then
-            table.insert(parts, os.date("%H:%M"))
+local batteryValue = makeLabel(
+    batteryCard,
+    "Unavailable",
+    UDim2.new(1, -20, 0, 36),
+    UDim2.fromOffset(14, 34),
+    Enum.Font.GothamBold,
+    theme.Text
+)
+batteryValue.TextSize = 25
+
+local batteryStatus = makeLabel(
+    batteryCard,
+    "Device battery information",
+    UDim2.new(1, -20, 0, 20),
+    UDim2.fromOffset(14, 73),
+    Enum.Font.Gotham,
+    theme.SubText
+)
+batteryStatus.TextSize = 10
+
+local batteryBar = create("Frame", {
+    Size = UDim2.new(1, -30, 0, 8),
+    Position = UDim2.fromOffset(15, 180),
+    BackgroundColor3 = theme.Button,
+    BorderSizePixel = 0,
+}, devicePage)
+corner(batteryBar, 6)
+
+local batteryFill = create("Frame", {
+    Size = UDim2.new(0, 0, 1, 0),
+    BackgroundColor3 = theme.Green,
+    BorderSizePixel = 0,
+}, batteryBar)
+corner(batteryFill, 6)
+
+local batteryNote = makeLabel(
+    devicePage,
+    "Battery details depend on platform support.",
+    UDim2.new(1, -30, 0, 30),
+    UDim2.fromOffset(16, 200),
+    Enum.Font.Gotham,
+    theme.SubText
+)
+batteryNote.TextSize = 11
+
+local function updateBattery()
+    local okLevel, level = pcall(function()
+        return UserInputService:GetDeviceBatteryLevel()
+    end)
+
+    local okCharging, charging = pcall(function()
+        return UserInputService:GetDeviceChargingState()
+    end)
+
+    if okLevel and type(level) == "number" then
+        local percent = math.clamp(level, 0, 1)
+        batteryValue.Text = string.format("%d%%", math.floor(percent * 100 + 0.5))
+        batteryFill.Size = UDim2.new(percent, 0, 1, 0)
+
+        if percent <= 0.2 then
+            batteryFill.BackgroundColor3 = Color3.fromRGB(255, 75, 75)
+        else
+            batteryFill.BackgroundColor3 = theme.Green
         end
-
-        if CONFIG.ShowPing then
-
-            local ok, result = pcall(function()
-                return Stats.Network.ServerStatsItem[
-                    "Data Ping"
-                ]:GetValueString()
-            end)
-
-            if ok then
-                table.insert(parts, "Ping " .. tostring(result))
-            end
-
-        end
-
-        if CONFIG.ShowBattery then
-
-            local ok, battery = pcall(function()
-                return UserInputService:GetDeviceBatteryLevel()
-            end)
-
-            if ok and typeof(battery) == "number" then
-                table.insert(parts, math.floor(battery * 100) .. "%")
-            end
-
-        end
-
-        if #parts > 0 then
-            Footer.Text = "● " .. table.concat(parts, "  |  ")
-        end
-
-        task.wait(3)
-
+    else
+        batteryValue.Text = "Unavailable"
+        batteryFill.Size = UDim2.new(0, 0, 1, 0)
     end
 
-end)
+    if okCharging and charging ~= nil then
+        batteryStatus.Text = charging and "⚡ Charging" or "Not charging"
+    else
+        batteryStatus.Text = "Charging status unavailable"
+    end
+end
 
---==================== RESPONSIVE SCALE ====================
+--==================================================
+-- TIME PAGE
+--==================================================
 
-local cameraConnection
+local timeTitle = makeLabel(
+    timePage,
+    "Time",
+    UDim2.new(1, -30, 0, 30),
+    UDim2.fromOffset(16, 12),
+    Enum.Font.GothamBold,
+    theme.Text
+)
+timeTitle.TextSize = 18
 
-local function updateScale()
+local bigClock = makeLabel(
+    timePage,
+    "--:--:--",
+    UDim2.new(1, -30, 0, 90),
+    UDim2.fromOffset(15, 75),
+    Enum.Font.GothamBold,
+    theme.Text
+)
+bigClock.TextSize = 48
+bigClock.TextXAlignment = Enum.TextXAlignment.Center
 
+local dateLabel = makeLabel(
+    timePage,
+    "Loading date...",
+    UDim2.new(1, -30, 0, 35),
+    UDim2.fromOffset(15, 160),
+    Enum.Font.Gotham,
+    theme.SubText
+)
+dateLabel.TextSize = 15
+dateLabel.TextXAlignment = Enum.TextXAlignment.Center
+
+local timeNote = makeLabel(
+    timePage,
+    "Client clock",
+    UDim2.new(1, -30, 0, 25),
+    UDim2.fromOffset(15, 205),
+    Enum.Font.Gotham,
+    theme.SubText
+)
+timeNote.TextSize = 10
+timeNote.TextXAlignment = Enum.TextXAlignment.Center
+
+--==================================================
+-- NETWORK PAGE
+--==================================================
+
+local networkTitle = makeLabel(
+    networkPage,
+    "Network",
+    UDim2.new(1, -30, 0, 30),
+    UDim2.fromOffset(16, 12),
+    Enum.Font.GothamBold,
+    theme.Text
+)
+networkTitle.TextSize = 18
+
+local pingCard = create("Frame", {
+    Size = UDim2.new(1, -30, 0, 115),
+    Position = UDim2.fromOffset(15, 65),
+    BackgroundColor3 = theme.Card,
+    BorderSizePixel = 0,
+}, networkPage)
+corner(pingCard, 13)
+
+local pingCaption = makeLabel(
+    pingCard,
+    "ROBLOX SERVER PING",
+    UDim2.new(1, -24, 0, 22),
+    UDim2.fromOffset(14, 12),
+    Enum.Font.GothamBold,
+    theme.SubText
+)
+pingCaption.TextSize = 10
+
+local pingValue = makeLabel(
+    pingCard,
+    "-- ms",
+    UDim2.new(1, -24, 0, 45),
+    UDim2.fromOffset(14, 36),
+    Enum.Font.GothamBold,
+    theme.Text
+)
+pingValue.TextSize = 30
+
+local pingStatus = makeLabel(
+    pingCard,
+    "Waiting for ping data",
+    UDim2.new(1, -24, 0, 20),
+    UDim2.fromOffset(14, 82),
+    Enum.Font.Gotham,
+    theme.SubText
+)
+pingStatus.TextSize = 10
+
+local networkNote = makeLabel(
+    networkPage,
+    "Ping measures game server response delay, not Wi-Fi signal strength.",
+    UDim2.new(1, -30, 0, 45),
+    UDim2.fromOffset(16, 195),
+    Enum.Font.Gotham,
+    theme.SubText
+)
+networkNote.TextSize = 11
+networkNote.TextWrapped = true
+
+local function updatePing()
+    local ok, result = pcall(function()
+        return Stats.Network.ServerStatsItem["Data Ping"]:GetValue()
+    end)
+
+    if ok and type(result) == "number" then
+        local ms = math.floor(result + 0.5)
+        pingValue.Text = tostring(ms) .. " ms"
+
+        if ms < 100 then
+            pingStatus.Text = "Excellent connection"
+            pingStatus.TextColor3 = theme.Green
+        elseif ms < 200 then
+            pingStatus.Text = "Normal connection"
+            pingStatus.TextColor3 = theme.SubText
+        else
+            pingStatus.Text = "High latency"
+            pingStatus.TextColor3 = Color3.fromRGB(255, 160, 80)
+        end
+    else
+        pingValue.Text = "-- ms"
+        pingStatus.Text = "Ping data unavailable"
+    end
+end
+
+--==================================================
+-- SETTINGS PAGE
+--==================================================
+
+local settingsTitle = makeLabel(
+    settingsPage,
+    "Settings",
+    UDim2.new(1, -30, 0, 30),
+    UDim2.fromOffset(16, 12),
+    Enum.Font.GothamBold,
+    theme.Text
+)
+settingsTitle.TextSize = 18
+
+local themeCaption = makeLabel(
+    settingsPage,
+    "APPEARANCE",
+    UDim2.new(1, -30, 0, 22),
+    UDim2.fromOffset(16, 58),
+    Enum.Font.GothamBold,
+    theme.SubText
+)
+themeCaption.TextSize = 10
+
+local themeButtons = {}
+local themeNames = {
+    {Id = "glass", Label = "Apple Glass"},
+    {Id = "spotify", Label = "Spotify"},
+    {Id = "light", Label = "Light"},
+}
+
+local function applyTheme(name)
+    if not THEMES[name] then
+        return
+    end
+
+    currentThemeName = name
+    theme = THEMES[name]
+
+    main.BackgroundColor3 = Color3.fromRGB(8, 9, 12)
+    panel.BackgroundColor3 = theme.Background
+    sidebar.BackgroundColor3 = theme.Sidebar
+    topDivider.BackgroundColor3 = theme.Border
+    stroke(panel, theme.Border, 0.35, 1)
+
+    for _, button in pairs(sideButtons) do
+        button.BackgroundColor3 = theme.Sidebar
+
+        for _, child in ipairs(button:GetChildren()) do
+            if child:IsA("TextLabel") then
+                child.TextColor3 = theme.Text
+            elseif child.Name == "ActiveMark" then
+                child.BackgroundColor3 = theme.Accent
+            end
+        end
+    end
+
+    for pageName, page in pairs(pages) do
+        for _, descendant in ipairs(page:GetDescendants()) do
+            if descendant:IsA("TextLabel") then
+                if descendant.TextColor3 ~= theme.Green then
+                    descendant.TextColor3 = theme.Text
+                end
+            elseif descendant:IsA("TextButton") then
+                descendant.BackgroundColor3 = theme.Button
+                descendant.TextColor3 = theme.Text
+            elseif descendant:IsA("Frame") then
+                if descendant.BackgroundColor3 == THEMES.glass.Card
+                    or descendant.BackgroundColor3 == THEMES.spotify.Card
+                    or descendant.BackgroundColor3 == THEMES.light.Card then
+                    descendant.BackgroundColor3 = theme.Card
+                end
+            end
+        end
+    end
+
+    for themeId, button in pairs(themeButtons) do
+        button.BackgroundColor3 = themeId == name and theme.Green or theme.Button
+    end
+
+    compactTitle.TextColor3 = Color3.fromRGB(245, 245, 248)
+    brand.TextColor3 = theme.Text
+    topClock.TextColor3 = theme.SubText
+end
+
+for index, item in ipairs(themeNames) do
+    local button = makeButton(
+        settingsPage,
+        item.Label,
+        UDim2.new(1, -32, 0, 38),
+        UDim2.fromOffset(16, 88 + (index - 1) * 48)
+    )
+
+    button.TextXAlignment = Enum.TextXAlignment.Left
+    button.TextSize = 12
+    button.Text = "     " .. item.Label
+    themeButtons[item.Id] = button
+
+    button.Activated:Connect(function()
+        applyTheme(item.Id)
+    end)
+end
+
+local infoLabel = makeLabel(
+    settingsPage,
+    "Dynamic Island Premium V5.0\nWide layout • Top position • Responsive UI",
+    UDim2.new(1, -32, 0, 50),
+    UDim2.fromOffset(16, 250),
+    Enum.Font.Gotham,
+    theme.SubText
+)
+infoLabel.TextSize = 10
+infoLabel.TextWrapped = true
+
+--==================================================
+-- EXPAND / COLLAPSE
+--==================================================
+
+local function getPanelSize()
+    local camera = workspace.CurrentCamera
+    local viewport = camera and camera.ViewportSize or Vector2.new(1280, 720)
+
+    local isMobile = UserInputService.TouchEnabled and viewport.X < 800
+
+    local width = math.min(CONFIG.ExpandedWidth, viewport.X - 20)
+    local height = math.min(CONFIG.ExpandedHeight, viewport.Y * 0.78)
+
+    if isMobile then
+        width = math.max(280, viewport.X * CONFIG.MobileWidthScale)
+        height = math.max(320, math.min(CONFIG.ExpandedHeight, viewport.Y * CONFIG.MobileHeightScale))
+    end
+
+    return math.floor(width), math.floor(height)
+end
+
+local function updateResponsiveScale()
     local camera = workspace.CurrentCamera
     if not camera then
         return
     end
 
-    local width = camera.ViewportSize.X
+    local viewport = camera.ViewportSize
+    local widthScale = viewport.X / CONFIG.ExpandedWidth
+    local heightScale = viewport.Y / (CONFIG.ExpandedHeight + 40)
 
-    if width < 400 then
-        Scale.Scale = 0.76
-    elseif width < 550 then
-        Scale.Scale = 0.84
-    elseif width < 750 then
-        Scale.Scale = 0.92
+    scale.Scale = math.clamp(math.min(widthScale, heightScale, 1), 0.55, 1)
+end
+
+local function expandIsland()
+    if expanded then
+        return
+    end
+
+    expanded = true
+    local width, height = getPanelSize()
+
+    compactButton.Visible = false
+    panel.Visible = true
+    panel.Size = UDim2.fromOffset(width, height)
+    panel.BackgroundTransparency = 0
+
+    main.ClipsDescendants = true
+
+    tween(main, CONFIG.AnimationTime, {
+        Size = UDim2.fromOffset(width, height + 48),
+        Position = UDim2.new(0.5, 0, 0, 8),
+    })
+
+    panel.Size = UDim2.fromOffset(width, height)
+    panel.Position = UDim2.fromOffset(0, 48)
+
+    selectPage(selectedPage)
+end
+
+local function collapseIsland()
+    if not expanded then
+        return
+    end
+
+    expanded = false
+
+    local animation = tween(main, CONFIG.AnimationTime, {
+        Size = UDim2.fromOffset(190, 48),
+        Position = UDim2.new(0.5, 0, 0, 8),
+    })
+
+    animation.Completed:Connect(function()
+        if not expanded and main.Parent then
+            panel.Visible = false
+            compactButton.Visible = true
+        end
+    end)
+end
+
+compactButton.Activated:Connect(function()
+    expandIsland()
+end)
+
+closeButton.Activated:Connect(function()
+    collapseIsland()
+end)
+
+--==================================================
+-- COMPACT MUSIC STATUS
+--==================================================
+
+local function updateCompact()
+    if musicSound.IsPlaying then
+        compactTitle.Text = "♫   " .. (getCurrentSong() and getCurrentSong().Name or "Playing")
+        compactStatus.BackgroundColor3 = theme.Green
     else
-        Scale.Scale = 1
+        compactTitle.Text = "♪   Dynamic Island"
+        compactStatus.BackgroundColor3 = Color3.fromRGB(130, 130, 140)
     end
-
 end
 
-local function bindCamera()
+--==================================================
+-- RESPONSIVE LAYOUT
+--==================================================
 
-    if cameraConnection then
-        cameraConnection:Disconnect()
-        cameraConnection = nil
+local function updateLayout()
+    updateResponsiveScale()
+
+    if expanded then
+        local width, height = getPanelSize()
+        main.Size = UDim2.fromOffset(width, height + 48)
+        panel.Size = UDim2.fromOffset(width, height)
+        panel.Position = UDim2.fromOffset(0, 48)
+
+        local mobile = width < 420
+        local sidebarWidth = mobile and 104 or 132
+
+        sidebar.Size = UDim2.new(0, sidebarWidth, 1, -48)
+        content.Position = UDim2.fromOffset(sidebarWidth, 48)
+        content.Size = UDim2.new(1, -sidebarWidth, 1, -48)
+
+        for _, button in pairs(sideButtons) do
+            for _, child in ipairs(button:GetChildren()) do
+                if child:IsA("TextLabel") then
+                    if child.Text ~= "" and child.Text ~= "♫"
+                        and child.Text ~= "♧" and child.Text ~= "▣"
+                        and child.Text ~= "◷" and child.Text ~= "⌁"
+                        and child.Text ~= "⚙" then
+                        child.Visible = not mobile
+                    end
+                end
+            end
+        end
     end
-
-    local camera = workspace.CurrentCamera
-
-    if camera then
-
-        cameraConnection = camera:GetPropertyChangedSignal(
-            "ViewportSize"
-        ):Connect(updateScale)
-
-        updateScale()
-
-    end
-
 end
 
-workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(bindCamera)
-bindCamera()
+local camera = workspace.CurrentCamera
+if camera then
+    camera:GetPropertyChangedSignal("ViewportSize"):Connect(updateLayout)
+end
 
---==================== INITIALIZATION ====================
+workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+    local newCamera = workspace.CurrentCamera
+    if newCamera then
+        newCamera:GetPropertyChangedSignal("ViewportSize"):Connect(updateLayout)
+        updateLayout()
+    end
+end)
 
-buildPlaylist()
+--==================================================
+-- MAIN UPDATE LOOP
+--==================================================
 
-Music.Volume = volume
+local updateAccumulator = 0
 
-VolumeFill.Size = UDim2.new(volume, 0, 1, 0)
-VolumePercent.Text = math.floor(volume * 100) .. "%"
+local updateConnection
+updateConnection = RunService.Heartbeat:Connect(function(deltaTime)
+    if not gui.Parent then
+        if updateConnection then
+            updateConnection:Disconnect()
+        end
+        return
+    end
 
-loadSong(false)
+    updateAccumulator += deltaTime
 
-task.delay(1, function()
+    -- Music progress
+    if musicSound.IsPlaying then
+        local length = musicSound.TimeLength
+        local position = musicSound.TimePosition
 
-    if GUI.Parent then
-        notify(
-            "WELCOME",
-            "Dynamic Island Premium V4.0"
+        if length > 0 then
+            progressFill.Size = UDim2.new(
+                math.clamp(position / length, 0, 1),
+                0,
+                1,
+                0
+            )
+
+            currentTimeLabel.Text = formatTime(position)
+            totalTimeLabel.Text = formatTime(length)
+        end
+
+        playButton.Text = "Ⅱ"
+    else
+        playButton.Text = "▶"
+    end
+
+    -- Auto next track
+    if musicSound.Ended and not repeatEnabled then
+        nextSong()
+    end
+
+    if updateAccumulator >= 1 then
+        updateAccumulator = 0
+
+        local now = os.date("*t")
+        local clockText = string.format("%02d:%02d", now.hour, now.min)
+
+        topClock.Text = clockText
+        bigClock.Text = string.format(
+            "%02d:%02d:%02d",
+            now.hour,
+            now.min,
+            now.sec
         )
-    end
 
+        dateLabel.Text = os.date("%A, %B %d, %Y")
+
+        updateBattery()
+        updatePing()
+        updateCompact()
+    end
 end)
 
---==================== CLEANUP ====================
+--==================================================
+-- INITIALIZE
+--==================================================
 
-GUI.Destroying:Connect(function()
+selectPage("Music")
+updateResponsiveScale()
+updateBattery()
+updatePing()
+updateCompact()
 
-    Music:Stop()
-    Music:Destroy()
+applyTheme("glass")
 
-    if cameraConnection then
-        cameraConnection:Disconnect()
-    end
+if CONFIG.StartExpanded then
+    expandIsland()
+end
 
-end)
+-- Example:
+-- task.wait(3)
+-- notifyEvent:Fire("Welcome", "Dynamic Island Premium V5.0 is ready!")
 
-print("Dynamic Island Premium V4.0 loaded!")
-print("Spotify Style Playlist Ready!")
-print("PC + Mobile Supported!")
+print("Dynamic Island Premium V5.0 loaded.")
+print("Notification API: PlayerGui.DynamicIslandPremium.DynamicIslandNotify:Fire(title, message)")
