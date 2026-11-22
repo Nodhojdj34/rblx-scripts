@@ -1,7 +1,5 @@
 -- ============================================================
--- Roblox 真实灵动岛 + Spotify 风格播放器 (完整升级版)
--- 位置: StarterPlayerScripts 中的 LocalScript
--- 使用前必须替换 playlist 中的音频 ID
+-- Roblox 真实灵动岛 + Spotify 播放器 (屏幕自适应修复版)
 -- ============================================================
 
 local Players          = game:GetService("Players")
@@ -12,110 +10,51 @@ local RunService       = game:GetService("RunService")
 
 local player    = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
-
-local camera = workspace.CurrentCamera
+local camera    = workspace.CurrentCamera
 while not camera do task.wait() camera = workspace.CurrentCamera end
 
 -- ============================================================
--- 1. 音乐数据（★ 替换成你自己的音频 ID ★）
+-- 1. 音乐数据 (★ 请替换成你自己的ID ★)
 -- ============================================================
 local playlist = {
-    { title = "歌曲一", artist = "歌手一", id = "rbxassetid://1234567890" },
-    { title = "歌曲二", artist = "歌手二", id = "rbxassetid://0987654321" },
+    { title = "Starboy", artist = "The Weeknd", id = "rbxassetid://1234567890" },
+    { title = "Blinding Lights", artist = "The Weeknd", id = "rbxassetid://0987654321" },
 }
 local currentIndex = 1
 local isPlaying = false
 local isExpanded = false
 
 -- ============================================================
--- 2. 尺寸与样式常量
+-- 2. 尺寸与颜色常量 (加大了一点，防止文字挤死)
 -- ============================================================
-local IDLE_SIZE     = UDim2.new(0, 88,  0, 24)
-local EXPANDED_SIZE = UDim2.new(0, 220, 0, 56)   -- 更大，容纳进度条和时间戳
-local CORNER_IDLE   = UDim.new(0, 12)
-local CORNER_EXPAND = UDim.new(0, 20)            -- 展开时更圆润
+local IDLE_SIZE     = UDim2.new(0, 100, 0, 28)
+local EXPANDED_SIZE = UDim2.new(0, 260, 0, 64)   -- 整体加宽加高
+local CORNER_IDLE   = UDim.new(1, 0)             -- 纯半圆
+local CORNER_EXPAND = UDim.new(0, 20)
 
-local SPOTIFY_GREEN  = Color3.fromRGB(29, 185, 84)   -- #1DB954
-local SPOTIFY_BG     = Color3.fromRGB(18, 18, 18)    -- #121212
-local SPOTIFY_SECOND = Color3.fromRGB(179, 179, 179) -- #b3b3b3
-local SPOTIFY_CARD   = Color3.fromRGB(24, 24, 24)
-
--- ============================================================
--- 3. 弹簧动画工具（比普通 Tween 更真实）
--- ============================================================
-local function springTo(instance, properties, speed, damping)
-    -- 用 SmoothDamp 实现弹簧效果（Roblox 原生支持）
-    local success, err = pcall(function()
-        for prop, target in pairs(properties) do
-            local current = instance[prop]
-            -- SmoothDamp 需要数值类型，UDim2/Color3 手动插值
-            if typeof(target) == "UDim2" then
-                local startX, startY = current.X.Offset, current.Y.Offset
-                local targetX, targetY = target.X.Offset, target.Y.Offset
-                local startScaleX, startScaleY = current.X.Scale, current.Y.Scale
-                local targetScaleX, targetScaleY = target.X.Scale, target.Y.Scale
-                local t = 0
-                local conn
-                conn = RunService.Heartbeat:Connect(function(dt)
-                    t = t + dt * (speed or 12)
-                    local alpha = 1 - math.exp(-t) * math.cos(t * (damping or 6))
-                    if alpha >= 0.99 then
-                        instance[prop] = target
-                        conn:Disconnect()
-                        return
-                    end
-                    instance[prop] = UDim2.new(
-                        startScaleX + (targetScaleX - startScaleX) * alpha,
-                        startX + (targetX - startX) * alpha,
-                        startScaleY + (targetScaleY - startScaleY) * alpha,
-                        startY + (targetY - startY) * alpha
-                    )
-                end)
-            elseif typeof(target) == "Color3" then
-                local startColor = current
-                local t = 0
-                local conn
-                conn = RunService.Heartbeat:Connect(function(dt)
-                    t = t + dt * (speed or 12)
-                    local alpha = math.clamp(1 - math.exp(-t), 0, 1)
-                    if alpha >= 0.99 then
-                        instance[prop] = target
-                        conn:Disconnect()
-                        return
-                    end
-                    instance[prop] = startColor:Lerp(target, alpha)
-                end)
-            end
-        end
-    end)
-end
-
--- 简化的弹簧 tween（用于 UDim2 尺寸动画，带过冲感）
-local function springTween(instance, prop, target, duration, overshoot)
-    duration = duration or 0.45
-    overshoot = overshoot or 0.08
-    local start = instance[prop]
-    local info = TweenInfo.new(duration, Enum.EasingStyle.Back, Enum.EasingDirection.Out, 0, false, overshoot)
-    return TweenService:Create(instance, info, { [prop] = target })
-end
+local SPOTIFY_GREEN  = Color3.fromRGB(29, 185, 84)
+local SPOTIFY_BG     = Color3.fromRGB(18, 18, 18)
+local SPOTIFY_SECOND = Color3.fromRGB(179, 179, 179)
+local SPOTIFY_CARD   = Color3.fromRGB(30, 30, 30)
 
 -- ============================================================
--- 4. GUI 容器
+-- 3. GUI 容器 (最高优先级，防止被其他UI挡住)
 -- ============================================================
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "DynamicIslandGui"
 screenGui.ResetOnSpawn = false
 screenGui.IgnoreGuiInset = true
+screenGui.DisplayOrder = 9999 -- ★ 强制最高层级
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 screenGui.Parent = playerGui
 
 -- ============================================================
--- 5. 岛屿主框架（多层阴影 + 发光边）
+-- 4. 岛屿主框架 (完美居中)
 -- ============================================================
 local island = Instance.new("Frame")
 island.Name = "Island"
 island.AnchorPoint = Vector2.new(0.5, 0)
-island.Position = UDim2.new(0.5, 0, 0, 10)
+island.Position = UDim2.new(0.5, 0, 0, 12) -- 屏幕顶部居中，保留12像素防刘海
 island.Size = IDLE_SIZE
 island.BackgroundColor3 = SPOTIFY_BG
 island.BorderSizePixel = 0
@@ -126,32 +65,14 @@ local islandCorner = Instance.new("UICorner")
 islandCorner.CornerRadius = CORNER_IDLE
 islandCorner.Parent = island
 
--- 阴影层 1（深色外扩）
-local shadow1 = Instance.new("UIStroke")
-shadow1.Color = Color3.fromRGB(0, 0, 0)
-shadow1.Thickness = 4
-shadow1.Transparency = 0.6
-shadow1.Parent = island
-
--- 发光层（Spotify 绿色氛围）
-local glowStroke = Instance.new("UIStroke")
-glowStroke.Color = SPOTIFY_GREEN
-glowStroke.Thickness = 2
-glowStroke.Transparency = 0.7
-glowStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-glowStroke.Parent = island
-
-local glowGradient = Instance.new("UIGradient")
-glowGradient.Color = ColorSequence.new{
-    ColorSequenceKeypoint.new(0, SPOTIFY_GREEN),
-    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(29, 185, 84)),
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(18, 18, 18)),
-}
-glowGradient.Rotation = 45
-glowGradient.Parent = glowStroke
+local stroke = Instance.new("UIStroke")
+stroke.Color = Color3.fromRGB(50, 50, 50)
+stroke.Thickness = 1.5
+stroke.Transparency = 0.5
+stroke.Parent = island
 
 -- ============================================================
--- 6. UIScale 跨平台适配
+-- 5. 跨平台自适应缩放 (关键修复)
 -- ============================================================
 local uiScale = Instance.new("UIScale")
 uiScale.Parent = island
@@ -159,49 +80,48 @@ uiScale.Parent = island
 local function updateScale()
     local viewport = camera.ViewportSize
     local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
-    local base     = isMobile and 460 or 580
-    local minScale = isMobile and 0.75 or 0.65
-    local maxScale = isMobile and 1.15 or 1.00
+    -- 针对手机端放大约束，PC端保持原样
+    local base = isMobile and 450 or 600 
+    local minScale = isMobile and 0.85 or 0.65 -- 提高手机端最小缩放比例
+    local maxScale = isMobile and 1.3 or 1.05
     uiScale.Scale = math.clamp(viewport.X / base, minScale, maxScale)
 end
 camera:GetPropertyChangedSignal("ViewportSize"):Connect(updateScale)
 updateScale()
 
 -- ============================================================
--- 7. 空闲状态图标
+-- 6. 空闲状态 (绿色音符)
 -- ============================================================
 local idleIcon = Instance.new("TextLabel")
-idleIcon.Name = "IdleIcon"
 idleIcon.Size = UDim2.new(1, 0, 1, 0)
 idleIcon.BackgroundTransparency = 1
-idleIcon.Text = "♪"
-idleIcon.TextColor3 = Color3.fromRGB(230, 230, 230)
+idleIcon.Text = "♫"
+idleIcon.TextColor3 = SPOTIFY_GREEN
 idleIcon.TextScaled = true
 idleIcon.Font = Enum.Font.GothamBold
 idleIcon.Parent = island
 
 local idlePad = Instance.new("UIPadding")
-idlePad.PaddingTop = UDim.new(0, 4)
-idlePad.PaddingBottom = UDim.new(0, 4)
+idlePad.PaddingTop = UDim.new(0, 6)
+idlePad.PaddingBottom = UDim.new(0, 6)
 idlePad.Parent = idleIcon
 
 -- ============================================================
--- 8. 展开状态内容（Spotify 风格）
+-- 7. 展开内容容器 (使用 CanvasGroup 解决层级问题)
 -- ============================================================
-local expandedContent = Instance.new("Frame")
-expandedContent.Name = "ExpandedContent"
+local expandedContent = Instance.new("CanvasGroup") -- 用CanvasGroup可以做整体淡入淡出
 expandedContent.Size = UDim2.new(1, 0, 1, 0)
 expandedContent.BackgroundTransparency = 1
+expandedContent.GroupTransparency = 1 -- 初始全透明
 expandedContent.Visible = false
 expandedContent.Parent = island
 
--- 8.1 专辑封面（旋转容器）
+-- ★ 左侧：专辑封面
 local coverContainer = Instance.new("Frame")
-coverContainer.Size = UDim2.new(0, 36, 0, 36)
-coverContainer.Position = UDim2.new(0, 10, 0.5, 0)
+coverContainer.Size = UDim2.new(0, 40, 0, 40)
+coverContainer.Position = UDim2.new(0, 12, 0.5, 0)
 coverContainer.AnchorPoint = Vector2.new(0, 0.5)
-coverContainer.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-coverContainer.BorderSizePixel = 0
+coverContainer.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
 coverContainer.Parent = expandedContent
 
 local coverCorner = Instance.new("UICorner")
@@ -214,178 +134,120 @@ coverLabel.BackgroundTransparency = 1
 coverLabel.Text = "♫"
 coverLabel.TextColor3 = SPOTIFY_GREEN
 coverLabel.TextScaled = true
-coverLabel.Font = Enum.Font.GothamBold
 coverLabel.Parent = coverContainer
 
--- 封面旋转动画
-local coverRotationConn
-local function startCoverRotation()
-    if coverRotationConn then coverRotationConn:Disconnect() end
-    coverRotationConn = RunService.Heartbeat:Connect(function(dt)
-        if isPlaying and isExpanded then
-            coverContainer.Rotation = (coverContainer.Rotation + dt * 30) % 360
-        end
-    end)
-end
-startCoverRotation()
+-- ★ 中间：文字信息与进度条 (自动排版)
+local infoFrame = Instance.new("Frame")
+infoFrame.Size = UDim2.new(1, -160, 1, 0) -- 留出左边40和右边按钮的空间
+infoFrame.Position = UDim2.new(0, 60, 0, 0)
+infoFrame.BackgroundTransparency = 1
+infoFrame.Parent = expandedContent
 
--- 8.2 歌名与歌手
+local infoLayout = Instance.new("UIListLayout")
+infoLayout.SortOrder = Enum.SortOrder.LayoutOrder
+infoLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+infoLayout.Padding = UDim.new(0, 2)
+infoLayout.Parent = infoFrame
+
+-- 歌名
 local titleLabel = Instance.new("TextLabel")
-titleLabel.Size = UDim2.new(0, 100, 0, 14)
-titleLabel.Position = UDim2.new(0, 54, 0, 8)
+titleLabel.Size = UDim2.new(1, 0, 0, 16)
 titleLabel.BackgroundTransparency = 1
 titleLabel.Text = "歌曲名"
 titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-titleLabel.TextSize = 12
+titleLabel.TextSize = 14
 titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 titleLabel.Font = Enum.Font.GothamBold
 titleLabel.TextTruncate = Enum.TextTruncate.AtEnd
-titleLabel.Parent = expandedContent
+titleLabel.LayoutOrder = 1
+titleLabel.Parent = infoFrame
 
+-- 歌手
 local artistLabel = Instance.new("TextLabel")
-artistLabel.Size = UDim2.new(0, 100, 0, 12)
-artistLabel.Position = UDim2.new(0, 54, 0, 24)
+artistLabel.Size = UDim2.new(1, 0, 0, 12)
 artistLabel.BackgroundTransparency = 1
 artistLabel.Text = "歌手名"
 artistLabel.TextColor3 = SPOTIFY_SECOND
-artistLabel.TextSize = 10
+artistLabel.TextSize = 11
 artistLabel.TextXAlignment = Enum.TextXAlignment.Left
 artistLabel.Font = Enum.Font.Gotham
 artistLabel.TextTruncate = Enum.TextTruncate.AtEnd
-artistLabel.Parent = expandedContent
+artistLabel.LayoutOrder = 2
+artistLabel.Parent = infoFrame
 
--- 8.3 进度条容器
+-- 进度条容器
 local progressBg = Instance.new("Frame")
-progressBg.Size = UDim2.new(0, 140, 0, 4)
-progressBg.Position = UDim2.new(0, 54, 0, 40)
-progressBg.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
-progressBg.BorderSizePixel = 0
-progressBg.Parent = expandedContent
+progressBg.Size = UDim2.new(1, 0, 0, 4)
+progressBg.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+progressBg.LayoutOrder = 3
+progressBg.Parent = infoFrame
 
-local progressBgCorner = Instance.new("UICorner")
-progressBgCorner.CornerRadius = UDim.new(1, 0)
-progressBgCorner.Parent = progressBg
+local progressCorner = Instance.new("UICorner")
+progressCorner.CornerRadius = UDim.new(1, 0)
+progressCorner.Parent = progressBg
 
 local progressFill = Instance.new("Frame")
 progressFill.Size = UDim2.new(0, 0, 1, 0)
 progressFill.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-progressFill.BorderSizePixel = 0
 progressFill.Parent = progressBg
 
-local progressFillCorner = Instance.new("UICorner")
-progressFillCorner.CornerRadius = UDim.new(1, 0)
-progressFillCorner.Parent = progressFill
+local fillCorner = Instance.new("UICorner")
+fillCorner.CornerRadius = UDim.new(1, 0)
+fillCorner.Parent = progressFill
 
--- 8.4 时间戳
-local timeCurrent = Instance.new("TextLabel")
-timeCurrent.Size = UDim2.new(0, 28, 0, 10)
-timeCurrent.Position = UDim2.new(0, 196, 0, 37)
-timeCurrent.BackgroundTransparency = 1
-timeCurrent.Text = "0:00"
-timeCurrent.TextColor3 = SPOTIFY_SECOND
-timeCurrent.TextSize = 8
-timeCurrent.Font = Enum.Font.Gotham
-timeCurrent.TextXAlignment = Enum.TextXAlignment.Right
-timeCurrent.Parent = expandedContent
+-- ★ 右侧：按钮组
+local btnContainer = Instance.new("Frame")
+btnContainer.Size = UDim2.new(0, 70, 1, 0)
+btnContainer.Position = UDim2.new(1, -80, 0, 0)
+btnContainer.BackgroundTransparency = 1
+btnContainer.Parent = expandedContent
 
-local timeTotal = Instance.new("TextLabel")
-timeTotal.Size = UDim2.new(0, 28, 0, 10)
-timeTotal.Position = UDim2.new(0, 224, 0, 37)
-timeTotal.BackgroundTransparency = 1
-timeTotal.Text = "0:00"
-timeTotal.TextColor3 = SPOTIFY_SECOND
-timeTotal.TextSize = 8
-timeTotal.Font = Enum.Font.Gotham
-timeTotal.TextXAlignment = Enum.TextXAlignment.Left
-timeTotal.Parent = expandedContent
-
--- 8.5 音波可视化（3 根竖条）
-local visualizerContainer = Instance.new("Frame")
-visualizerContainer.Size = UDim2.new(0, 20, 0, 12)
-visualizerContainer.Position = UDim2.new(1, -30, 0.5, 0)
-visualizerContainer.AnchorPoint = Vector2.new(0, 0.5)
-visualizerContainer.BackgroundTransparency = 1
-visualizerContainer.Parent = expandedContent
-
-local bars = {}
-for i = 1, 3 do
-    local bar = Instance.new("Frame")
-    bar.Size = UDim2.new(0, 3, 0, 4)
-    bar.Position = UDim2.new(0, (i - 1) * 6, 0.5, 0)
-    bar.AnchorPoint = Vector2.new(0, 0.5)
-    bar.BackgroundColor3 = SPOTIFY_GREEN
-    bar.BorderSizePixel = 0
-    bar.Parent = visualizerContainer
-    local c = Instance.new("UICorner")
-    c.CornerRadius = UDim.new(1, 0)
-    c.Parent = bar
-    bars[i] = bar
-end
-
--- 8.6 播放/暂停按钮（morph 风格）
+-- 播放按钮
 local playBtn = Instance.new("TextButton")
-playBtn.Size = UDim2.new(0, 26, 0, 26)
-playBtn.Position = UDim2.new(1, -68, 0.5, 0)
+playBtn.Size = UDim2.new(0, 32, 0, 32)
+playBtn.Position = UDim2.new(0, 0, 0.5, 0)
 playBtn.AnchorPoint = Vector2.new(0, 0.5)
 playBtn.BackgroundColor3 = SPOTIFY_GREEN
-playBtn.BorderSizePixel = 0
-playBtn.Text = ""
-playBtn.AutoButtonColor = false
-playBtn.Parent = expandedContent
+playBtn.Text = "▶"
+playBtn.TextColor3 = Color3.fromRGB(0, 0, 0)
+playBtn.TextSize = 14
+playBtn.Font = Enum.Font.GothamBold
+playBtn.Parent = btnContainer
 
-local playBtnCorner = Instance.new("UICorner")
-playBtnCorner.CornerRadius = UDim.new(1, 0)
-playBtnCorner.Parent = playBtn
+local playCorner = Instance.new("UICorner")
+playCorner.CornerRadius = UDim.new(1, 0)
+playCorner.Parent = playBtn
 
-local playIcon = Instance.new("TextLabel")
-playIcon.Size = UDim2.new(1, 0, 1, 0)
-playIcon.BackgroundTransparency = 1
-playIcon.Text = "▶"
-playIcon.TextColor3 = Color3.fromRGB(0, 0, 0)
-playIcon.TextSize = 12
-playIcon.Font = Enum.Font.GothamBold
-playIcon.Parent = playBtn
-
--- 8.7 下一首按钮
+-- 下一首
 local nextBtn = Instance.new("TextButton")
-nextBtn.Size = UDim2.new(0, 26, 0, 26)
-nextBtn.Position = UDim2.new(1, -38, 0.5, 0)
+nextBtn.Size = UDim2.new(0, 32, 0, 32)
+nextBtn.Position = UDim2.new(0, 38, 0.5, 0)
 nextBtn.AnchorPoint = Vector2.new(0, 0.5)
-nextBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-nextBtn.BorderSizePixel = 0
+nextBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
 nextBtn.Text = "⏭"
 nextBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-nextBtn.TextSize = 12
+nextBtn.TextSize = 14
 nextBtn.Font = Enum.Font.GothamBold
-nextBtn.AutoButtonColor = false
-nextBtn.Parent = expandedContent
+nextBtn.Parent = btnContainer
 
-local nextBtnCorner = Instance.new("UICorner")
-nextBtnCorner.CornerRadius = UDim.new(1, 0)
-nextBtnCorner.Parent = nextBtn
+local nextCorner = Instance.new("UICorner")
+nextCorner.CornerRadius = UDim.new(1, 0)
+nextCorner.Parent = nextBtn
 
 -- ============================================================
--- 9. 音乐播放逻辑
+-- 8. 音乐播放逻辑
 -- ============================================================
 local musicSound = Instance.new("Sound")
-musicSound.Name = "DynamicIslandMusic"
 musicSound.Volume = 0.5
-musicSound.Looped = false
 musicSound.Parent = SoundService
 
-local function formatTime(seconds)
-    seconds = math.floor(seconds or 0)
-    return string.format("%d:%02d", math.floor(seconds / 60), seconds % 60)
-end
-
-local function updateTrackInfo()
-    local track = playlist[currentIndex]
-    titleLabel.Text  = track.title
-    artistLabel.Text = track.artist
+local function formatTime(sec)
+    sec = math.floor(sec or 0)
+    return string.format("%d:%02d", math.floor(sec / 60), sec % 60)
 end
 
 local function updatePlayIcon()
-    playIcon.Text = isPlaying and "⏸" or "▶"
+    playBtn.Text = isPlaying and "⏸" or "▶"
 end
 
 local function playCurrentTrack()
@@ -395,8 +257,9 @@ local function playCurrentTrack()
     end
     musicSound:Play()
     isPlaying = true
+    titleLabel.Text = track.title
+    artistLabel.Text = track.artist
     updatePlayIcon()
-    updateTrackInfo()
 end
 
 local function togglePlay()
@@ -422,69 +285,34 @@ end
 musicSound.Ended:Connect(nextTrack)
 
 -- ============================================================
--- 10. 实时进度条 + 可视化更新
+-- 9. 进度条点击跳转
 -- ============================================================
-RunService.Heartbeat:Connect(function()
-    if not isExpanded then return end
-
-    -- 进度条
-    if musicSound.TimeLength > 0 then
-        local ratio = musicSound.TimePosition / musicSound.TimeLength
-        progressFill.Size = UDim2.new(math.clamp(ratio, 0, 1), 0, 1, 0)
-        timeCurrent.Text = formatTime(musicSound.TimePosition)
-        timeTotal.Text = formatTime(musicSound.TimeLength)
-    end
-
-    -- 音波可视化（仅在播放时跳动）
-    if isPlaying then
-        local loudness = musicSound.PlaybackLoudness / 1000
-        for i, bar in ipairs(bars) do
-            local wave = math.sin(os.clock() * (4 + i * 2)) * 0.5 + 0.5
-            local height = 3 + loudness * 10 * wave
-            bar.Size = UDim2.new(0, 3, 0, math.clamp(height, 3, 14))
-        end
-    else
-        for _, bar in ipairs(bars) do
-            bar.Size = UDim2.new(0, 3, 0, 4)
-        end
-    end
-end)
-
--- ============================================================
--- 11. 进度条点击/拖动跳转（Spotify 风格 seek）
--- ============================================================
-local function seekFromInput(input)
-    local relativeX = input.Position.X - progressBg.AbsolutePosition.X
-    local ratio = math.clamp(relativeX / progressBg.AbsoluteSize.X, 0, 1)
+local function seek(input)
+    local ratio = math.clamp((input.Position.X - progressBg.AbsolutePosition.X) / progressBg.AbsoluteSize.X, 0, 1)
     if musicSound.TimeLength > 0 then
         musicSound.TimePosition = ratio * musicSound.TimeLength
     end
 end
 
 progressBg.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1
-    or input.UserInputType == Enum.UserInputType.Touch then
-        seekFromInput(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        seek(input)
     end
 end)
-
 progressBg.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement
-    or input.UserInputType == Enum.UserInputType.Touch then
-        if input.UserInputState == Enum.UserInputState.Change then
-            seekFromInput(input)
-        end
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        if input.UserInputState == Enum.UserInputState.Change then seek(input) end
     end
 end)
 
 -- ============================================================
--- 12. 展开/收起动画（弹簧感）
+-- 10. 动画与事件 (修复重叠Bug)
 -- ============================================================
-local autoCollapseThread = nil
+local autoCollapse = nil
 
 local function resetAutoCollapse()
-    if autoCollapseThread then task.cancel(autoCollapseThread) end
-    autoCollapseThread = task.delay(6, function()
+    if autoCollapse then task.cancel(autoCollapse) end
+    autoCollapse = task.delay(5, function()
         if isExpanded then collapseIsland() end
     end)
 end
@@ -492,57 +320,58 @@ end
 function expandIsland()
     if isExpanded then return end
     isExpanded = true
+    
+    -- 1. 先让内容可见
     idleIcon.Visible = false
     expandedContent.Visible = true
-
-    -- 弹簧尺寸动画
-    local tweenSize = springTween(island, "Size", EXPANDED_SIZE, 0.5, 0.1)
-    tweenSize:Play()
-
-    -- 圆角平滑变化
-    TweenService:Create(islandCorner, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-        CornerRadius = CORNER_EXPAND
+    
+    -- 2. 尺寸动画
+    TweenService:Create(island, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+        Size = EXPANDED_SIZE,
+        BackgroundColor3 = SPOTIFY_CARD
     }):Play()
-
-    -- 背景色微调
-    TweenService:Create(island, TweenInfo.new(0.4), { BackgroundColor3 = SPOTIFY_CARD }):Play()
-
+    
+    TweenService:Create(islandCorner, TweenInfo.new(0.4), { CornerRadius = CORNER_EXPAND }):Play()
+    
+    -- 3. 内容淡入
+    TweenService:Create(expandedContent, TweenInfo.new(0.3), { GroupTransparency = 0 }):Play()
+    
     resetAutoCollapse()
 end
 
 function collapseIsland()
     if not isExpanded then return end
     isExpanded = false
-
-    local tweenSize = springTween(island, "Size", IDLE_SIZE, 0.4, 0.06)
-    tweenSize:Play()
-
-    TweenService:Create(islandCorner, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-        CornerRadius = CORNER_IDLE
+    
+    -- 1. 内容淡出
+    local fadeOut = TweenService:Create(expandedContent, TweenInfo.new(0.2), { GroupTransparency = 1 })
+    fadeOut:Play()
+    
+    -- 2. 尺寸缩小
+    TweenService:Create(island, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+        Size = IDLE_SIZE,
+        BackgroundColor3 = SPOTIFY_BG
     }):Play()
-
-    TweenService:Create(island, TweenInfo.new(0.3), { BackgroundColor3 = SPOTIFY_BG }):Play()
-
-    local hideTween = TweenService:Create(expandedContent, TweenInfo.new(0.2), { BackgroundTransparency = 1 })
-    -- 用 task.delay 确保尺寸动画结束后再隐藏内容
-    task.delay(0.35, function()
+    
+    TweenService:Create(islandCorner, TweenInfo.new(0.35), { CornerRadius = CORNER_IDLE }):Play()
+    
+    -- 3. 动画结束后彻底隐藏内容 (解决重叠的关键)
+    fadeOut.Completed:Connect(function()
         if not isExpanded then
-            idleIcon.Visible = true
             expandedContent.Visible = false
+            idleIcon.Visible = true
         end
     end)
 end
 
--- ============================================================
--- 13. 事件绑定
--- ============================================================
+-- 点击主岛展开
 island.InputBegan:Connect(function(input)
-    if (input.UserInputType == Enum.UserInputType.MouseButton1
-    or input.UserInputType == Enum.UserInputType.Touch) and not isExpanded then
+    if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) and not isExpanded then
         expandIsland()
     end
 end)
 
+-- 按钮交互
 playBtn.MouseButton1Click:Connect(function()
     togglePlay()
     resetAutoCollapse()
@@ -554,7 +383,12 @@ nextBtn.MouseButton1Click:Connect(function()
 end)
 
 -- ============================================================
--- 14. 初始化
+-- 11. 实时状态更新
 -- ============================================================
-updateTrackInfo()
-updatePlayIcon()
+RunService.Heartbeat:Connect(function()
+    if not isExpanded or not musicSound.IsPlaying then return end
+    if musicSound.TimeLength > 0 then
+        local ratio = musicSound.TimePosition / musicSound.TimeLength
+        progressFill.Size = UDim2.new(math.clamp(ratio, 0, 1), 0, 1, 0)
+    end
+end)
