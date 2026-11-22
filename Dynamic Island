@@ -1,8 +1,4 @@
---[[═══════════════════════════════════════════════════════════════
-	灵动岛 · 增强版 v3.0
-	放置位置：StarterPlayer > StarterPlayerScripts > LocalScript
-	交互：点击展开 · 点外部收起 · 折叠态可拖动 · ✕ 关闭
-═══════════════════════════════════════════════════════════════]]
+--[[ Dynamic Island v3.4  |  StarterPlayer > StarterPlayerScripts > LocalScript ]]
 
 local Players          = game:GetService("Players")
 local TweenService     = game:GetService("TweenService")
@@ -17,9 +13,7 @@ local playerGui = player:WaitForChild("PlayerGui")
 local camera    = workspace.CurrentCamera or workspace:WaitForChild("Camera")
 local guiInset  = GuiService:GetGuiInset()
 
---================================================================
--- 0. 工具
---================================================================
+-- [0] Utilities -----------------------------------------------------
 local function new(class, props, parent)
 	local inst = Instance.new(class)
 	if props then
@@ -62,6 +56,19 @@ local function fmtTime(sec)
 	return string.format("%d:%02d", math.floor(sec / 60), sec % 60)
 end
 
+local function fmtStopwatch(sec)
+	sec = math.max(0, sec or 0)
+	local m = math.floor(sec / 60)
+	local s = math.floor(sec % 60)
+	local c = math.floor((sec * 100) % 100)
+	return string.format("%02d:%02d.%02d", m, s, c)
+end
+
+local function fmtCountdown(sec)
+	sec = math.max(0, math.ceil(sec or 0))
+	return string.format("%02d:%02d", math.floor(sec / 60), sec % 60)
+end
+
 local function addPressEffect(button)
 	local scale = new("UIScale", { Scale = 1 }, button)
 	button.MouseButton1Down:Connect(function()
@@ -81,18 +88,17 @@ local function parseId(text)
 	return nil
 end
 
---================================================================
--- 1. 颜色 & 主题
---================================================================
+-- [1] Colors & themes ----------------------------------------------
 local COL = {
-	bg        = Color3.fromRGB(18, 18, 22),
-	bgSoft    = Color3.fromRGB(30, 30, 37),
-	card      = Color3.fromRGB(40, 40, 49),
-	cardSoft  = Color3.fromRGB(58, 58, 70),
-	text      = Color3.fromRGB(242, 242, 248),
+	bg        = Color3.fromRGB(10, 10, 13),
+	bgSoft    = Color3.fromRGB(26, 26, 32),
+	card      = Color3.fromRGB(38, 38, 46),
+	cardSoft  = Color3.fromRGB(56, 56, 66),
+	text      = Color3.fromRGB(245, 245, 250),
 	textDim   = Color3.fromRGB(150, 150, 165),
-	textFaint = Color3.fromRGB(104, 104, 120),
-	track     = Color3.fromRGB(60, 60, 72),
+	textFaint = Color3.fromRGB(100, 100, 116),
+	track     = Color3.fromRGB(58, 58, 70),
+	good      = Color3.fromRGB(52, 199, 89),
 	danger    = Color3.fromRGB(255, 69, 58),
 	warn      = Color3.fromRGB(255, 159, 10),
 }
@@ -113,12 +119,44 @@ local function registerAccent(obj, prop)
 	table.insert(accentTargets, { obj = obj, prop = prop })
 end
 
--- 前向声明
+-- forward declarations
 local applyTheme, switchTab, openTab
 local expandIsland, collapseIsland
 local showNotification, renderNotifications, updateBadge
 local updateServerTab, updateMusicUI, updateClock
 local loadAndPlay, togglePlay, stopMusicNow, setMusicVolume
+local renderRecent, renderQueue, updateLoopBtn, setStatusText
+local updateStopwatchDisplay, updateCountdownDisplay
+local activeTab = "overview"
+local currentMusicId = nil
+local loopActive = false
+
+local notifData = {}
+local unreadCount = 0
+
+-- new state
+local musicQueue = {}
+local lastVolume = 0.5
+local isMuted = false
+local fadeEnabled = true
+local perfMode = false
+local playerNotifyEnabled = true
+local playerFilterText = ""
+local lowFpsTime = 0
+local lastLowFpsNotify = 0
+local statusActive = false
+local currentStatusText = ""
+
+-- stopwatch state
+local swRunning = false
+local swStartClock = 0
+local swAccum = 0
+local swValue = 0
+
+-- countdown state
+local cdActive = false
+local cdEndClock = 0
+local cdValue = 0
 
 applyTheme = function(key)
 	local theme = currentTheme
@@ -132,12 +170,14 @@ applyTheme = function(key)
 	for _, d in ipairs(themeDots) do
 		d.sel.Transparency = (d.key == theme.key) and 0 or 1
 	end
-	if switchTab and activeTab then switchTab(activeTab) end
+	if statusActive and not notificationActive then
+		clockLabel.TextColor3 = theme.accent
+	end
+	if switchTab and activeTab then switchTab(activeTab, true) end
+	if updateLoopBtn then updateLoopBtn() end
 end
 
---================================================================
--- 2. 根节点
---================================================================
+-- [2] Root ---------------------------------------------------------
 local oldGui = playerGui:FindFirstChild("DynamicIslandGui")
 if oldGui then oldGui:Destroy() end
 
@@ -154,29 +194,37 @@ local islandCenterX = math.floor(vp0.X / 2)
 local islandTopY    = math.floor(guiInset.Y) + 8
 local isExpanded    = false
 local expandToken   = 0
-local activeTab     = "overview"
 
-local shadowOuter = new("Frame", {
-	Name = "ShadowOuter",
-	AnchorPoint = Vector2.zero,
+-- 三段阴影
+local shadowFar = new("Frame", {
+	Name = "ShadowFar",
+	BackgroundColor3 = Color3.new(0, 0, 0),
+	BackgroundTransparency = 0.94,
+	BorderSizePixel = 0,
+	Size = UDim2.fromOffset(160, 56),
+	ZIndex = 0,
+}, screenGui)
+corner(shadowFar, UDim.new(1, 0))
+
+local shadowMid = new("Frame", {
+	Name = "ShadowMid",
 	BackgroundColor3 = Color3.new(0, 0, 0),
 	BackgroundTransparency = 0.86,
 	BorderSizePixel = 0,
-	Size = UDim2.fromOffset(140, 38),
+	Size = UDim2.fromOffset(152, 48),
 	ZIndex = 1,
 }, screenGui)
-corner(shadowOuter, UDim.new(0, 24))
+corner(shadowMid, UDim.new(0, 24))
 
-local shadowInner = new("Frame", {
-	Name = "ShadowInner",
-	AnchorPoint = Vector2.zero,
+local shadowNear = new("Frame", {
+	Name = "ShadowNear",
 	BackgroundColor3 = Color3.new(0, 0, 0),
 	BackgroundTransparency = 0.72,
 	BorderSizePixel = 0,
-	Size = UDim2.fromOffset(140, 38),
+	Size = UDim2.fromOffset(144, 42),
 	ZIndex = 1,
 }, screenGui)
-corner(shadowInner, UDim.new(0, 24))
+corner(shadowNear, UDim.new(0, 21))
 
 local root = new("Frame", {
 	Name = "Island",
@@ -190,18 +238,42 @@ local root = new("Frame", {
 }, screenGui)
 
 local rootCorner = corner(root, UDim.new(0, 19))
-new("UIGradient", {
-	Color = ColorSequence.new(COL.bgSoft, COL.bg),
-	Rotation = 90,
-}, root)
+new("UIGradient", { Color = ColorSequence.new(COL.bgSoft, COL.bg), Rotation = 90 }, root)
 local rootStroke = stroke(root, currentTheme.accent, 1, 0.6)
 registerAccent(rootStroke, "Color")
 
 local rootScale = new("UIScale", { Scale = 1 }, root)
 
---================================================================
--- 3. 折叠态
---================================================================
+-- 顶部玻璃高光
+local topSheen = new("Frame", {
+	Name = "TopSheen",
+	BackgroundColor3 = Color3.new(1, 1, 1),
+	BorderSizePixel = 0,
+	Size = UDim2.new(1, 0, 0, 16),
+	ZIndex = 99,
+}, root)
+corner(topSheen, UDim.new(0, 19))
+new("UIGradient", {
+	Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.90),
+		NumberSequenceKeypoint.new(0.4, 0.97),
+		NumberSequenceKeypoint.new(1, 1),
+	}),
+	Rotation = 90,
+}, topSheen)
+
+local topLine = new("Frame", {
+	Name = "TopLine",
+	BackgroundColor3 = Color3.new(1, 1, 1),
+	BackgroundTransparency = 0.86,
+	BorderSizePixel = 0,
+	Size = UDim2.new(1, -28, 0, 1),
+	Position = UDim2.new(0, 14, 0, 1),
+	ZIndex = 100,
+}, root)
+corner(topLine, UDim.new(1, 0))
+
+-- [3] Collapsed ----------------------------------------------------
 local collapsedGroup = new("CanvasGroup", {
 	Name = "Collapsed",
 	BackgroundTransparency = 1,
@@ -225,6 +297,7 @@ local iconDot = new("Frame", {
 }, collapsedGroup)
 corner(iconDot, UDim.new(1, 0))
 registerAccent(iconDot, "BackgroundColor3")
+
 local iconCore = new("Frame", {
 	Size = UDim2.fromOffset(6, 6),
 	AnchorPoint = Vector2.new(0.5, 0.5),
@@ -232,8 +305,22 @@ local iconCore = new("Frame", {
 	BackgroundColor3 = Color3.new(1, 1, 1),
 	BackgroundTransparency = 0.15,
 	BorderSizePixel = 0,
+	ZIndex = 2,
 }, iconDot)
 corner(iconCore, UDim.new(1, 0))
+
+-- 图标球面高光
+local iconSheen = new("Frame", {
+	Size = UDim2.fromOffset(7, 4),
+	AnchorPoint = Vector2.new(0, 0),
+	Position = UDim2.fromOffset(2, 1),
+	BackgroundColor3 = Color3.new(1, 1, 1),
+	BackgroundTransparency = 0.4,
+	BorderSizePixel = 0,
+	ZIndex = 3,
+}, iconDot)
+corner(iconSheen, UDim.new(1, 0))
+
 local iconGlow = new("UIStroke", {
 	Color = currentTheme.accent,
 	Thickness = 2,
@@ -297,9 +384,14 @@ local redDot = new("Frame", {
 }, root)
 corner(redDot, UDim.new(1, 0))
 
---================================================================
--- 4. 展开容器
---================================================================
+local function refreshTopOverlays()
+	-- 保持 topSheen / topLine 在最上层
+	topSheen.ZIndex = 99
+	topLine.ZIndex = 100
+end
+refreshTopOverlays()
+
+-- [4] Expanded container -------------------------------------------
 local expandedGroup = new("CanvasGroup", {
 	Name = "Expanded",
 	BackgroundTransparency = 1,
@@ -338,6 +430,13 @@ closeBtn.MouseButton1Click:Connect(function()
 	if collapseIsland then collapseIsland() end
 end)
 
+local headerDrag = new("Frame", {
+	Name = "HeaderDrag",
+	BackgroundTransparency = 1,
+	Position = UDim2.fromOffset(0, 0),
+	Size = UDim2.new(1, -52, 0, 38),
+}, expandedGroup)
+
 local tabBar = new("Frame", {
 	BackgroundTransparency = 1,
 	Position = UDim2.fromOffset(12, 42),
@@ -345,7 +444,7 @@ local tabBar = new("Frame", {
 }, expandedGroup)
 new("UIListLayout", {
 	FillDirection = Enum.FillDirection.Horizontal,
-	Padding = UDim.new(0, 5),
+	Padding = UDim.new(0, 4),
 	SortOrder = Enum.SortOrder.LayoutOrder,
 }, tabBar)
 
@@ -355,9 +454,7 @@ local pageHolder = new("Frame", {
 	Size = UDim2.new(1, -28, 1, -92),
 }, expandedGroup)
 
---================================================================
--- 5. 页面组件
---================================================================
+-- [5] Page helpers -------------------------------------------------
 local function createPage()
 	local sf = new("ScrollingFrame", {
 		Name = "Page",
@@ -369,7 +466,6 @@ local function createPage()
 		ScrollingDirection = Enum.ScrollingDirection.Y,
 		AutomaticCanvasSize = Enum.AutomaticSize.Y,
 		CanvasSize = UDim2.new(),
-		ScrollBarThickness2 = 3,
 		Size = UDim2.fromScale(1, 1),
 		Visible = false,
 		ElasticBehavior = Enum.ElasticBehavior.WhenScrollable,
@@ -452,8 +548,7 @@ local function makeInfoRow(parent, order, name)
 	}, row)
 end
 
--- 拖动条 / 滑块通用
-local function attachDragArea(area, trackObj, onRatio)
+local function attachDragArea(area, trackObj, onRatio, isActive)
 	local dragging = false
 	local function apply(x)
 		local ax = trackObj.AbsolutePosition.X
@@ -461,12 +556,14 @@ local function attachDragArea(area, trackObj, onRatio)
 		onRatio(math.clamp((x - ax) / w, 0, 1))
 	end
 	UserInputService.InputBegan:Connect(function(input, gp)
-		if gp then return end
+		if gp or not isExpanded then return end
+		if isActive and not isActive() then return end
 		local t = input.UserInputType
 		if t ~= Enum.UserInputType.MouseButton1 and t ~= Enum.UserInputType.Touch then return end
 		local p = input.Position
 		local a = area.AbsolutePosition
 		local s = area.AbsoluteSize
+		if s.X <= 0 then return end
 		if p.X >= a.X - 8 and p.X <= a.X + s.X + 8 and p.Y >= a.Y and p.Y <= a.Y + s.Y then
 			dragging = true
 			apply(p.X)
@@ -476,7 +573,7 @@ local function attachDragArea(area, trackObj, onRatio)
 		if not dragging then return end
 		local t = input.UserInputType
 		if t == Enum.UserInputType.MouseMovement or t == Enum.UserInputType.Touch then
-			apply(input.X or input.Position.X)
+			apply(input.Position.X)
 		end
 	end)
 	UserInputService.InputEnded:Connect(function(input)
@@ -487,9 +584,7 @@ local function attachDragArea(area, trackObj, onRatio)
 	end)
 end
 
---================================================================
--- 6. 概览页
---================================================================
+-- [6] Overview page ------------------------------------------------
 local overviewPage = createPage()
 
 local perfCard = makeCard(overviewPage, 1, 100)
@@ -505,14 +600,14 @@ new("TextLabel", {
 }, perfCard)
 local fpsValue = new("TextLabel", {
 	BackgroundTransparency = 1,
-	Font = Enum.Font.GothamBold,
-	TextSize = 22,
+	Font = Enum.Font.GothamBlack,
+	TextSize = 24,
 	TextColor3 = currentTheme.accent,
 	Text = "--",
 	TextXAlignment = Enum.TextXAlignment.Right,
 	AnchorPoint = Vector2.new(1, 0),
-	Position = UDim2.new(1, -12, 0, 4),
-	Size = UDim2.fromOffset(80, 26),
+	Position = UDim2.new(1, -12, 0, 2),
+	Size = UDim2.fromOffset(80, 28),
 }, perfCard)
 registerAccent(fpsValue, "TextColor3")
 
@@ -575,7 +670,7 @@ local function makeQuickButton(order, text, accented, callback)
 end
 
 makeQuickButton(1, "▶ 音乐", true, function() if openTab then openTab("music") end end)
-makeQuickButton(2, "服 服务器", false, function() if openTab then openTab("server") end end)
+makeQuickButton(2, "时 计时", false, function() if openTab then openTab("tools") end end)
 makeQuickButton(3, "通 通知", false, function() if openTab then openTab("notification") end end)
 makeQuickButton(4, "◐ 换色", false, function()
 	for i, t in ipairs(THEMES) do
@@ -600,9 +695,19 @@ local ovInfo = new("TextLabel", {
 	LayoutOrder = 4,
 }, overviewPage)
 
---================================================================
--- 7. 音乐页
---================================================================
+local posLabel = new("TextLabel", {
+	BackgroundTransparency = 1,
+	Font = Enum.Font.GothamMedium,
+	TextSize = 11,
+	TextColor3 = COL.textFaint,
+	Text = "位置 —",
+	TextXAlignment = Enum.TextXAlignment.Left,
+	TextTruncate = Enum.TextTruncate.AtEnd,
+	Size = UDim2.new(1, 0, 0, 16),
+	LayoutOrder = 5,
+}, overviewPage)
+
+-- [7] Music page ---------------------------------------------------
 local musicPage = createPage()
 
 local inputRow = new("Frame", {
@@ -768,7 +873,7 @@ new("TextLabel", {
 local volArea = new("Frame", {
 	BackgroundTransparency = 1,
 	Position = UDim2.fromOffset(34, 0),
-	Size = UDim2.new(1, -34, 0, 24),
+	Size = UDim2.new(1, -90, 0, 24),
 }, volRow)
 local volTrack = new("Frame", {
 	AnchorPoint = Vector2.new(0, 0.5),
@@ -795,6 +900,34 @@ local volKnob = new("Frame", {
 }, volArea)
 corner(volKnob, UDim.new(1, 0))
 
+local volPct = new("TextLabel", {
+	BackgroundTransparency = 1,
+	Font = Enum.Font.GothamMedium,
+	TextSize = 11,
+	TextColor3 = COL.textDim,
+	Text = "50%",
+	TextXAlignment = Enum.TextXAlignment.Right,
+	AnchorPoint = Vector2.new(1, 0.5),
+	Position = UDim2.new(1, -30, 0.5, 0),
+	Size = UDim2.fromOffset(30, 24),
+}, volRow)
+
+local muteBtn = new("TextButton", {
+	BackgroundColor3 = COL.card,
+	BackgroundTransparency = 0.35,
+	BorderSizePixel = 0,
+	AutoButtonColor = false,
+	Font = Enum.Font.GothamBold,
+	TextSize = 12,
+	TextColor3 = COL.text,
+	Text = "🔊",
+	AnchorPoint = Vector2.new(1, 0.5),
+	Position = UDim2.new(1, 0, 0.5, 0),
+	Size = UDim2.fromOffset(26, 24),
+}, volRow)
+corner(muteBtn, UDim.new(0, 8))
+addPressEffect(muteBtn)
+
 local visRow = new("Frame", {
 	BackgroundTransparency = 1,
 	Size = UDim2.new(1, 0, 0, 30),
@@ -820,6 +953,25 @@ for i = 1, 18 do
 	visBars[i] = b
 end
 
+local queueTitle = new("TextLabel", {
+	BackgroundTransparency = 1,
+	Font = Enum.Font.GothamBold,
+	TextSize = 12,
+	TextColor3 = COL.textDim,
+	Text = "播放队列（空）",
+	TextXAlignment = Enum.TextXAlignment.Left,
+	Size = UDim2.new(1, 0, 0, 16),
+	LayoutOrder = 8,
+}, musicPage)
+
+local queueList = new("Frame", {
+	BackgroundTransparency = 1,
+	Size = UDim2.new(1, 0, 0, 0),
+	AutomaticSize = Enum.AutomaticSize.Y,
+	LayoutOrder = 9,
+}, musicPage)
+new("UIListLayout", { Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder }, queueList)
+
 local recentTitle = new("TextLabel", {
 	BackgroundTransparency = 1,
 	Font = Enum.Font.GothamBold,
@@ -828,20 +980,231 @@ local recentTitle = new("TextLabel", {
 	Text = "最近播放",
 	TextXAlignment = Enum.TextXAlignment.Left,
 	Size = UDim2.new(1, 0, 0, 16),
-	LayoutOrder = 8,
+	LayoutOrder = 10,
 }, musicPage)
 
 local recentList = new("Frame", {
 	BackgroundTransparency = 1,
 	Size = UDim2.new(1, 0, 0, 0),
 	AutomaticSize = Enum.AutomaticSize.Y,
-	LayoutOrder = 9,
+	LayoutOrder = 11,
 }, musicPage)
 new("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }, recentList)
 
---================================================================
--- 8. 服务器页
---================================================================
+-- [8] Tools page (秒表 + 倒计时) -----------------------------------
+local toolsPage = createPage()
+
+-- 秒表
+local swCard = makeCard(toolsPage, 1, 110)
+new("TextLabel", {
+	BackgroundTransparency = 1,
+	Font = Enum.Font.GothamBold,
+	TextSize = 11,
+	TextColor3 = COL.textDim,
+	Text = "秒表",
+	TextXAlignment = Enum.TextXAlignment.Left,
+	Position = UDim2.fromOffset(12, 10),
+	Size = UDim2.new(1, -24, 0, 14),
+}, swCard)
+
+local swLabel = new("TextLabel", {
+	BackgroundTransparency = 1,
+	Font = Enum.Font.GothamBlack,
+	TextSize = 30,
+	TextColor3 = COL.text,
+	Text = "00:00.00",
+	TextXAlignment = Enum.TextXAlignment.Left,
+	Position = UDim2.fromOffset(12, 26),
+	Size = UDim2.new(1, -24, 0, 40),
+}, swCard)
+
+local swBtnRow = new("Frame", {
+	BackgroundTransparency = 1,
+	Position = UDim2.fromOffset(12, 74),
+	Size = UDim2.new(1, -24, 0, 26),
+}, swCard)
+new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 6) }, swBtnRow)
+
+local function makeMiniBtn(parent, order, text, color, filled)
+	local b = new("TextButton", {
+		BackgroundColor3 = filled and (color or currentTheme.accent) or COL.cardSoft,
+		BackgroundTransparency = filled and 0.15 or 0.35,
+		BorderSizePixel = 0,
+		AutoButtonColor = false,
+		Font = Enum.Font.GothamBold,
+		TextSize = 11,
+		TextColor3 = filled and Color3.new(1, 1, 1) or COL.text,
+		Text = text,
+		Size = UDim2.new(1 / 3, -4, 1, 0),
+		LayoutOrder = order,
+	}, parent)
+	corner(b, UDim.new(0, 8))
+	addPressEffect(b)
+	return b
+end
+
+local swStartBtn = makeMiniBtn(swBtnRow, 1, "开始", nil, true)
+local swPauseBtn = makeMiniBtn(swBtnRow, 2, "暂停", nil, false)
+local swResetBtn = makeMiniBtn(swBtnRow, 3, "重置", nil, false)
+
+-- 倒计时
+local cdCard = makeCard(toolsPage, 2, 110)
+new("TextLabel", {
+	BackgroundTransparency = 1,
+	Font = Enum.Font.GothamBold,
+	TextSize = 11,
+	TextColor3 = COL.textDim,
+	Text = "倒计时",
+	TextXAlignment = Enum.TextXAlignment.Left,
+	Position = UDim2.fromOffset(12, 10),
+	Size = UDim2.new(1, -24, 0, 14),
+}, cdCard)
+
+local cdLabel = new("TextLabel", {
+	BackgroundTransparency = 1,
+	Font = Enum.Font.GothamBlack,
+	TextSize = 30,
+	TextColor3 = COL.text,
+	Text = "--:--",
+	TextXAlignment = Enum.TextXAlignment.Left,
+	Position = UDim2.fromOffset(12, 26),
+	Size = UDim2.new(1, -24, 0, 40),
+}, cdCard)
+
+local cdBtnRow = new("Frame", {
+	BackgroundTransparency = 1,
+	Position = UDim2.fromOffset(12, 74),
+	Size = UDim2.new(1, -24, 0, 26),
+}, cdCard)
+new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 6) }, cdBtnRow)
+
+local function makeCdBtn(order, text, filled)
+	local b = new("TextButton", {
+		BackgroundColor3 = filled and COL.danger or COL.cardSoft,
+		BackgroundTransparency = filled and 0.15 or 0.35,
+		BorderSizePixel = 0,
+		AutoButtonColor = false,
+		Font = Enum.Font.GothamBold,
+		TextSize = 11,
+		TextColor3 = filled and Color3.new(1, 1, 1) or COL.text,
+		Text = text,
+		Size = UDim2.new(1 / 4, -4, 1, 0),
+		LayoutOrder = order,
+	}, cdBtnRow)
+	corner(b, UDim.new(0, 8))
+	addPressEffect(b)
+	return b
+end
+
+local cd1Btn = makeCdBtn(1, "1 分", false)
+local cd5Btn = makeCdBtn(2, "5 分", false)
+local cd10Btn = makeCdBtn(3, "10 分", false)
+local cdStopBtn = makeCdBtn(4, "停止", true)
+
+-- 快捷键说明
+local keyCard = makeCard(toolsPage, 3, 96)
+new("TextLabel", {
+	BackgroundTransparency = 1,
+	Font = Enum.Font.GothamBold,
+	TextSize = 11,
+	TextColor3 = COL.textDim,
+	Text = "快捷键（PC）",
+	TextXAlignment = Enum.TextXAlignment.Left,
+	Position = UDim2.fromOffset(12, 10),
+	Size = UDim2.new(1, -24, 0, 14),
+}, keyCard)
+
+local function makeKeyRow(order, key, desc)
+	local y = 30 + (order - 1) * 20
+	new("TextLabel", {
+		BackgroundTransparency = 1,
+		Font = Enum.Font.GothamBold,
+		TextSize = 11,
+		TextColor3 = currentTheme.accent,
+		Text = key,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Position = UDim2.fromOffset(12, y),
+		Size = UDim2.fromOffset(80, 16),
+	}, keyCard)
+	new("TextLabel", {
+		BackgroundTransparency = 1,
+		Font = Enum.Font.GothamMedium,
+		TextSize = 11,
+		TextColor3 = COL.textDim,
+		Text = desc,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Position = UDim2.fromOffset(96, y),
+		Size = UDim2.new(1, -108, 0, 16),
+	}, keyCard)
+end
+
+makeKeyRow(1, "Ctrl + I", "展开 / 收起")
+makeKeyRow(2, "Ctrl + M", "音乐 播放 / 暂停")
+makeKeyRow(3, "Ctrl + R", "重置秒表")
+
+-- 倒计时/秒表更新函数
+updateStopwatchDisplay = function()
+	if swRunning then
+		swValue = swAccum + (os.clock() - swStartClock)
+	else
+		swValue = swAccum
+	end
+	swLabel.Text = fmtStopwatch(swValue)
+end
+
+updateCountdownDisplay = function()
+	if cdActive then
+		cdValue = math.max(0, cdEndClock - os.clock())
+		cdLabel.Text = fmtCountdown(cdValue)
+		cdLabel.TextColor3 = (cdValue <= 5) and COL.danger or COL.text
+	else
+		cdValue = 0
+		cdLabel.Text = (cdLabel.Text == "00:00") and "00:00" or "--:--"
+		cdLabel.TextColor3 = COL.text
+	end
+end
+
+swStartBtn.MouseButton1Click:Connect(function()
+	if swRunning then return end
+	swRunning = true
+	swStartClock = os.clock()
+end)
+
+swPauseBtn.MouseButton1Click:Connect(function()
+	if not swRunning then return end
+	swAccum = swAccum + (os.clock() - swStartClock)
+	swRunning = false
+	updateStopwatchDisplay()
+end)
+
+swResetBtn.MouseButton1Click:Connect(function()
+	swRunning = false
+	swAccum = 0
+	swValue = 0
+	swLabel.Text = "00:00.00"
+end)
+
+local function startCountdown(seconds)
+	if cdActive then
+		cdActive = false
+	end
+	cdActive = true
+	cdEndClock = os.clock() + seconds
+	cdLabel.Text = fmtCountdown(seconds)
+	cdLabel.TextColor3 = COL.text
+end
+
+cd1Btn.MouseButton1Click:Connect(function() startCountdown(60) end)
+cd5Btn.MouseButton1Click:Connect(function() startCountdown(300) end)
+cd10Btn.MouseButton1Click:Connect(function() startCountdown(600) end)
+
+cdStopBtn.MouseButton1Click:Connect(function()
+	cdActive = false
+	cdLabel.Text = "--:--"
+	cdLabel.TextColor3 = COL.text
+end)
+
+-- [9] Server page --------------------------------------------------
 local serverPage = createPage()
 
 local srvStatRow = new("Frame", {
@@ -854,7 +1217,33 @@ local srvPlayers = makeStatCard(srvStatRow, 1, "玩家")
 local srvPing    = makeStatCard(srvStatRow, 2, "延迟")
 local srvSession = makeStatCard(srvStatRow, 3, "会话")
 
-local infoCard = makeCard(serverPage, 2, 140)
+local searchRow = new("Frame", {
+	BackgroundTransparency = 1,
+	Size = UDim2.new(1, 0, 0, 32),
+	LayoutOrder = 2,
+}, serverPage)
+local playerSearch = new("TextBox", {
+	BackgroundColor3 = COL.card,
+	BackgroundTransparency = 0.15,
+	BorderSizePixel = 0,
+	Font = Enum.Font.GothamMedium,
+	TextSize = 12,
+	TextColor3 = COL.text,
+	PlaceholderText = "搜索玩家名…",
+	PlaceholderColor3 = COL.textFaint,
+	Text = "",
+	ClearTextOnFocus = false,
+	TextXAlignment = Enum.TextXAlignment.Left,
+	Size = UDim2.fromScale(1, 1),
+}, searchRow)
+corner(playerSearch, UDim.new(0, 10))
+stroke(playerSearch, COL.cardSoft, 1, 0.6)
+new("UIPadding", { PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10) }, playerSearch)
+playerSearch:GetPropertyChangedSignal("Text"):Connect(function()
+	playerFilterText = playerSearch.Text
+end)
+
+local infoCard = makeCard(serverPage, 3, 140)
 new("UIPadding", {
 	PaddingTop = UDim.new(0, 9),
 	PaddingBottom = UDim.new(0, 9),
@@ -868,9 +1257,8 @@ local rowJobId      = makeInfoRow(infoCard, 3, "JobId")
 local rowPlaceId    = makeInfoRow(infoCard, 4, "PlaceId")
 local rowMemory     = makeInfoRow(infoCard, 5, "内存")
 
-local playersCard = makeCard(serverPage, 3, 0)
+local playersCard = makeCard(serverPage, 4, 0)
 playersCard.AutomaticSize = Enum.AutomaticSize.Y
-playersCard.BackgroundTransparency = 0.25
 new("UIPadding", {
 	PaddingTop = UDim.new(0, 8),
 	PaddingBottom = UDim.new(0, 8),
@@ -891,9 +1279,7 @@ local playersTitle = new("TextLabel", {
 
 local lastPlayerSig = ""
 
---================================================================
--- 9. 通知页
---================================================================
+-- [10] Notification page ------------------------------------------
 local notifPage = createPage()
 
 local notifHead = new("Frame", {
@@ -944,9 +1330,7 @@ local notifList = new("Frame", {
 }, notifPage)
 new("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }, notifList)
 
---================================================================
--- 10. 设置页
---================================================================
+-- [11] Settings page ----------------------------------------------
 local settingsPage = createPage()
 
 local themeCard = makeCard(settingsPage, 1, 86)
@@ -979,35 +1363,58 @@ for i, t in ipairs(THEMES) do
 	end)
 end
 
-local switchCard = makeCard(settingsPage, 2, 56)
-new("TextLabel", {
-	BackgroundTransparency = 1,
-	Font = Enum.Font.GothamMedium,
-	TextSize = 12,
-	TextColor3 = COL.text,
-	Text = "展开动画",
-	TextXAlignment = Enum.TextXAlignment.Left,
-	Position = UDim2.fromOffset(12, 0),
-	Size = UDim2.new(1, -110, 1, 0),
-}, switchCard)
-local animToggle = new("TextButton", {
-	BackgroundColor3 = currentTheme.accent,
-	BackgroundTransparency = 0.15,
-	BorderSizePixel = 0,
-	AutoButtonColor = false,
-	Font = Enum.Font.GothamBold,
-	TextSize = 11,
-	TextColor3 = Color3.new(1, 1, 1),
-	Text = "开启",
-	AnchorPoint = Vector2.new(1, 0.5),
-	Position = UDim2.new(1, -12, 0.5, 0),
-	Size = UDim2.fromOffset(58, 26),
-}, switchCard)
-corner(animToggle, UDim.new(0, 13))
-registerAccent(animToggle, "BackgroundColor3")
-addPressEffect(animToggle)
+local function makeToggleCard(order, title, initialOn, callback)
+	local card = makeCard(settingsPage, order, 48)
+	new("TextLabel", {
+		BackgroundTransparency = 1,
+		Font = Enum.Font.GothamMedium,
+		TextSize = 12,
+		TextColor3 = COL.text,
+		Text = title,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Position = UDim2.fromOffset(12, 0),
+		Size = UDim2.new(1, -110, 1, 0),
+	}, card)
+	local btn = new("TextButton", {
+		BackgroundColor3 = initialOn and currentTheme.accent or COL.cardSoft,
+		BackgroundTransparency = initialOn and 0.15 or 0.55,
+		BorderSizePixel = 0,
+		AutoButtonColor = false,
+		Font = Enum.Font.GothamBold,
+		TextSize = 11,
+		TextColor3 = initialOn and Color3.new(1, 1, 1) or COL.textDim,
+		Text = initialOn and "开启" or "关闭",
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -12, 0.5, 0),
+		Size = UDim2.fromOffset(58, 26),
+	}, card)
+	corner(btn, UDim.new(0, 13))
+	addPressEffect(btn)
+	local state = initialOn
+	btn.MouseButton1Click:Connect(function()
+		state = not state
+		btn.Text = state and "开启" or "关闭"
+		btn.BackgroundColor3 = state and currentTheme.accent or COL.cardSoft
+		btn.BackgroundTransparency = state and 0.15 or 0.55
+		btn.TextColor3 = state and Color3.new(1, 1, 1) or COL.textDim
+		callback(state)
+	end)
+	return btn
+end
 
-local actionCard = makeCard(settingsPage, 3, 100)
+makeToggleCard(2, "展开动画", true, function(v) animationsEnabled = v end)
+makeToggleCard(3, "音乐淡入淡出", true, function(v) fadeEnabled = v end)
+makeToggleCard(4, "玩家进出提醒", true, function(v) playerNotifyEnabled = v end)
+makeToggleCard(5, "性能模式（省电）", false, function(v)
+	perfMode = v
+	-- 立刻停止呼吸光效
+	if v then
+		iconGlow.Thickness = 2
+		iconGlow.Transparency = 0.5
+	end
+end)
+
+local actionCard = makeCard(settingsPage, 6, 100)
 new("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder }, actionCard)
 new("UIPadding", {
 	PaddingTop = UDim.new(0, 10),
@@ -1042,19 +1449,18 @@ local aboutLabel = new("TextLabel", {
 	Font = Enum.Font.GothamMedium,
 	TextSize = 10,
 	TextColor3 = COL.textFaint,
-	Text = "灵动岛 v3.0 · 客户端本地 UI · 音乐仅自己可听",
+	Text = "灵动岛 v3.4",
 	TextWrapped = true,
 	TextXAlignment = Enum.TextXAlignment.Left,
 	Size = UDim2.new(1, 0, 0, 32),
-	LayoutOrder = 4,
+	LayoutOrder = 7,
 }, settingsPage)
 
---================================================================
--- 11. Tab 构建
---================================================================
+-- [12] Tabs (6 个) ------------------------------------------------
 local TABS = {
 	{ key = "overview",     short = "概", label = "概览", page = overviewPage },
 	{ key = "music",        short = "乐", label = "音乐", page = musicPage },
+	{ key = "tools",        short = "时", label = "计时", page = toolsPage },
 	{ key = "server",       short = "服", label = "服务器", page = serverPage },
 	{ key = "notification", short = "通", label = "通知", page = notifPage },
 	{ key = "settings",     short = "设", label = "设置", page = settingsPage },
@@ -1081,7 +1487,7 @@ for i, t in ipairs(TABS) do
 	end)
 end
 
-switchTab = function(key)
+switchTab = function(key, silent)
 	activeTab = key
 	for _, t in ipairs(TABS) do
 		local active = (t.key == key)
@@ -1096,7 +1502,7 @@ switchTab = function(key)
 		t.btn.Font = active and Enum.Font.GothamBold or Enum.Font.GothamMedium
 	end
 	if key == "server" and updateServerTab then updateServerTab() end
-	if key == "notification" then
+	if key == "notification" and not silent then
 		unreadCount = 0
 		updateBadge()
 	end
@@ -1106,12 +1512,8 @@ openTab = function(key)
 	if switchTab then switchTab(key) end
 end
 
---================================================================
--- 12. 通知系统
---================================================================
-local notifData = {}
-local unreadCount = 0
-local flashToken = 0
+-- [13] Notifications ----------------------------------------------
+local notifFlashToken = 0
 local notificationActive = false
 
 updateBadge = function()
@@ -1125,7 +1527,9 @@ renderNotifications = function()
 	for _, child in ipairs(notifList:GetChildren()) do
 		if child:IsA("Frame") then child:Destroy() end
 	end
-	notifEmpty.Visible = (#notifData == 0)
+	local isEmpty = (#notifData == 0)
+	notifEmpty.Visible = isEmpty
+	notifEmpty.Size = UDim2.new(1, 0, 0, isEmpty and 40 or 0)
 	for i, n in ipairs(notifData) do
 		local item = new("Frame", {
 			BackgroundColor3 = COL.card,
@@ -1179,8 +1583,8 @@ renderNotifications = function()
 end
 
 local function flashCollapsed(title, duration)
-	flashToken = flashToken + 1
-	local token = flashToken
+	notifFlashToken = notifFlashToken + 1
+	local token = notifFlashToken
 	notificationActive = true
 	clockLabel.Text = title
 	clockLabel.TextColor3 = currentTheme.accent
@@ -1188,10 +1592,15 @@ local function flashCollapsed(title, duration)
 		tw(root, 0.24, { Size = UDim2.fromOffset(220, 38) })
 	end
 	task.delay(math.max(duration or 2.5, 1), function()
-		if token ~= flashToken then return end
+		if token ~= notifFlashToken then return end
 		notificationActive = false
-		clockLabel.TextColor3 = COL.text
-		if updateClock then updateClock() end
+		if statusActive then
+			clockLabel.Text = currentStatusText
+			clockLabel.TextColor3 = currentTheme.accent
+		else
+			clockLabel.TextColor3 = COL.text
+			if updateClock then updateClock() end
+		end
 		if not isExpanded then
 			tw(root, 0.28, { Size = UDim2.fromOffset(currentMusicId and 190 or 146, 38) })
 		end
@@ -1219,24 +1628,15 @@ clearBtn.MouseButton1Click:Connect(function()
 	renderNotifications()
 end)
 
-if clearBtn then
-	addPressEffect(clearBtn)
-end
-
---================================================================
--- 13. 音乐
---================================================================
+-- [14] Music engine -----------------------------------------------
 local musicSound = new("Sound", {
 	Name = "DynamicIslandMusic",
 	Volume = 0.5,
 	Looped = false,
-	SoundId = "",
 }, SoundService)
 
-local currentMusicId = nil
 local isMusicLoading = false
 local recentPlaylist = {}
-local pendingPlayId = nil
 
 local function setMusicStatus(text, color)
 	musicStatus.Text = text
@@ -1256,11 +1656,9 @@ local function addRecent(id)
 	if renderRecent then renderRecent() end
 end
 
-renderRecent = nil
-
 local function renderRecentList()
 	for _, child in ipairs(recentList:GetChildren()) do
-		if child:IsA("Frame") then child:Destroy() end
+		if not child:IsA("UIListLayout") then child:Destroy() end
 	end
 	if #recentPlaylist == 0 then
 		recentTitle.Text = "最近播放（空）"
@@ -1268,9 +1666,17 @@ local function renderRecentList()
 	end
 	recentTitle.Text = "最近播放"
 	for i, id in ipairs(recentPlaylist) do
-		local item = new("TextButton", {
+		local item = new("Frame", {
 			BackgroundColor3 = COL.card,
 			BackgroundTransparency = 0.35,
+			BorderSizePixel = 0,
+			Size = UDim2.new(1, 0, 0, 30),
+			LayoutOrder = i,
+		}, recentList)
+		corner(item, UDim.new(0, 9))
+
+		local playItem = new("TextButton", {
+			BackgroundTransparency = 1,
 			BorderSizePixel = 0,
 			AutoButtonColor = false,
 			Font = Enum.Font.GothamMedium,
@@ -1278,37 +1684,110 @@ local function renderRecentList()
 			TextColor3 = COL.textDim,
 			Text = string.format("♪  ID %d", id),
 			TextXAlignment = Enum.TextXAlignment.Left,
-			Size = UDim2.new(1, 0, 0, 30),
-			LayoutOrder = i,
-		}, recentList)
-		corner(item, UDim.new(0, 9))
-		new("UIPadding", { PaddingLeft = UDim.new(0, 10) }, item)
-		addPressEffect(item)
-		item.MouseButton1Click:Connect(function()
-			if loadAndPlay then loadAndPlay(tostring(id)) end
+			Position = UDim2.fromOffset(10, 0),
+			Size = UDim2.new(1, -42, 1, 0),
+		}, item)
+		addPressEffect(playItem)
+		playItem.MouseButton1Click:Connect(function()
+			if loadAndPlay then loadAndPlay(tostring(id), true) end
+		end)
+
+		local addBtn = new("TextButton", {
+			BackgroundColor3 = currentTheme.accent,
+			BackgroundTransparency = 0.35,
+			BorderSizePixel = 0,
+			AutoButtonColor = false,
+			Font = Enum.Font.GothamBold,
+			TextSize = 13,
+			TextColor3 = Color3.new(1, 1, 1),
+			Text = "+",
+			AnchorPoint = Vector2.new(1, 0.5),
+			Position = UDim2.new(1, -4, 0.5, 0),
+			Size = UDim2.fromOffset(24, 24),
+		}, item)
+		corner(addBtn, UDim.new(1, 0))
+		addPressEffect(addBtn)
+		addBtn.MouseButton1Click:Connect(function()
+			table.insert(musicQueue, id)
+			if renderQueue then renderQueue() end
+			if showNotification then
+				showNotification("已加入队列", "ID " .. tostring(id), 1.5)
+			end
 		end)
 	end
 end
 
 renderRecent = renderRecentList
 
+renderQueue = function()
+	for _, child in ipairs(queueList:GetChildren()) do
+		if not child:IsA("UIListLayout") then child:Destroy() end
+	end
+	if #musicQueue == 0 then
+		queueTitle.Text = "播放队列（空）"
+		return
+	end
+	queueTitle.Text = string.format("播放队列（%d）", #musicQueue)
+	for i, id in ipairs(musicQueue) do
+		local item = new("Frame", {
+			BackgroundColor3 = COL.card,
+			BackgroundTransparency = 0.4,
+			BorderSizePixel = 0,
+			Size = UDim2.new(1, 0, 0, 24),
+			LayoutOrder = i,
+		}, queueList)
+		corner(item, UDim.new(0, 8))
+		new("TextLabel", {
+			BackgroundTransparency = 1,
+			Font = Enum.Font.GothamMedium,
+			TextSize = 10,
+			TextColor3 = COL.textDim,
+			Text = string.format("%d.  ID %d", i, id),
+			TextXAlignment = Enum.TextXAlignment.Left,
+			Position = UDim2.fromOffset(8, 0),
+			Size = UDim2.new(1, -32, 1, 0),
+			TextTruncate = Enum.TextTruncate.AtEnd,
+		}, item)
+		local rm = new("TextButton", {
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			AutoButtonColor = false,
+			Font = Enum.Font.GothamBold,
+			TextSize = 11,
+			TextColor3 = COL.danger,
+			Text = "✕",
+			AnchorPoint = Vector2.new(1, 0.5),
+			Position = UDim2.new(1, -6, 0.5, 0),
+			Size = UDim2.fromOffset(18, 18),
+		}, item)
+		rm.MouseButton1Click:Connect(function()
+			table.remove(musicQueue, i)
+			renderQueue()
+		end)
+	end
+end
+
 setMusicVolume = function(v)
 	v = math.clamp(v, 0, 1)
-	musicSound.Volume = v
+	lastVolume = v
+	if not isMuted then
+		musicSound.Volume = v
+	end
 	volFill.Size = UDim2.fromScale(v, 1)
 	volKnob.Position = UDim2.new(v, 0, 0.5, 0)
+	volPct.Text = math.floor(v * 100) .. "%"
 end
 
 attachDragArea(volArea, volTrack, function(r)
 	setMusicVolume(r)
-end)
+end, function() return musicPage.Visible end)
 
 attachDragArea(seekArea, seekTrack, function(r)
 	if musicSound.IsLoaded and musicSound.TimeLength > 0 then
 		musicSound.TimePosition = r * musicSound.TimeLength
 		if updateMusicUI then updateMusicUI() end
 	end
-end)
+end, function() return musicPage.Visible end)
 
 local function setLoadingState(loading)
 	isMusicLoading = loading
@@ -1316,7 +1795,7 @@ local function setLoadingState(loading)
 	setMusicStatus(loading and "正在加载音频…" or "", COL.textFaint)
 end
 
-loadAndPlay = function(text)
+loadAndPlay = function(text, skipClearQueue)
 	local id = (type(text) == "number") and text or parseId(text)
 	if not id then
 		setMusicStatus("ID 无效，请输入纯数字", COL.danger)
@@ -1325,9 +1804,13 @@ loadAndPlay = function(text)
 	end
 	if isMusicLoading then return end
 
+	if not skipClearQueue then
+		musicQueue = {}
+		if renderQueue then renderQueue() end
+	end
+
 	setLoadingState(true)
 	currentMusicId = id
-	pendingPlayId = id
 	musicSound:Stop()
 	musicSound.TimePosition = 0
 	musicSound.SoundId = "rbxassetid://" .. tostring(id)
@@ -1349,6 +1832,13 @@ loadAndPlay = function(text)
 		setLoadingState(false)
 		if musicSound.IsLoaded then
 			musicSound:Play()
+			local targetVol = isMuted and 0 or lastVolume
+			if fadeEnabled then
+				musicSound.Volume = 0
+				TweenService:Create(musicSound, TweenInfo.new(0.6), { Volume = targetVol }):Play()
+			else
+				musicSound.Volume = targetVol
+			end
 			setMusicStatus("正在播放 · ID " .. tostring(id), COL.textDim)
 			addRecent(id)
 			if showNotification then showNotification("正在播放", "ID " .. tostring(id), 2) end
@@ -1357,9 +1847,11 @@ loadAndPlay = function(text)
 			end
 		else
 			currentMusicId = nil
-			pendingPlayId = nil
 			setMusicStatus("加载失败：音频未公开 / 已下架", COL.danger)
 			if showNotification then showNotification("播放失败", "音频无法加载", 2.5) end
+			if not isExpanded then
+				tw(root, 0.25, { Size = UDim2.fromOffset(146, 38) })
+			end
 		end
 		if updateMusicUI then updateMusicUI() end
 	end)
@@ -1381,6 +1873,8 @@ togglePlay = function()
 		end
 		if musicSound.IsLoaded then
 			musicSound:Play()
+			local targetVol = isMuted and 0 or lastVolume
+			musicSound.Volume = targetVol
 		else
 			loadAndPlay(tostring(currentMusicId))
 		end
@@ -1389,10 +1883,42 @@ togglePlay = function()
 end
 
 stopMusicNow = function()
-	musicSound:Stop()
-	musicSound.TimePosition = 0
+	local function restore()
+		if isMuted then
+			musicSound.Volume = 0
+		else
+			musicSound.Volume = lastVolume
+		end
+	end
+	if fadeEnabled and musicSound.Playing then
+		local tween = TweenService:Create(musicSound, TweenInfo.new(0.3), { Volume = 0 })
+		tween.Completed:Connect(function()
+			musicSound:Stop()
+			musicSound.TimePosition = 0
+			restore()
+		end)
+		tween:Play()
+	else
+		musicSound:Stop()
+		musicSound.TimePosition = 0
+		restore()
+	end
 	setMusicStatus("已停止", COL.textFaint)
 	if updateMusicUI then updateMusicUI() end
+end
+
+updateLoopBtn = function()
+	if loopActive then
+		loopBtn.BackgroundColor3 = currentTheme.accent
+		loopBtn.BackgroundTransparency = 0.82
+		loopBtn.TextColor3 = Color3.new(1, 1, 1)
+		loopBtn.Text = "↻ 循环中"
+	else
+		loopBtn.BackgroundColor3 = COL.card
+		loopBtn.BackgroundTransparency = 0.25
+		loopBtn.TextColor3 = COL.textDim
+		loopBtn.Text = "↻ 循环"
+	end
 end
 
 loadBtn.MouseButton1Click:Connect(function()
@@ -1406,32 +1932,29 @@ musicInput.FocusLost:Connect(function(enterPressed)
 	end
 end)
 
-playBtn.MouseButton1Click:Connect(function()
-	togglePlay()
-end)
-
-stopBtn.MouseButton1Click:Connect(function()
-	stopMusicNow()
-end)
+playBtn.MouseButton1Click:Connect(function() togglePlay() end)
+stopBtn.MouseButton1Click:Connect(function() stopMusicNow() end)
 
 loopBtn.MouseButton1Click:Connect(function()
-	musicSound.Looped = not musicSound.Looped
-	if musicSound.Looped then
-		loopBtn.BackgroundColor3 = currentTheme.accent
-		loopBtn.BackgroundTransparency = 0.82
-		loopBtn.TextColor3 = Color3.new(1, 1, 1)
-		loopBtn.Text = "↻ 循环中"
+	loopActive = not loopActive
+	musicSound.Looped = loopActive
+	updateLoopBtn()
+end)
+
+muteBtn.MouseButton1Click:Connect(function()
+	isMuted = not isMuted
+	if isMuted then
+		musicSound.Volume = 0
+		muteBtn.Text = "🔇"
+		muteBtn.TextColor3 = COL.danger
 	else
-		loopBtn.BackgroundColor3 = COL.card
-		loopBtn.BackgroundTransparency = 0.25
-		loopBtn.TextColor3 = COL.textDim
-		loopBtn.Text = "↻ 循环"
+		musicSound.Volume = lastVolume
+		muteBtn.Text = "🔊"
+		muteBtn.TextColor3 = COL.text
 	end
 end)
 
---================================================================
--- 14. 音乐 UI 刷新
---================================================================
+-- [15] Music UI refresh -------------------------------------------
 local musicTick = 0
 
 updateMusicUI = function()
@@ -1453,17 +1976,26 @@ updateMusicUI = function()
 
 	playBtn.Text = musicSound.Playing and "⏸ 暂停" or "▶ 播放"
 
-	local loud = musicSound.PlaybackLoudness or 0
-	local playing = musicSound.Playing
-	for i, bar in ipairs(visBars) do
-		local noise = (math.noise(i * 0.45, musicTick * 1.8) + 1) * 0.5
-		local h = playing and math.clamp(6 + (loud / 700) * noise * 24, 6, 30) or 6
-		bar.Size = UDim2.new(0, 4, 0, math.floor(h))
+	if not perfMode then
+		local loud = musicSound.PlaybackLoudness or 0
+		local playing = musicSound.Playing
+		for i, bar in ipairs(visBars) do
+			local noise = (math.noise(i * 0.45, musicTick * 1.8) + 1) * 0.5
+			local h = playing and math.clamp(6 + (loud / 700) * noise * 24, 6, 30) or 6
+			bar.Size = UDim2.new(0, 4, 0, math.floor(h))
+		end
 	end
 end
 
 musicSound.Ended:Connect(function()
 	if updateMusicUI then updateMusicUI() end
+	if #musicQueue > 0 and not musicSound.Looped then
+		local nextId = table.remove(musicQueue, 1)
+		if renderQueue then renderQueue() end
+		task.defer(function()
+			loadAndPlay(tostring(nextId), true)
+		end)
+	end
 end)
 musicSound.Playing:Connect(function()
 	if updateMusicUI then updateMusicUI() end
@@ -1472,9 +2004,7 @@ musicSound.Paused:Connect(function()
 	if updateMusicUI then updateMusicUI() end
 end)
 
---================================================================
--- 15. 服务器信息
---================================================================
+-- [16] Server info -------------------------------------------------
 local SESSION_START = os.time()
 
 local function getPing()
@@ -1503,6 +2033,13 @@ local function getServerTimeText()
 	return "—"
 end
 
+local function pingColor(p)
+	if not p then return COL.text end
+	if p < 80 then return COL.good end
+	if p < 160 then return COL.warn end
+	return COL.danger
+end
+
 updateServerTab = function()
 	local players = Players:GetPlayers()
 	local count = #players
@@ -1511,11 +2048,13 @@ updateServerTab = function()
 	local session = os.time() - SESSION_START
 
 	ovPing.Text = ping and (tostring(ping) .. " ms") or "—"
+	ovPing.TextColor3 = pingColor(ping)
 	ovPlayers.Text = string.format("%d/%d", count, maxPlayers)
 	ovSession.Text = fmtTime(session)
 
 	srvPlayers.Text = string.format("%d/%d", count, maxPlayers)
 	srvPing.Text = ping and (tostring(ping) .. " ms") or "—"
+	srvPing.TextColor3 = pingColor(ping)
 	srvSession.Text = fmtTime(session)
 
 	rowServerTime.Text = getServerTimeText() .. " UTC"
@@ -1528,8 +2067,16 @@ updateServerTab = function()
 
 	ovInfo.Text = string.format("服务器 %s · 内存 %s", getServerTimeText(), mem and (tostring(mem) .. "MB") or "—")
 
-	-- 玩家列表
-	local sig = tostring(count) .. "|"
+	local char = player.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	if hrp then
+		local pt = hrp.Position
+		posLabel.Text = string.format("位置  X %.0f   Y %.0f   Z %.0f", pt.X, pt.Y, pt.Z)
+	else
+		posLabel.Text = "位置 —"
+	end
+
+	local sig = tostring(count) .. "|" .. playerFilterText .. "|"
 	for _, p in ipairs(players) do
 		sig = sig .. p.Name .. ","
 	end
@@ -1543,67 +2090,89 @@ updateServerTab = function()
 		table.sort(players, function(a, b)
 			return a.Name:lower() < b.Name:lower()
 		end)
-		for i, p in ipairs(players) do
-			local isMe = (p == player)
-			local row = new("Frame", {
-				Name = "PRow",
-				BackgroundColor3 = isMe and currentTheme.accent or COL.cardSoft,
-				BackgroundTransparency = isMe and 0.82 or 0.72,
-				BorderSizePixel = 0,
-				Size = UDim2.new(1, 0, 0, 22),
-				LayoutOrder = i,
-			}, playersCard)
-			corner(row, UDim.new(0, 8))
-			local dot = new("Frame", {
-				BackgroundColor3 = currentTheme.accent,
-				BorderSizePixel = 0,
-				Position = UDim2.fromOffset(8, 8),
-				Size = UDim2.fromOffset(6, 6),
-			}, row)
-			corner(dot, UDim.new(1, 0))
-			new("TextLabel", {
-				BackgroundTransparency = 1,
-				Font = isMe and Enum.Font.GothamBold or Enum.Font.GothamMedium,
-				TextSize = 11,
-				TextColor3 = isMe and Color3.new(1, 1, 1) or COL.textDim,
-				Text = p.Name .. (isMe and "  (你)" or ""),
-				TextXAlignment = Enum.TextXAlignment.Left,
-				TextTruncate = Enum.TextTruncate.AtEnd,
-				Position = UDim2.fromOffset(20, 0),
-				Size = UDim2.new(1, -28, 1, 0),
-			}, row)
+		local filterLower = playerFilterText and playerFilterText:lower() or ""
+		local shown = 0
+		for _, p in ipairs(players) do
+			local matches = (filterLower == "" or string.find(p.Name:lower(), filterLower, 1, true) ~= nil)
+			if matches then
+				shown = shown + 1
+				local isMe = (p == player)
+				local row = new("Frame", {
+					Name = "PRow",
+					BackgroundColor3 = isMe and currentTheme.accent or COL.cardSoft,
+					BackgroundTransparency = isMe and 0.82 or 0.72,
+					BorderSizePixel = 0,
+					Size = UDim2.new(1, 0, 0, 22),
+					LayoutOrder = shown,
+				}, playersCard)
+				corner(row, UDim.new(0, 8))
+				local dot = new("Frame", {
+					BackgroundColor3 = currentTheme.accent,
+					BorderSizePixel = 0,
+					Position = UDim2.fromOffset(8, 8),
+					Size = UDim2.fromOffset(6, 6),
+				}, row)
+				corner(dot, UDim.new(1, 0))
+				new("TextLabel", {
+					BackgroundTransparency = 1,
+					Font = isMe and Enum.Font.GothamBold or Enum.Font.GothamMedium,
+					TextSize = 11,
+					TextColor3 = isMe and Color3.new(1, 1, 1) or COL.textDim,
+					Text = p.Name .. (isMe and "  (你)" or ""),
+					TextXAlignment = Enum.TextXAlignment.Left,
+					TextTruncate = Enum.TextTruncate.AtEnd,
+					Position = UDim2.fromOffset(20, 0),
+					Size = UDim2.new(1, -28, 1, 0),
+				}, row)
+			end
 		end
+		playersTitle.Text = (filterLower == "") and "在线玩家" or string.format("在线玩家（%d/%d）", shown, count)
 	end
 end
 
---================================================================
--- 16. 时钟 / 折叠宽度
---================================================================
+-- [17] Clock ------------------------------------------------------
 local lastClockMinute = -1
 
 updateClock = function()
-	if notificationActive then return end
+	if notificationActive or statusActive then return end
 	local now = os.date("*t")
 	if now.min == lastClockMinute and clockLabel.Text ~= "--:--" then return end
 	lastClockMinute = now.min
 	clockLabel.Text = os.date("%H:%M")
 end
 
+setStatusText = function(text)
+	currentStatusText = text or ""
+	if currentStatusText ~= "" then
+		statusActive = true
+		if not notificationActive then
+			clockLabel.Text = currentStatusText
+			clockLabel.TextColor3 = currentTheme.accent
+		end
+	else
+		statusActive = false
+		if not notificationActive then
+			clockLabel.TextColor3 = COL.text
+			updateClock()
+		end
+	end
+end
+
 local function collapsedWidth()
 	return currentMusicId and 190 or 146
 end
 
---================================================================
--- 17. 展开 / 收起
---================================================================
+-- [18] Expand / collapse ------------------------------------------
 local function expandedHeight()
-	local h = math.floor(camera.ViewportSize.Y - 70)
-	return math.clamp(h, 280, 420)
+	local vp = camera.ViewportSize
+	local h = math.clamp(math.floor(vp.Y - 70), 280, 420)
+	return math.min(h, vp.Y - 40)
 end
 
 local function expandedWidth()
-	local w = math.floor(camera.ViewportSize.X * 0.8)
-	return math.clamp(w, 288, 360)
+	local vp = camera.ViewportSize
+	local w = math.clamp(math.floor(vp.X * 0.8), 288, 360)
+	return math.min(w, vp.X - 32)
 end
 
 local function clampPosition(w, h)
@@ -1627,8 +2196,9 @@ expandIsland = function()
 	expandedGroup.GroupTransparency = 1
 	if switchTab then switchTab(activeTab) end
 
-	rootScale.Scale = 0.96
-	tw(rootScale, 0.3, { Scale = 1 })
+	-- 微回弹
+	rootScale.Scale = 0.92
+	tw(rootScale, 0.42, { Scale = 1 }, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 	tw(root, 0.36, {
 		Size = UDim2.fromOffset(w, h),
 		Position = UDim2.fromOffset(math.floor(islandCenterX), math.floor(islandTopY)),
@@ -1637,7 +2207,7 @@ expandIsland = function()
 	tw(expandedGroup, 0.26, { GroupTransparency = 0 })
 	tw(collapsedGroup, 0.12, { GroupTransparency = 1 })
 
-	task.delay(0.42, function()
+	task.delay(0.44, function()
 		if token ~= expandToken or not isExpanded then return end
 		collapsedGroup.Visible = false
 	end)
@@ -1658,7 +2228,7 @@ collapseIsland = function()
 	tw(root, 0.3, {
 		Size = UDim2.fromOffset(w, 38),
 		Position = UDim2.fromOffset(math.floor(islandCenterX), math.floor(islandTopY)),
-	})
+	}, Enum.EasingStyle.Quint, Enum.EasingDirection.InOut)
 	tw(rootCorner, 0.3, { CornerRadius = UDim.new(0, 19) })
 
 	task.delay(0.34, function()
@@ -1667,12 +2237,16 @@ collapseIsland = function()
 	end)
 end
 
---================================================================
--- 18. 输入：点击展开 / 外部收起 / 拖动
---================================================================
+-- [19] Input: keyboard + drag --------------------------------------
 local function isInsideRoot(p)
 	local a = root.AbsolutePosition
 	local s = root.AbsoluteSize
+	return p.X >= a.X and p.X <= a.X + s.X and p.Y >= a.Y and p.Y <= a.Y + s.Y
+end
+
+local function isInsideHeader(p)
+	local a = headerDrag.AbsolutePosition
+	local s = headerDrag.AbsoluteSize
 	return p.X >= a.X and p.X <= a.X + s.X and p.Y >= a.Y and p.Y <= a.Y + s.Y
 end
 
@@ -1681,7 +2255,43 @@ local dragStartPos = nil
 local dragStartX, dragStartY = 0, 0
 local isDragging = false
 
+local function startDrag(input, p)
+	dragCandidate = input
+	dragStartPos = p
+	dragStartX = islandCenterX
+	dragStartY = islandTopY
+	isDragging = false
+end
+
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	-- 键盘快捷键
+	if input.UserInputType == Enum.UserInputType.Keyboard then
+		if gameProcessed then return end
+		if UserInputService:GetFocusedTextBox() then return end
+		local ctrl = UserInputService:IsKeyDown(Enum.KeyCode.LeftControl)
+			or UserInputService:IsKeyDown(Enum.KeyCode.RightControl)
+		local k = input.KeyCode
+		if ctrl and k == Enum.KeyCode.I then
+			if isExpanded then
+				if collapseIsland then collapseIsland() end
+			else
+				if expandIsland then expandIsland() end
+			end
+			return
+		elseif ctrl and k == Enum.KeyCode.M then
+			if togglePlay then togglePlay() end
+			return
+		elseif ctrl and k == Enum.KeyCode.R then
+			-- 重置秒表
+			swRunning = false
+			swAccum = 0
+			swValue = 0
+			swLabel.Text = "00:00.00"
+			return
+		end
+		return
+	end
+
 	if gameProcessed then return end
 	local t = input.UserInputType
 	if t ~= Enum.UserInputType.MouseButton1 and t ~= Enum.UserInputType.Touch then return end
@@ -1690,18 +2300,16 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	local inside = isInsideRoot(p)
 
 	if isExpanded then
-		if not inside then
-			collapseIsland()
+		if isInsideHeader(p) then
+			startDrag(input, p)
+		elseif not inside then
+			if collapseIsland then collapseIsland() end
 		end
 		return
 	end
 
 	if inside then
-		dragCandidate = input
-		dragStartPos = p
-		dragStartX = islandCenterX
-		dragStartY = islandTopY
-		isDragging = false
+		startDrag(input, p)
 	end
 end)
 
@@ -1722,9 +2330,10 @@ UserInputService.InputChanged:Connect(function(input)
 	end
 
 	local vp = camera.ViewportSize
-	local w = collapsedWidth()
+	local w = isExpanded and expandedWidth() or collapsedWidth()
+	local h = isExpanded and expandedHeight() or 38
 	islandCenterX = math.clamp(dragStartX + dx, w / 2, vp.X - w / 2)
-	islandTopY = math.clamp(dragStartY + dy, guiInset.Y, vp.Y - 38 - 4)
+	islandTopY = math.clamp(dragStartY + dy, guiInset.Y, vp.Y - h - 4)
 	root.Position = UDim2.fromOffset(math.floor(islandCenterX), math.floor(islandTopY))
 end)
 
@@ -1740,19 +2349,34 @@ UserInputService.InputEnded:Connect(function(input)
 
 	if wasDragging then return end
 	if inside and not isExpanded then
-		expandIsland()
+		if expandIsland then expandIsland() end
 	end
 end)
 
---================================================================
--- 19. 设置页交互
---================================================================
-animToggle.MouseButton1Click:Connect(function()
-	animationsEnabled = not animationsEnabled
-	animToggle.Text = animationsEnabled and "开启" or "关闭"
-	animToggle.BackgroundTransparency = animationsEnabled and 0.15 or 0.65
+-- [20] Players join / leave notifications -------------------------
+local initialPlayersLoaded = false
+task.delay(3, function()
+	initialPlayersLoaded = true
 end)
 
+Players.PlayerAdded:Connect(function(p)
+	if p == player then return end
+	if not initialPlayersLoaded then return end
+	if not playerNotifyEnabled then return end
+	if showNotification then
+		showNotification("玩家加入", p.Name, 2)
+	end
+end)
+
+Players.PlayerRemoving:Connect(function(p)
+	if p == player then return end
+	if not playerNotifyEnabled then return end
+	if showNotification then
+		showNotification("玩家离开", p.Name, 2)
+	end
+end)
+
+-- [21] Settings actions -------------------------------------------
 resetPosBtn.MouseButton1Click:Connect(function()
 	islandCenterX = math.floor(camera.ViewportSize.X / 2)
 	islandTopY = math.floor(guiInset.Y) + 8
@@ -1768,13 +2392,12 @@ testNotifBtn.MouseButton1Click:Connect(function()
 	end
 end)
 
---================================================================
--- 20. 主循环
---================================================================
+-- [22] Main loop ---------------------------------------------------
 local lastVP = Vector2.new(-1, -1)
 local fpsFrames = 0
 local fpsElapsed = 0
-local fpsHistory = {}
+local fpsHistory = []
+local fpsSampleInterval = 0.3
 
 local function updateFpsChart()
 	local n = #fpsHistory
@@ -1801,21 +2424,24 @@ local function updateFpsChart()
 end
 
 RunService.RenderStepped:Connect(function(dt)
-	-- 视口变化
 	local vp = camera.ViewportSize
 	if vp ~= lastVP then
 		lastVP = vp
 		local w = isExpanded and expandedWidth() or collapsedWidth()
 		local h = isExpanded and expandedHeight() or 38
 		clampPosition(w, h)
-		root.Size = UDim2.fromOffset(w, h)
-		root.Position = UDim2.fromOffset(math.floor(islandCenterX), math.floor(islandTopY))
+		if not isDragging then
+			root.Size = UDim2.fromOffset(w, h)
+			root.Position = UDim2.fromOffset(math.floor(islandCenterX), math.floor(islandTopY))
+		end
 	end
 
-	-- FPS 采样
+	-- 性能模式下降频 FPS 采样
+	fpsSampleInterval = perfMode and 1.0 or 0.3
+
 	fpsFrames = fpsFrames + 1
 	fpsElapsed = fpsElapsed + dt
-	if fpsElapsed >= 0.3 then
+	if fpsElapsed >= fpsSampleInterval then
 		local fps = math.floor(fpsFrames / fpsElapsed + 0.5)
 		fpsFrames = 0
 		fpsElapsed = 0
@@ -1825,18 +2451,74 @@ RunService.RenderStepped:Connect(function(dt)
 		end
 		fpsValue.Text = tostring(fps)
 		updateFpsChart()
+
+		if fps < 30 then
+			lowFpsTime = lowFpsTime + fpsSampleInterval
+			if lowFpsTime >= 2 and (os.clock() - lastLowFpsNotify) > 60 then
+				lastLowFpsNotify = os.clock()
+				if showNotification then
+					showNotification("性能警告", "帧率持续低于 30，建议降低画质", 3)
+				end
+			end
+		else
+			lowFpsTime = 0
+		end
 	end
 
-	-- 阴影同步
+	-- 呼吸光效（性能模式下禁用）
+	if not perfMode then
+		if musicSound.Playing then
+			local s = math.abs(math.sin(os.clock() * 3))
+			iconGlow.Thickness = 2 + s * 3
+			iconGlow.Transparency = 0.5 - s * 0.35
+		else
+			iconGlow.Thickness = 2
+			iconGlow.Transparency = 0.5
+		end
+	end
+
+	-- 三段阴影跟随
 	local rp = root.AbsolutePosition
 	local rs = root.AbsoluteSize
-	shadowOuter.Position = UDim2.fromOffset(rp.X - 4, rp.Y + 2)
-	shadowOuter.Size = UDim2.fromOffset(rs.X + 8, rs.Y + 10)
-	shadowInner.Position = UDim2.fromOffset(rp.X - 8, rp.Y - 2)
-	shadowInner.Size = UDim2.fromOffset(rs.X + 16, rs.Y + 16)
+	shadowFar.Position = UDim2.fromOffset(rp.X - 10, rp.Y + 6)
+	shadowFar.Size = UDim2.fromOffset(rs.X + 20, rs.Y + 20)
+	shadowMid.Position = UDim2.fromOffset(rp.X - 6, rp.Y + 3)
+	shadowMid.Size = UDim2.fromOffset(rs.X + 12, rs.Size and 0 or 0, 0, 0)
+	shadowMid.Size = UDim2.fromOffset(rs.X + 12, rs.Y + 12)
+	shadowNear.Position = UDim2.fromOffset(rp.X - 3, rp.Y + 1)
+	shadowNear.Size = UDim2.fromOffset(rs.X + 6, rs.Y + 6)
 end)
 
--- 每 0.12s：音乐 UI
+-- 主 ticker（0.1s）：秒表 + 倒计时
+task.spawn(function()
+	while true do
+		task.wait(0.1)
+
+		if swRunning then
+			updateStopwatchDisplay()
+		end
+
+		if cdActive then
+			updateCountdownDisplay()
+			if os.clock() >= cdEndClock then
+				cdActive = false
+				cdLabel.Text = "00:00"
+				cdLabel.TextColor3 = COL.danger
+				if showNotification then
+					showNotification("倒计时结束", "时间到！", 3)
+				end
+				task.delay(4, function()
+					if not cdActive and cdLabel.Text == "00:00" then
+						cdLabel.Text = "--:--"
+						cdLabel.TextColor3 = COL.text
+					end
+				end)
+			end
+		end
+	end
+end)
+
+-- 音乐 UI ticker（0.12s）
 task.spawn(function()
 	while true do
 		task.wait(0.12)
@@ -1845,79 +2527,145 @@ task.spawn(function()
 	end
 end)
 
--- 每 1s：时钟 + 服务器
+-- 时钟 + 服务器 ticker（1s）
 task.spawn(function()
 	while true do
 		updateClock()
 		if updateServerTab then updateServerTab() end
-		if musicSound.Playing then
-			iconGlow.Thickness = 2 + math.abs(math.sin(os.clock() * 3)) * 3
-			iconGlow.Transparency = 0.5 - math.abs(math.sin(os.clock() * 3)) * 0.35
-		else
-			iconGlow.Thickness = 2
-			iconGlow.Transparency = 0.5
-		end
 		task.wait(1)
 	end
 end)
 
---================================================================
--- 21. 初始化
---================================================================
+-- [23] Init --------------------------------------------------------
 clampPosition(collapsedWidth(), 38)
 root.Size = UDim2.fromOffset(collapsedWidth(), 38)
 root.Position = UDim2.fromOffset(math.floor(islandCenterX), math.floor(islandTopY))
 renderNotifications()
 renderRecentList()
+renderQueue()
+updateLoopBtn()
 updateClock()
 updateServerTab()
 updateMusicUI()
 applyTheme("green")
 
---================================================================
--- 22. 对外 API
---================================================================
+-- [24] Public API --------------------------------------------------
 _G.DynamicIsland = {
+	-- 通用
 	notify = function(title, subtitle, duration)
 		showNotification(title, subtitle, duration)
 	end,
-	isExpanded = function()
-		return isExpanded
+	isExpanded = function() return isExpanded end,
+	toggle = function()
+		if isExpanded then
+			collapseIsland()
+		else
+			expandIsland()
+		end
 	end,
-	expand = function()
-		expandIsland()
+	expand = function() expandIsland() end,
+	collapse = function() collapseIsland() end,
+
+	-- 状态文本
+	setStatus = function(text) setStatusText(text) end,
+	clearStatus = function() setStatusText("") end,
+
+	-- 主题
+	setTheme = function(key) applyTheme(key) end,
+
+	-- 音乐
+	playMusic = function(id) loadAndPlay(tostring(id)) end,
+	stopMusic = function() stopMusicNow() end,
+	togglePlay = function() togglePlay() end,
+	setVolume = function(v) setMusicVolume(v) end,
+	setMuted = function(m) isMuted = m and true or false end,
+	enqueue = function(id)
+		local n = tonumber(id)
+		if not n then return end
+		table.insert(musicQueue, n)
+		renderQueue()
 	end,
-	collapse = function()
-		collapseIsland()
+	clearQueue = function()
+		musicQueue = {}
+		renderQueue()
 	end,
-	playMusic = function(id)
-		loadAndPlay(tostring(id))
+	getQueue = function() return musicQueue end,
+
+	-- 秒表
+	startStopwatch = function()
+		if not swRunning then
+			swRunning = true
+			swStartClock = os.clock()
+		end
 	end,
-	stopMusic = function()
-		stopMusicNow()
+	pauseStopwatch = function()
+		if swRunning then
+			swAccum = swAccum + (os.clock() - swStartClock)
+			swRunning = false
+		end
 	end,
-	setVolume = function(v)
-		setMusicVolume(v)
+	resetStopwatch = function()
+		swRunning = false
+		swAccum = 0
+		swValue = 0
+		if swLabel then swLabel.Text = "00:00.00" end
 	end,
-	setTheme = function(key)
-		applyTheme(key)
+	getStopwatch = function() return swValue end,
+
+	-- 倒计时
+	startCountdown = function(seconds) startCountdown(tonumber(seconds) or 60) end,
+	stopCountdown = function()
+		cdActive = false
+		if cdLabel then
+			cdLabel.Text = "--:--"
+			cdLabel.TextColor3 = COL.text
+		end
 	end,
-	openTab = function(name)
-		if openTab then openTab(name) end
-		if not isExpanded then expandIsland() end
+	getCountdown = function() return cdValue end,
+
+	-- 性能模式
+	setPerformanceMode = function(v)
+		perfMode = v and true or false
 	end,
+	isPerformanceMode = function() return perfMode end,
+
+	-- 位置
 	resetPosition = function()
 		islandCenterX = math.floor(camera.ViewportSize.X / 2)
 		islandTopY = math.floor(guiInset.Y) + 8
 		clampPosition(collapsedWidth(), 38)
 		root.Position = UDim2.fromOffset(math.floor(islandCenterX), math.floor(islandTopY))
 	end,
-	getNotifications = function()
-		return notifData
-	end,
-	getRecentPlaylist = function()
-		return recentPlaylist
-	end,
+
+	-- 数据
+	getNotifications = function() return notifData end,
+	getRecentPlaylist = function() return recentPlaylist end,
 }
 
-print("[灵动岛 v3.0] 已加载")
+print("[DynamicIsland] v3.4 loaded")
+```
+
+---
+
+## 使用提示
+
+**新 API**
+
+```lua
+local island = _G.DynamicIsland
+
+-- 秒表
+island.startStopwatch()
+-- 之后
+island.pauseStopwatch()
+local t = island.getStopwatch()  -- 例如 12.34
+
+-- 倒计时（秒）
+island.startCountdown(300)   -- 5 分钟
+island.stopCountdown()
+
+-- 性能模式
+island.setPerformanceMode(true)
+
+-- 展开/收起切换（一个方法搞定）
+island.toggle()
